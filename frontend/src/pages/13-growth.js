@@ -35,14 +35,14 @@
         async function loadPaymentRules(){
             var host = document.getElementById('pay-rules-list');
             if (!host) return;
-            host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
+            host.innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:14px 0;">加载中…</div>';
             try {
                 var storeFilter = document.getElementById('growth-store-filter')?.value || '';
                 var r = await fetch('/api/growth/payment-rules', { headers: growthAuthHeaders() }).then(function(x){return x.json();});
                 var rules = (r && r.rules) || [];
                 if (storeFilter) rules = rules.filter(function(x){ return String(x.store_id)===storeFilter; });
                 window.__PAY_RULES_CACHE = rules;
-                if (!rules.length){ host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">暂无支付发券规则，请在下方新建。</div>'; return; }
+                if (!rules.length){ host.innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:14px 0;">暂无支付发券规则，请在下方新建。</div>'; return; }
                 host.innerHTML = rules.map(function(rule){
                     var tags = Array.isArray(rule.target_tags) ? rule.target_tags : [];
                     var tagTxt = tags.length ? tags.map(function(t){return PAY_TAG_LABEL[t]||t;}).join('、') : '不限人群';
@@ -52,13 +52,13 @@
                     if (rule.daily_user_limit!=null) lim.push('每人'+rule.daily_user_limit+'次/天');
                     if (rule.global_daily_limit!=null) lim.push('全店'+rule.global_daily_limit+'次/天');
                     var statusBadge = rule.active
-                        ? '<span style="background:rgba(34,197,94,0.15);color:#22c55e;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">启用中</span>'
-                        : '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已停用</span>';
+                        ? '<span style="background:rgba(134,201,162,0.15);color:#86C9A2;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">启用中</span>'
+                        : '<span style="background:rgba(151,132,142,0.18);color:#97848E;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已停用</span>';
                     var rk = escapeHtml(rule.rule_key);
-                    return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,0.2);">'
+                    return '<div style="border:1px solid rgba(242,234,238,0.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,0.2);">'
                         + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">'
                         +   '<div style="font-weight:700;color:#fff;font-size:14px;">'+escapeHtml(rule.name||rule.rule_key)+'</div>'+statusBadge+'</div>'
-                        + '<div style="color:rgba(226,232,240,0.7);font-size:12px;line-height:1.9;">'
+                        + '<div style="color:rgba(242,234,238,0.7);font-size:12px;line-height:1.9;">'
                         +   '门店：'+escapeHtml(payStoreName(rule.store_id))+' · 优先级 '+(rule.priority||0)+'<br>'
                         +   '触发：支付成功后发券（'+minTxt+'）<br>'
                         +   '目标人群：'+escapeHtml(tagTxt)+'<br>'
@@ -68,11 +68,11 @@
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="editPaymentRule" data-arg="'+rk+'">编辑</button>'
                         +   '<button class="btn btn-secondary" type="button" style="font-size:12px;" data-click="togglePaymentRule" data-arg="'+rk+'" data-arg2="'+(rule.active?'false':'true')+'">'+(rule.active?'停用':'启用')+'</button>'
-                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#ef4444;" data-click="deletePaymentRule" data-arg="'+rk+'">删除</button>'
+                        +   '<button class="btn btn-secondary" type="button" style="font-size:12px;color:#E58B98;" data-click="deletePaymentRule" data-arg="'+rk+'">删除</button>'
                         + '</div></div>';
                 }).join('');
             } catch(e){
-                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载失败：'+escapeHtml(String(e&&e.message||e))+'</div>';
+                host.innerHTML = '<div style="color:#E58B98;padding:14px 0;">加载失败：'+escapeHtml(String(e&&e.message||e))+'</div>';
             }
         }
 
@@ -190,15 +190,15 @@
                 const rows = data?.stats || [];
                 const host = document.getElementById('wecom-stats');
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                         + '<strong>' + (x.store_id || '未分配门店') + '</strong>'
                         + ' · 总数 ' + (x.total_count || 0)
                         + ' · 已绑定 ' + (x.bound_count || 0)
                         + ' · 未绑定 ' + (x.unbound_count || 0)
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无企微统计</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无企微统计</div>';
             } catch (e) {
-                document.getElementById('wecom-stats').innerHTML = '<div style="color:#ef4444;">加载企微统计失败</div>';
+                document.getElementById('wecom-stats').innerHTML = '<div style="color:#E58B98;">加载企微统计失败</div>';
             }
         }
 
@@ -211,14 +211,14 @@
                 const rows = data?.customers || [];
                 const host = document.getElementById('wecom-customers-list');
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                         + '<div style="color:#fff;font-weight:600;">' + (x.name || '-') + ' · ' + (x.phone || '-') + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.6);margin-top:4px;">门店: ' + (x.store_id || '-') + ' · external_userid: ' + (x.external_userid || '-') + '</div>'
-                        + '<div style="color:' + (x.bind_customer_id ? '#22c55e' : '#f59e0b') + ';margin-top:4px;">' + (x.bind_customer_id ? ('已绑定客户 #' + x.bind_customer_id) : '未绑定') + '</div>'
+                        + '<div style="color:rgba(242,234,238,0.6);margin-top:4px;">门店: ' + (x.store_id || '-') + ' · external_userid: ' + (x.external_userid || '-') + '</div>'
+                        + '<div style="color:' + (x.bind_customer_id ? '#86C9A2' : '#CFA14A') + ';margin-top:4px;">' + (x.bind_customer_id ? ('已绑定客户 #' + x.bind_customer_id) : '未绑定') + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无企微客户</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无企微客户</div>';
             } catch (e) {
-                document.getElementById('wecom-customers-list').innerHTML = '<div style="color:#ef4444;">加载企微客户失败</div>';
+                document.getElementById('wecom-customers-list').innerHTML = '<div style="color:#E58B98;">加载企微客户失败</div>';
             }
         }
 
@@ -347,9 +347,9 @@
                     var fc = await fetch('/api/growth/feishu-config', { headers: growthAuthHeaders() });
                     var fd = await fc.json();
                     if (fd?.config?.app_token) {
-                        configHost.innerHTML = '<div style="padding:8px 12px;margin-bottom:12px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:8px;font-size:12px;color:#22c55e;">✅ 飞书自动同步已配置 (app_token: ' + fd.config.app_token.slice(0, 8) + '...) — 系统每小时自动同步</div>';
+                        configHost.innerHTML = '<div style="padding:8px 12px;margin-bottom:12px;background:rgba(134,201,162,0.08);border:1px solid rgba(134,201,162,0.2);border-radius:8px;font-size:12px;color:#86C9A2;">✅ 飞书自动同步已配置 (app_token: ' + fd.config.app_token.slice(0, 8) + '...) — 系统每小时自动同步</div>';
                     } else {
-                        configHost.innerHTML = '<div style="padding:8px 12px;margin-bottom:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-size:12px;color:#f59e0b;">⚠️ 未配置飞书同步。点击「飞书导入/配置」按钮设置，设置后系统将每小时自动同步企微客户数据</div>';
+                        configHost.innerHTML = '<div style="padding:8px 12px;margin-bottom:12px;background:rgba(207,161,74,0.08);border:1px solid rgba(207,161,74,0.2);border-radius:8px;font-size:12px;color:#CFA14A;">⚠️ 未配置飞书同步。点击「飞书导入/配置」按钮设置，设置后系统将每小时自动同步企微客户数据</div>';
                     }
                 } catch (e) { /* ignore */ }
                 const r = await fetch('/api/growth/wechat-work/stats', { headers: growthAuthHeaders() });
@@ -357,13 +357,13 @@
                 const rows = data?.stats || [];
                 const host = document.getElementById('wecom-stats');
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                         + '<strong>' + (x.store_id || '未分配门店') + '</strong>'
                         + ' · 总数 ' + (x.total_count || 0)
                         + ' · 已绑定 ' + (x.bound_count || 0)
                         + ' · 未绑定 ' + (x.unbound_count || 0)
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无企微统计</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无企微统计</div>';
                 // Show unbound customers section
                 const unboundSection = document.getElementById('wecom-unbound-section');
                 if (unboundSection) {
@@ -374,7 +374,7 @@
                     }
                 }
             } catch (e) {
-                document.getElementById('wecom-stats').innerHTML = '<div style="color:#ef4444;">加载企微统计失败</div>';
+                document.getElementById('wecom-stats').innerHTML = '<div style="color:#E58B98;">加载企微统计失败</div>';
             }
         }
 
@@ -511,17 +511,17 @@
                     return;
                 }
                 var html = configs.map(function(c) {
-                    return '<div style="padding:12px 14px;margin-bottom:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;display:flex;align-items:center;justify-content:space-between;">'
+                    return '<div style="padding:12px 14px;margin-bottom:8px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);border-radius:12px;display:flex;align-items:center;justify-content:space-between;">'
                         + '<div><strong style="color:var(--rep-gold);">' + escHtml(c.store_id) + '</strong>'
                         + '<div style="font-size:12px;color:var(--rep-muted);margin-top:2px;">CorpID: ' + escHtml(c.corp_id) + ' | AgentID: ' + escHtml(c.agent_id || '-') + '</div></div>'
                         + '<div style="display:flex;gap:6px;">'
-                        + '<button data-click="editStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:8px;background:transparent;color:var(--rep-text);cursor:pointer;">编辑</button>'
-                        + '<button data-click="deleteStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(239,68,68,0.4);border-radius:8px;background:transparent;color:#ef4444;cursor:pointer;">删除</button>'
+                        + '<button data-click="editStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(242,234,238,0.15);border-radius:8px;background:transparent;color:var(--rep-text);cursor:pointer;">编辑</button>'
+                        + '<button data-click="deleteStoreWecomConfig" data-arg="' + escHtml(c.store_id) + '" style="padding:6px 12px;border:1px solid rgba(229,139,152,0.4);border-radius:8px;background:transparent;color:#E58B98;cursor:pointer;">删除</button>'
                         + '</div></div>';
                 }).join('');
                 host.innerHTML = html;
             } catch (e) {
-                document.getElementById('store-wecom-configs-list').innerHTML = '<div style="color:#ef4444;padding:12px;">加载失败: ' + (e.message || e) + '</div>';
+                document.getElementById('store-wecom-configs-list').innerHTML = '<div style="color:#E58B98;padding:12px;">加载失败: ' + (e.message || e) + '</div>';
             }
         }
 
@@ -619,13 +619,13 @@
                     var summary = (data.results || []).map(function(x) {
                         return x.store_id + ': 同步' + x.synced + '人';
                     }).join('<br>');
-                    host.innerHTML = '<div style="color:#22c55e;padding:12px;">同步完成！<br>' + summary + '</div>';
+                    host.innerHTML = '<div style="color:#86C9A2;padding:12px;">同步完成！<br>' + summary + '</div>';
                     setTimeout(loadStoreWecomConfigs, 2000);
                 } else {
-                    host.innerHTML = '<div style="color:#ef4444;padding:12px;">同步失败: ' + (data.error || '') + '</div>';
+                    host.innerHTML = '<div style="color:#E58B98;padding:12px;">同步失败: ' + (data.error || '') + '</div>';
                 }
             } catch (e) {
-                document.getElementById('store-wecom-configs-list').innerHTML = '<div style="color:#ef4444;padding:12px;">同步失败: ' + (e.message || e) + '</div>';
+                document.getElementById('store-wecom-configs-list').innerHTML = '<div style="color:#E58B98;padding:12px;">同步失败: ' + (e.message || e) + '</div>';
             }
         }
 
@@ -704,39 +704,39 @@
                     var recPoster = x.recommended_poster_id ? postersById[x.recommended_poster_id] : null;
                     var srcTpl = x.source_template_id ? tplsById[x.source_template_id] : null;
                     var statusLabel = growthStatusLabel(x.status);
-                    var statusColor = x.status === 'active' ? '#22c55e' : x.status === 'draft' ? '#f59e0b' : x.status === 'executed' ? '#38bdf8' : x.status === 'cancelled' ? '#ef4444' : '#f59e0b';
+                    var statusColor = x.status === 'active' ? '#86C9A2' : x.status === 'draft' ? '#CFA14A' : x.status === 'executed' ? '#EABBC5' : x.status === 'cancelled' ? '#E58B98' : '#CFA14A';
                     var actionsHtml = '';
                     if (x.status === 'draft') {
-                        actionsHtml = '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">激活</button>'
-                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(239,68,68,0.10);color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>';
+                        actionsHtml = '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(134,201,162,0.15);color:#86C9A2;border:1px solid rgba(134,201,162,0.3);cursor:pointer;font-size:11px;">激活</button>'
+                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(229,139,152,0.10);color:#EDA1AC;border:1px solid rgba(229,139,152,0.2);cursor:pointer;font-size:11px;">取消</button>';
                     } else if (x.status === 'active') {
-                        actionsHtml = '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);cursor:pointer;font-size:11px;">完结</button>';
+                        actionsHtml = '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:3px 8px;border-radius:6px;background:rgba(234,187,197,0.12);color:#EABBC5;border:1px solid rgba(234,187,197,0.25);cursor:pointer;font-size:11px;">完结</button>';
                     }
                     var posterHtml = '';
                     if (poster && (poster.output_url || poster.image_url)) {
-                        posterHtml = '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:10px;">'
-                            + '<img src="' + escapeHtml(poster.output_url || poster.image_url) + '" loading="lazy" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">'
-                            + '<div style="min-width:0;"><div style="font-size:11px;color:#f8fafc;font-weight:700;">已关联海报</div><div style="font-size:11px;color:rgba(226,232,240,0.5);margin-top:2px;">' + escapeHtml((poster.title || '海报').slice(0, 24)) + '</div></div>'
-                            + '<a href="' + escapeHtml(poster.output_url || poster.image_url) + '" target="_blank" style="margin-left:auto;padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.16);color:#7dd3fc;cursor:pointer;font-size:11px;text-decoration:none;">查看大图</a></div>';
+                        posterHtml = '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding:8px 10px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.05);border-radius:10px;">'
+                            + '<img src="' + escapeHtml(poster.output_url || poster.image_url) + '" loading="lazy" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid rgba(242,234,238,0.08);">'
+                            + '<div style="min-width:0;"><div style="font-size:11px;color:#F2EAEE;font-weight:700;">已关联海报</div><div style="font-size:11px;color:rgba(242,234,238,0.5);margin-top:2px;">' + escapeHtml((poster.title || '海报').slice(0, 24)) + '</div></div>'
+                            + '<a href="' + escapeHtml(poster.output_url || poster.image_url) + '" target="_blank" style="margin-left:auto;padding:4px 8px;border:none;border-radius:6px;background:rgba(209,143,160,0.16);color:#EABBC5;cursor:pointer;font-size:11px;text-decoration:none;">查看大图</a></div>';
                     } else if (recPoster && (recPoster.output_url || recPoster.image_url)) {
-                        posterHtml = '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding:8px 10px;background:rgba(99,102,241,0.04);border:1px dashed rgba(99,102,241,0.2);border-radius:10px;">'
-                            + '<img src="' + escapeHtml(recPoster.output_url || recPoster.image_url) + '" loading="lazy" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">'
-                            + '<div style="min-width:0;"><div style="font-size:11px;color:#a5b4fc;font-weight:700;">推荐海报（未确认）</div><div style="font-size:11px;color:rgba(226,232,240,0.5);margin-top:2px;">' + escapeHtml((recPoster.title || '海报').slice(0, 24)) + '</div></div>'
-                            + '<a href="' + escapeHtml(recPoster.output_url || recPoster.image_url) + '" target="_blank" style="margin-left:auto;padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;cursor:pointer;font-size:11px;text-decoration:none;">预览</a></div>';
+                        posterHtml = '<div style="display:flex;gap:10px;align-items:center;margin-top:10px;padding:8px 10px;background:rgba(209,143,160,0.04);border:1px dashed rgba(209,143,160,0.2);border-radius:10px;">'
+                            + '<img src="' + escapeHtml(recPoster.output_url || recPoster.image_url) + '" loading="lazy" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid rgba(242,234,238,0.08);">'
+                            + '<div style="min-width:0;"><div style="font-size:11px;color:#EABBC5;font-weight:700;">推荐海报（未确认）</div><div style="font-size:11px;color:rgba(242,234,238,0.5);margin-top:2px;">' + escapeHtml((recPoster.title || '海报').slice(0, 24)) + '</div></div>'
+                            + '<a href="' + escapeHtml(recPoster.output_url || recPoster.image_url) + '" target="_blank" style="margin-left:auto;padding:4px 8px;border:none;border-radius:6px;background:rgba(209,143,160,0.12);color:#EABBC5;cursor:pointer;font-size:11px;text-decoration:none;">预览</a></div>';
                     } else {
-                        posterHtml = '<div style="margin-top:8px;font-size:11px;color:rgba(226,232,240,0.35);">暂无关联海报</div>';
+                        posterHtml = '<div style="margin-top:8px;font-size:11px;color:rgba(242,234,238,0.35);">暂无关联海报</div>';
                     }
                     var tplHtml = srcTpl ? '<span style="color:var(--rep-muted);font-size:11px;"> · 模板：' + escapeHtml(srcTpl.name) + ' 已用' + (srcTpl.use_count || 0) + '次</span>' : '';
-                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
+                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.05);">'
                         + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                         + '<div style="flex:1;min-width:0;"><span style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(x.title || '未命名活动') + '</span>'
                         + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:' + statusColor + '22;color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span>'
                         + '</div>'
                         + '<div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">'
-                        + (cid ? '<button data-click="showCampaignFunnelDashboard" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 8px;border-radius:8px;background:rgba(14,165,233,0.1);color:#38bdf8;border:none;cursor:pointer;font-size:10px;font-weight:600;">📊</button>' : '')
-                        + (x.status === 'draft' ? '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.25);cursor:pointer;font-size:11px;font-weight:600;">激活</button>'
-                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:transparent;color:#f87171;border:1px solid rgba(239,68,68,0.2);cursor:pointer;font-size:11px;">取消</button>' : '')
-                        + (x.status === 'active' ? '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgb(56,189,248,0.12);color:#38bdf8;border:none;cursor:pointer;font-size:11px;font-weight:600;">完结</button>' : '')
+                        + (cid ? '<button data-click="showCampaignFunnelDashboard" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 8px;border-radius:8px;background:rgba(209,143,160,0.1);color:#EABBC5;border:none;cursor:pointer;font-size:10px;font-weight:600;">📊</button>' : '')
+                        + (x.status === 'draft' ? '<button data-click="activateCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgba(134,201,162,0.15);color:#86C9A2;border:1px solid rgba(134,201,162,0.25);cursor:pointer;font-size:11px;font-weight:600;">激活</button>'
+                            + '<button data-click="cancelCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:transparent;color:#EDA1AC;border:1px solid rgba(229,139,152,0.2);cursor:pointer;font-size:11px;">取消</button>' : '')
+                        + (x.status === 'active' ? '<button data-click="completeCampaignPlan" data-arg="' + cid.replace(/'/g, '\\\'') + '" style="padding:4px 10px;border-radius:8px;background:rgb(56,189,248,0.12);color:#EABBC5;border:none;cursor:pointer;font-size:11px;font-weight:600;">完结</button>' : '')
                         + '</div></div>'
                         + '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px;color:var(--rep-muted);">'
                         + '<span>' + growthStoreName(x.store_id) + '</span>'
@@ -747,11 +747,11 @@
                         + tplHtml
                         + '</div>'
                         + posterHtml
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.12);margin-top:4px;">' + cid + '</div>'
+                        + '<div style="font-size:10px;color:rgba(242,234,238,0.12);margin-top:4px;">' + cid + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无活动计划</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无活动计划</div>';
             } catch (e) {
-                document.getElementById('campaign-plans-list').innerHTML = '<div style="color:#ef4444;">加载活动计划失败</div>';
+                document.getElementById('campaign-plans-list').innerHTML = '<div style="color:#E58B98;">加载活动计划失败</div>';
             }
         }
 
@@ -861,9 +861,9 @@
                             var stored = opsRows.filter(function(c){ return Number(c.stored_value_count || 0) > 0; }).length;
                             ps.innerHTML = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
                                 + custopsMiniMetric('客户资产', opsRows.length + '人', '来自最近POS清洗', '#fff')
-                                + custopsMiniMetric('VIP客户', vip + '人', '折前人均消费前15%', '#c9a96a')
-                                + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#fb7185')
-                                + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#22c55e')
+                                + custopsMiniMetric('VIP客户', vip + '人', '折前人均消费前15%', '#CFA14A')
+                                + custopsMiniMetric('待维护风险', risk + '人', '濒临流失/沉睡', '#E58B98')
+                                + custopsMiniMetric('可触达客户', reachable + '人', '手机号可用，商务客' + biz + '人，储值客' + stored + '人', '#86C9A2')
                                 + '</div>';
                             try {
                                 var assetReportRes = await fetch('/api/customer-ops/reports/customer-assets', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') } });
@@ -871,15 +871,15 @@
                                 if (assetReportData && assetReportData.report) ps.innerHTML += renderBusinessOntologySection(assetReportData.report);
                             } catch (_) {}
                         }
-                        host.innerHTML = '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
+                        host.innerHTML = '<div style="font-size:12px;color:rgba(242,234,238,0.55);margin-bottom:8px;">来自最近POS清洗诊断 · 点击查看360档案</div>' + opsRows.slice(0, 80).map(function(c) {
                             var tags = (c.scene_tags || []).map(custSceneLabel).join('、') || custStageLabel(c.lifecycle_stage);
-                            return '<div data-click="hrmsOpenJsonArg" data-arg="openCustomer360" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="cursor:pointer;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                            return '<div data-click="hrmsOpenJsonArg" data-arg="openCustomer360" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="cursor:pointer;padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                                 + '<div style="display:flex;justify-content:space-between;gap:12px;">'
                                 + '<div style="color:#fff;font-weight:700;">' + escapeHtml(c.customer_id || '-') + ' · ' + escapeHtml(c.phone || '-') + '</div>'
-                                + '<div style="color:#38bdf8;">' + escapeHtml(tags) + '</div>'
+                                + '<div style="color:#EABBC5;">' + escapeHtml(tags) + '</div>'
                                 + '</div>'
-                                + '<div style="color:rgba(226,232,240,0.62);margin-top:5px;">累计' + fmtCustMoney(c.total_spend) + ' · ' + (c.order_count || 0) + '次 · 均客' + fmtCustMoney(c.avg_check) + ' · 储值余额' + fmtCustMoney(c.stored_value_balance) + ' · 最近' + (c.days_since_last_visit || 0) + '天前</div>'
-                                + '<div style="color:rgba(226,232,240,0.45);margin-top:3px;">喜好：' + escapeHtml((c.favorite_dishes || []).slice(0, 5).join('、') || '-') + ' · 下一步：' + escapeHtml(c.next_best_action || '-') + '</div>'
+                                + '<div style="color:rgba(242,234,238,0.62);margin-top:5px;">累计' + fmtCustMoney(c.total_spend) + ' · ' + (c.order_count || 0) + '次 · 均客' + fmtCustMoney(c.avg_check) + ' · 储值余额' + fmtCustMoney(c.stored_value_balance) + ' · 最近' + (c.days_since_last_visit || 0) + '天前</div>'
+                                + '<div style="color:rgba(242,234,238,0.45);margin-top:3px;">喜好：' + escapeHtml((c.favorite_dishes || []).slice(0, 5).join('、') || '-') + ' · 下一步：' + escapeHtml(c.next_best_action || '-') + '</div>'
                                 + '</div>';
                         }).join('');
                         renderGrowthClusters({ total: opsRows.length, clusters: Object.entries(opsRows.reduce(function(acc, c){ acc[c.lifecycle_stage || 'unknown'] = (acc[c.lifecycle_stage || 'unknown'] || 0) + 1; return acc; }, {})).map(function(kv){ return { lifecycle_stage: kv[0], user_count: kv[1] }; }) });
@@ -891,28 +891,28 @@
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     var posInfo = '';
                     if (x.pos_order_count > 0) {
-                        posInfo = '<div style="color:#22c55e;margin-top:4px;font-size:12px;">📊 POS: ' + x.pos_order_count + '笔消费 · 总计¥' + parseFloat(x.pos_total_spend || 0).toFixed(0) + ' · 均消¥' + parseFloat(x.avg_check || 0).toFixed(0) + (x.pos_dine_in_ratio != null ? ' · 堂食率' + Math.round(x.pos_dine_in_ratio * 100) + '%' : '') + '</div>';
+                        posInfo = '<div style="color:#86C9A2;margin-top:4px;font-size:12px;">📊 POS: ' + x.pos_order_count + '笔消费 · 总计¥' + parseFloat(x.pos_total_spend || 0).toFixed(0) + ' · 均消¥' + parseFloat(x.avg_check || 0).toFixed(0) + (x.pos_dine_in_ratio != null ? ' · 堂食率' + Math.round(x.pos_dine_in_ratio * 100) + '%' : '') + '</div>';
                     }
                     var dishes = x.favorite_dishes && x.favorite_dishes.length ? x.favorite_dishes.slice(0, 5).join('、') : '-';
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                         + '<div style="display:flex;justify-content:space-between;gap:12px;">'
                         + '<div style="color:#fff;font-weight:600;">客户#' + (x.customer_id || '-') + ' · ' + (x.phone || x.openid || '-') + '</div>'
-                        + '<div style="color:#38bdf8;">' + (x.lifecycle_stage || 'new') + '</div>'
+                        + '<div style="color:#EABBC5;">' + (x.lifecycle_stage || 'new') + '</div>'
                         + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.6);margin-top:4px;">门店: ' + (x.store_id || '-') + ' · 价格敏感度: ' + (x.price_sensitivity || 0) + ' · 折扣响应: ' + (x.response_to_discount || 0) + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.45);margin-top:2px;">触达窗口: ' + (x.best_contact_window || '-') + ' · 偏好时段: ' + (x.preferred_visit_time || '-') + ' · 喜好: ' + dishes + '</div>'
+                        + '<div style="color:rgba(242,234,238,0.6);margin-top:4px;">门店: ' + (x.store_id || '-') + ' · 价格敏感度: ' + (x.price_sensitivity || 0) + ' · 折扣响应: ' + (x.response_to_discount || 0) + '</div>'
+                        + '<div style="color:rgba(242,234,238,0.45);margin-top:2px;">触达窗口: ' + (x.best_contact_window || '-') + ' · 偏好时段: ' + (x.preferred_visit_time || '-') + ' · 喜好: ' + dishes + '</div>'
                         + posInfo
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无用户画像</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无用户画像</div>';
             } catch (e) {
-                document.getElementById('growth-profiles-list').innerHTML = '<div style="color:#ef4444;">加载用户画像失败</div>';
+                document.getElementById('growth-profiles-list').innerHTML = '<div style="color:#E58B98;">加载用户画像失败</div>';
             }
             try {
                 var cs = document.getElementById('growth-store-filter')?.value || '';
                 var cRes = await fetch('/api/growth/user-clusters' + (cs ? '?store_id=' + encodeURIComponent(cs) : ''), { headers: growthAuthHeaders() });
                 var cData = await cRes.json();
                 renderGrowthClusters(cData);
-            } catch (e) { document.getElementById('growth-clusters').innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">分群数据暂不可用</div>'; }
+            } catch (e) { document.getElementById('growth-clusters').innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">分群数据暂不可用</div>'; }
         }
 
         async function recomputeGrowthProfiles() {
@@ -966,37 +966,37 @@
             var metrics = report.trackingMetrics || [];
             if (!insights.length && !actions.length && !drafts.length) return '';
             var issueHtml = insights.slice(0, 4).map(function(x) {
-                return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
-                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.bossLanguageTitle || x.issueName || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#c9a96a') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,.68);margin-top:4px;">' + escapeHtml(x.issueName || '') + ' · 责任对象：' + escapeHtml((x.responsibleRoles || []).join('、') || '-') + '</div>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,.5);margin-top:4px;line-height:1.55;">' + escapeHtml((x.evidence || []).join('；') || '-') + '</div>'
+                return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);">'
+                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.bossLanguageTitle || x.issueName || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#E58B98' : '#CFA14A') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,.68);margin-top:4px;">' + escapeHtml(x.issueName || '') + ' · 责任对象：' + escapeHtml((x.responsibleRoles || []).join('、') || '-') + '</div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,.5);margin-top:4px;line-height:1.55;">' + escapeHtml((x.evidence || []).join('；') || '-') + '</div>'
                     + '</div>';
             }).join('');
             var actionHtml = actions.slice(0, 5).map(function(a) {
-                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                return '<div style="padding:9px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.55;">'
                     + '<b style="color:#fff;">' + escapeHtml(a.actionName || '-') + '</b>'
-                    + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(a.ownerRole || '-') + ' · 优先级：' + escapeHtml(a.priority || '-') + ' · 截止：' + (a.deadlineDays || 3) + '天</div>'
-                    + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(a.expectedResult || '-') + '</div>'
+                    + '<div style="color:rgba(242,234,238,.62);">责任：' + escapeHtml(a.ownerRole || '-') + ' · 优先级：' + escapeHtml(a.priority || '-') + ' · 截止：' + (a.deadlineDays || 3) + '天</div>'
+                    + '<div style="color:rgba(242,234,238,.5);">' + escapeHtml(a.expectedResult || '-') + '</div>'
                     + '</div>';
             }).join('');
             var draftHtml = drafts.slice(0, 5).map(function(t) {
                 var encoded = encodeURIComponent(JSON.stringify(t));
-                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
-                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b><span style="color:#38bdf8;">draft</span></div>'
-                    + '<div style="color:rgba(226,232,240,.62);">责任：' + escapeHtml(t.ownerRole || '-') + ' · 到期：' + escapeHtml(String(t.dueDate || '').slice(0, 10)) + '</div>'
-                    + '<div style="color:rgba(226,232,240,.5);">' + escapeHtml(t.expectedResult || '-') + '</div>'
+                return '<div style="padding:9px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b><span style="color:#EABBC5;">draft</span></div>'
+                    + '<div style="color:rgba(242,234,238,.62);">责任：' + escapeHtml(t.ownerRole || '-') + ' · 到期：' + escapeHtml(String(t.dueDate || '').slice(0, 10)) + '</div>'
+                    + '<div style="color:rgba(242,234,238,.5);">' + escapeHtml(t.expectedResult || '-') + '</div>'
                     + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="hrmsConfirmOntologyTask" data-arg="' + encoded + '" data-arg-self="1">确认创建任务</button><button class="rep-seg-btn" style="width:auto;padding:7px 12px;" data-click="hrmsDismissClosestInner" data-arg-self="1">暂不处理</button></div>'
                     + '</div>';
             }).join('');
             var review = report.previousActionReview || null;
-            var reviewHtml = review ? '<div style="margin-top:12px;"><div class="k">上期动作复盘</div><div style="font-size:12px;color:rgba(226,232,240,.65);line-height:1.6;margin-top:8px;">' + escapeHtml(review.summary || '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。') + '</div></div>' : '';
+            var reviewHtml = review ? '<div style="margin-top:12px;"><div class="k">上期动作复盘</div><div style="font-size:12px;color:rgba(242,234,238,.65);line-height:1.6;margin-top:8px;">' + escapeHtml(review.summary || '上期动作已有记录，但当前追踪数据不足，暂无法判断改善结果。') + '</div></div>' : '';
             return '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
                 + '<div class="k">AI经营结论</div><div style="font-size:14px;color:#fff;line-height:1.7;margin-top:8px;">' + escapeHtml(report.bossSummary || '-') + '</div>'
                 + '<div class="rep-grid" style="grid-template-columns:1fr 1fr;margin-top:12px;">'
                 + '<div><div class="k">AI识别的问题</div>' + (issueHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无P1/P2问题</div>') + '</div>'
                 + '<div><div class="k">下一步动作</div>' + (actionHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无动作</div>') + '</div>'
                 + '</div>'
-                + '<div style="margin-top:12px;"><div class="k">结果追踪指标</div><div style="margin-top:8px;">' + (metrics.length ? metrics.map(function(m){ return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:rgba(34,197,94,.12);color:#86efac;font-size:12px;">' + escapeHtml(m) + '</span>'; }).join('') : '<span style="color:var(--rep-muted);font-size:12px;">暂无</span>') + '</div></div>'
+                + '<div style="margin-top:12px;"><div class="k">结果追踪指标</div><div style="margin-top:8px;">' + (metrics.length ? metrics.map(function(m){ return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:rgba(134,201,162,.12);color:#BEE6CE;font-size:12px;">' + escapeHtml(m) + '</span>'; }).join('') : '<span style="color:var(--rep-muted);font-size:12px;">暂无</span>') + '</div></div>'
                 + '<div style="margin-top:12px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="k">任务草稿</div><span style="font-size:12px;color:var(--rep-muted);">生成任务草稿</span></div>' + (draftHtml || '<div style="font-size:12px;color:var(--rep-muted);margin-top:8px;">暂无草稿</div>') + '</div>'
                 + reviewHtml
                 + '</div>';
@@ -1013,10 +1013,10 @@
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'create_failed');
                 var ct = d.createdTask || {};
-                if (btn) btn.closest('div').innerHTML = '<span style="color:#22c55e;">已生成正式任务 · ' + escapeHtml(ct.task_id || '') + ' · ' + escapeHtml(ct.status || 'pending_dispatch') + '</span>';
+                if (btn) btn.closest('div').innerHTML = '<span style="color:#86C9A2;">已生成正式任务 · ' + escapeHtml(ct.task_id || '') + ' · ' + escapeHtml(ct.status || 'pending_dispatch') + '</span>';
                 showNotification('已生成正式任务', 'success');
             } catch (e) {
-                if (btn) btn.closest('div').innerHTML += '<div style="color:#ef4444;margin-top:6px;">创建任务失败：' + escapeHtml(e?.message || e) + '</div>';
+                if (btn) btn.closest('div').innerHTML += '<div style="color:#E58B98;margin-top:6px;">创建任务失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         function renderCustomerOpsCleaning(q) {
@@ -1030,17 +1030,17 @@
                 var fields = ['phone','bizDate','amount','dish','orderNo','store'].map(function(f) {
                     var m = mp[f];
                     var label = ({ phone:'手机号', bizDate:'日期', amount:'金额', dish:'菜品', orderNo:'订单号', store:'门店' })[f];
-                    return '<span style="display:inline-flex;align-items:center;gap:5px;margin:4px 6px 0 0;padding:4px 8px;border-radius:999px;background:' + (m ? 'rgba(34,197,94,.12);color:#86efac;' : 'rgba(148,163,184,.1);color:rgba(226,232,240,.45);') + 'font-size:11px;">'
+                    return '<span style="display:inline-flex;align-items:center;gap:5px;margin:4px 6px 0 0;padding:4px 8px;border-radius:999px;background:' + (m ? 'rgba(134,201,162,.12);color:#BEE6CE;' : 'rgba(151,132,142,.1);color:rgba(242,234,238,.45);') + 'font-size:11px;">'
                         + label + (m ? (' · ' + escapeHtml(m.source_header || '-') + ' ' + (m.confidence || 0) + '%') : ' · 未识别') + '</span>';
                 }).join('');
-                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);"><div style="font-size:12px;color:#fff;font-weight:800;">' + escapeHtml(s.sheet_name || '-') + ' · 表头第' + (s.header_row || 1) + '行 · ' + (s.rows || 0) + '行</div><div>' + fields + '</div></div>';
+                return '<div style="padding:9px 0;border-top:1px solid rgba(242,234,238,.06);"><div style="font-size:12px;color:#fff;font-weight:800;">' + escapeHtml(s.sheet_name || '-') + ' · 表头第' + (s.header_row || 1) + '行 · ' + (s.rows || 0) + '行</div><div>' + fields + '</div></div>';
             }).join('');
             return '<div class="rep-metric" style="text-align:left;margin-top:12px;">'
-                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div class="k">POS智能清洗质量</div><div class="v" style="font-size:20px;">' + (c.confidence_score || 0) + '/100</div></div><div style="text-align:right;font-size:12px;color:var(--rep-muted);">缺失关键字段<br><b style="color:' + ((c.missing_required || []).length ? '#f59e0b' : '#22c55e') + ';">' + escapeHtml(missing) + '</b></div></div>'
-                + '<div style="margin-top:8px;font-size:12px;color:rgba(226,232,240,.62);">本批记录 ' + (c.batch_records || 0) + ' 条 · 历史合并 ' + (c.historical_records || 0) + ' 条 · 合并后 ' + (c.total_records_after_merge || 0) + ' 条 · 文件 ' + escapeHtml((c.batch_files || c.files || []).join('、') || '-') + '</div>'
-                + '<div style="margin-top:8px;font-size:12px;color:rgba(226,232,240,.62);">记录类型：' + escapeHtml(Object.entries(c.record_types || {}).map(function(kv){ return kv[0] + ' ' + kv[1]; }).join(' / ') || '-') + '</div>'
+                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div class="k">POS智能清洗质量</div><div class="v" style="font-size:20px;">' + (c.confidence_score || 0) + '/100</div></div><div style="text-align:right;font-size:12px;color:var(--rep-muted);">缺失关键字段<br><b style="color:' + ((c.missing_required || []).length ? '#CFA14A' : '#86C9A2') + ';">' + escapeHtml(missing) + '</b></div></div>'
+                + '<div style="margin-top:8px;font-size:12px;color:rgba(242,234,238,.62);">本批记录 ' + (c.batch_records || 0) + ' 条 · 历史合并 ' + (c.historical_records || 0) + ' 条 · 合并后 ' + (c.total_records_after_merge || 0) + ' 条 · 文件 ' + escapeHtml((c.batch_files || c.files || []).join('、') || '-') + '</div>'
+                + '<div style="margin-top:8px;font-size:12px;color:rgba(242,234,238,.62);">记录类型：' + escapeHtml(Object.entries(c.record_types || {}).map(function(kv){ return kv[0] + ' ' + kv[1]; }).join(' / ') || '-') + '</div>'
                 + sheetHtml
-                + (warning ? '<div style="margin-top:8px;font-size:12px;color:#fbbf24;line-height:1.55;">' + escapeHtml(warning) + '</div>' : '')
+                + (warning ? '<div style="margin-top:8px;font-size:12px;color:#DDB66A;line-height:1.55;">' + escapeHtml(warning) + '</div>' : '')
                 + '</div>';
         }
         function renderCustomerOpsDiagnosis(report, id) {
@@ -1058,10 +1058,10 @@
             var scene = (report.customer_mix && report.customer_mix.scene) || {};
             var lp = Object.keys(lifecycle).map(function(k) {
                 var total = Number(q.customers || 0) || 1;
-                return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.05);padding:6px 0;"><span>' + custStageLabel(k) + '</span><b>' + lifecycle[k] + ' · ' + Math.round(lifecycle[k] / total * 100) + '%</b></div>';
+                return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid rgba(242,234,238,0.05);padding:6px 0;"><span>' + custStageLabel(k) + '</span><b>' + lifecycle[k] + ' · ' + Math.round(lifecycle[k] / total * 100) + '%</b></div>';
             }).join('');
             var sp = Object.keys(scene).map(function(k) {
-                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:4px 9px;border-radius:999px;background:rgba(56,189,248,0.12);color:#7dd3fc;font-size:12px;">' + custSceneLabel(k) + ' ' + scene[k] + '</span>';
+                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:4px 9px;border-radius:999px;background:rgba(234,187,197,0.12);color:#EABBC5;font-size:12px;">' + custSceneLabel(k) + ' ' + scene[k] + '</span>';
             }).join('');
             host.innerHTML = ''
                 + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">'
@@ -1076,10 +1076,10 @@
                 + '<div style="margin-top:12px;color:var(--rep-muted);font-size:12px;">午市占比 ' + pctCust(((b.daypart || {}).lunch || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 晚市占比 ' + pctCust(((b.daypart || {}).dinner || {}).revenue / Math.max(1, b.revenue || 0)) + ' · 周末占比 ' + pctCust(((b.weekday || {}).weekend || {}).revenue / Math.max(1, b.revenue || 0)) + '</div></div>'
                 + '</div>'
                 + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px;">'
-                + custopsMiniMetric('储值客户', (sv.customers || 0) + '人', '来自储值/会员文件', '#38bdf8')
-                + custopsMiniMetric('充值金额', fmtCustMoney(sv.recharge), '不计入营业额', '#22c55e')
-                + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#c9a96a')
-                + custopsMiniMetric('储值余额', fmtCustMoney(sv.balance), '客户预付资产', '#fb7185')
+                + custopsMiniMetric('储值客户', (sv.customers || 0) + '人', '来自储值/会员文件', '#EABBC5')
+                + custopsMiniMetric('充值金额', fmtCustMoney(sv.recharge), '不计入营业额', '#86C9A2')
+                + custopsMiniMetric('赠送金额', fmtCustMoney(sv.gift), '会员权益成本', '#CFA14A')
+                + custopsMiniMetric('储值余额', fmtCustMoney(sv.balance), '客户预付资产', '#E58B98')
                 + '</div>'
                 + renderBusinessOntologySection(report)
                 + renderCustomerOpsCleaning(q);
@@ -1101,7 +1101,7 @@
                 renderCustomerOpsDiagnosis(d.report, d.diagnosis_id);
                 showNotification('客户经营诊断已生成：本批' + (d.imported_records || 0) + '条，合并后' + (d.merged_records || 0) + '条', 'success');
             } catch (e) {
-                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">生成失败：' + escapeHtml(e?.message || e) + '</div>';
+                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">生成失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         async function loadCustomerOpsLatest() {
@@ -1115,7 +1115,7 @@
                 __custopsDiagnosisId = d.diagnosis.id;
                 renderCustomerOpsDiagnosis(d.diagnosis.report_json, d.diagnosis.id);
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         async function exportCustomerOpsPdf() {
@@ -1134,9 +1134,9 @@
         // ── 模块3：营销活动台账 ─────────────────────────────────────────
         var CAMPAIGN_CHANNEL_LABELS = { xiaohongshu:'小红书', wecom:'企微群发', sms:'短信', dianping:'大众点评', douyin:'抖音', offline:'线下活动', pos:'POS促销', other:'其他' };
         var CAMPAIGN_EFFECT_LABELS = { excellent:'优秀', meets:'达标', below:'不达标', blacklist:'黑名单（禁用）' };
-        var CAMPAIGN_EFFECT_COLORS = { excellent:'#22c55e', meets:'#38bdf8', below:'#f59e0b', blacklist:'#ef4444' };
+        var CAMPAIGN_EFFECT_COLORS = { excellent:'#86C9A2', meets:'#EABBC5', below:'#CFA14A', blacklist:'#E58B98' };
         var CAMPAIGN_STATUS_LABELS = { planned:'计划中', in_progress:'进行中', active:'进行中', completed:'已完成', paused:'已暂停', cancelled:'已取消' };
-        var CAMPAIGN_STATUS_COLORS = { planned:'#38bdf8', in_progress:'#c9a96a', active:'#c9a96a', completed:'#22c55e', paused:'#f59e0b', cancelled:'rgba(148,163,184,0.5)' };
+        var CAMPAIGN_STATUS_COLORS = { planned:'#EABBC5', in_progress:'#CFA14A', active:'#CFA14A', completed:'#86C9A2', paused:'#CFA14A', cancelled:'rgba(151,132,142,0.5)' };
         var CAMPAIGN_TYPE_OPTIONS = ['充值活动','沉睡召回','新客激活','节日营销','新品推广','积分兑换','会员日','媒体投放','竞品反击','店庆活动','其他'];
         var CAMPAIGN_AUDIENCE_PRESETS = [
             { value:'dormant', label:'沉睡客（90天+未到店）' },
@@ -1177,56 +1177,56 @@
                     var results = c.results || [];
                     var totalRevenue = results.reduce(function(s, x){ return s + Number(x.actual_revenue || 0); }, 0);
                     var totalConv = results.reduce(function(s, x){ return s + Number(x.actual_conversion_count || 0); }, 0);
-                    var color = CAMPAIGN_STATUS_COLORS[c.status] || '#94a3b8';
+                    var color = CAMPAIGN_STATUS_COLORS[c.status] || '#97848E';
                     var statusLabel = CAMPAIGN_STATUS_LABELS[c.status] || c.status;
                     var channelLabel = CAMPAIGN_CHANNEL_LABELS[c.channel] || c.channel;
                     var storeIds = [];
                     try { storeIds = Array.isArray(c.store_ids) ? c.store_ids : JSON.parse(c.store_ids || '[]'); } catch {}
                     var dateStr = c.planned_date ? c.planned_date.slice(0, 10) + (c.planned_end_date ? ' → ' + c.planned_end_date.slice(0, 10) : '') : '';
-                    var resultsHtml = results.length ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);">'
+                    var resultsHtml = results.length ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(242,234,238,.06);">'
                         + '<div style="font-size:11px;color:var(--rep-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">门店复盘</div>'
                         + results.map(function(res) {
-                            var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#94a3b8';
+                            var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#97848E';
                             var effLabel = CAMPAIGN_EFFECT_LABELS[res.effect_rating] || '';
-                            return '<div style="background:rgba(255,255,255,.03);border-radius:10px;padding:10px;margin-bottom:6px;">'
+                            return '<div style="background:rgba(242,234,238,.03);border-radius:10px;padding:10px;margin-bottom:6px;">'
                                 + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
-                                + '<span style="color:#fff;font-weight:600;font-size:13px;">' + escapeHtml(res.store_name || res.store_id || '-') + (effLabel ? ' <span style="font-size:10px;font-weight:700;color:' + effColor + ';background:rgba(255,255,255,.06);border-radius:5px;padding:2px 6px;margin-left:4px;">' + effLabel + '</span>' : '') + '</span>'
-                                + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" data-arg2="' + res.id + '" data-arg2-type="number" data-arg3="' + escapeHtml(res.store_id || '') + '" data-arg4="' + escapeHtml(res.store_name || '') + '" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.8);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">编辑</button>'
+                                + '<span style="color:#fff;font-weight:600;font-size:13px;">' + escapeHtml(res.store_name || res.store_id || '-') + (effLabel ? ' <span style="font-size:10px;font-weight:700;color:' + effColor + ';background:rgba(242,234,238,.06);border-radius:5px;padding:2px 6px;margin-left:4px;">' + effLabel + '</span>' : '') + '</span>'
+                                + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" data-arg2="' + res.id + '" data-arg2-type="number" data-arg3="' + escapeHtml(res.store_id || '') + '" data-arg4="' + escapeHtml(res.store_name || '') + '" style="border:none;background:rgba(242,234,238,.08);color:rgba(242,234,238,.8);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">编辑</button>'
                                 + '</div>'
                                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;">'
-                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#38bdf8;">' + (res.actual_conversion_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">到店</div></div>'
-                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#22c55e;">' + fmtCustMoney(res.actual_revenue) + '</div><div style="font-size:10px;color:var(--rep-muted);">带动收入</div></div>'
-                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#f59e0b;">' + (res.actual_send_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">发送量</div></div>'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#EABBC5;">' + (res.actual_conversion_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">到店</div></div>'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#86C9A2;">' + fmtCustMoney(res.actual_revenue) + '</div><div style="font-size:10px;color:var(--rep-muted);">带动收入</div></div>'
+                                + '<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#CFA14A;">' + (res.actual_send_count || 0) + '</div><div style="font-size:10px;color:var(--rep-muted);">发送量</div></div>'
                                 + '</div>'
-                                + (res.result_note ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
+                                + (res.result_note ? '<div style="font-size:12px;color:rgba(242,234,238,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
                                 + '</div>';
                         }).join('')
                         + '</div>' : '';
-                    return '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin-bottom:10px;">'
+                    return '<div style="background:rgba(242,234,238,.04);border:1px solid rgba(242,234,238,.08);border-radius:14px;padding:14px;margin-bottom:10px;">'
                         + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">'
                         + '<div style="flex:1;min-width:0;">'
                         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
-                        + '<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(255,255,255,.06);color:' + color + ';">' + statusLabel + '</span>'
-                        + '<span style="font-size:11px;color:var(--rep-muted);background:rgba(255,255,255,.04);padding:3px 8px;border-radius:6px;">' + escapeHtml(channelLabel) + '</span>'
+                        + '<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(242,234,238,.06);color:' + color + ';">' + statusLabel + '</span>'
+                        + '<span style="font-size:11px;color:var(--rep-muted);background:rgba(242,234,238,.04);padding:3px 8px;border-radius:6px;">' + escapeHtml(channelLabel) + '</span>'
                         + '<span style="font-size:11px;color:var(--rep-muted);">' + escapeHtml(c.campaign_type || '') + '</span>'
                         + '</div>'
                         + '<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.3;word-break:break-all;">' + escapeHtml(c.title) + '</div>'
                         + '<div style="font-size:12px;color:var(--rep-muted);margin-top:5px;">📅 执行时间：' + (dateStr || '未设置') + '</div>'
                         + '<div style="font-size:12px;color:var(--rep-muted);margin-top:3px;">🏪 ' + (storeIds.length ? escapeHtml(storeIds.join('、')) : '全部门店') + (c.target_count ? '  👥 目标 ' + c.target_count + ' 人' : '') + '</div>'
-                        + (c.goal ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:4px;line-height:1.4;">🎯 ' + escapeHtml(c.goal) + '</div>' : '')
-                        + (results.length ? '<div style="font-size:12px;color:#22c55e;margin-top:4px;">✅ ' + results.length + ' 家门店已复盘' + (totalRevenue ? '  ·  总收入 ' + fmtCustMoney(totalRevenue) : '') + (totalConv ? '  ·  总到店 ' + totalConv + ' 人' : '') + '</div>' : '')
+                        + (c.goal ? '<div style="font-size:12px;color:rgba(242,234,238,.55);margin-top:4px;line-height:1.4;">🎯 ' + escapeHtml(c.goal) + '</div>' : '')
+                        + (results.length ? '<div style="font-size:12px;color:#86C9A2;margin-top:4px;">✅ ' + results.length + ' 家门店已复盘' + (totalRevenue ? '  ·  总收入 ' + fmtCustMoney(totalRevenue) : '') + (totalConv ? '  ·  总到店 ' + totalConv + ' 人' : '') + '</div>' : '')
                         + '</div>'
                         + '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
-                        + '<button data-click="hrmsOpenJsonArg" data-arg="openCreateCampaignModal" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
-                        + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
-                        + ((c.status === 'completed' && results.length) ? '<button data-click="openCampaignReportModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(201,169,106,.15);color:#c9a96a;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
+                        + '<button data-click="hrmsOpenJsonArg" data-arg="openCreateCampaignModal" data-arg2="' + encodeURIComponent(JSON.stringify(c)) + '" style="border:none;background:rgba(242,234,238,.08);color:rgba(242,234,238,.9);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ 编辑</button>'
+                        + '<button data-click="openCampaignResultModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(234,187,197,.15);color:#EABBC5;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📊 复盘</button>'
+                        + ((c.status === 'completed' && results.length) ? '<button data-click="openCampaignReportModal" data-arg="' + c.id + '" data-arg-type="number" style="border:none;background:rgba(201,169,106,.15);color:#CFA14A;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;">📄 评估报告</button>' : '')
                         + '</div>'
                         + '</div>'
                         + resultsHtml
                         + '</div>';
                 }).join('');
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
 
@@ -1242,60 +1242,60 @@
             var checkedPresetValues = audiencePresetList.filter(function(p){ return audienceParts.indexOf(p.label) >= 0; }).map(function(p){ return p.value; });
             var audienceCustom = audienceParts.filter(function(part){ return !audiencePresetList.some(function(p){ return p.label === part; }); }).join('+');
             var storeCheckboxes = stores.length
-                ? stores.map(function(s){ return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);cursor:pointer;"><input type="checkbox" name="cpm-store" value="' + escapeHtml(s.id) + '"' + (storeIds.indexOf(s.id) >= 0 || storeIds.indexOf(s.name) >= 0 ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#0d9488;"> <span style="color:#fff;font-size:14px;">' + escapeHtml(s.name) + '</span></label>'; }).join('')
+                ? stores.map(function(s){ return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:rgba(242,234,238,.04);cursor:pointer;"><input type="checkbox" name="cpm-store" value="' + escapeHtml(s.id) + '"' + (storeIds.indexOf(s.id) >= 0 || storeIds.indexOf(s.name) >= 0 ? ' checked' : '') + ' style="width:18px;height:18px;accent-color:#5C9A76;"> <span style="color:#fff;font-size:14px;">' + escapeHtml(s.name) + '</span></label>'; }).join('')
                 : '<div style="color:var(--rep-muted);font-size:13px;padding:8px 0;">无法加载门店列表，留空表示全部门店</div>';
             var statusOpts = [['planned','计划中'],['in_progress','进行中'],['completed','已完成'],['paused','已暂停'],['cancelled','已取消']];
             var ov = document.createElement('div');
             ov.id = 'campaign-modal-overlay';
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
-            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding:0 0 env(safe-area-inset-bottom,0);">'
-                + '<div style="position:sticky;top:0;background:#0f172a;border-bottom:1px solid rgba(255,255,255,.08);padding:16px 16px 12px;z-index:1;display:flex;justify-content:space-between;align-items:center;">'
+            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#121012;border-radius:20px 20px 0 0;padding:0 0 env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#121012;border-bottom:1px solid rgba(242,234,238,.08);padding:16px 16px 12px;z-index:1;display:flex;justify-content:space-between;align-items:center;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">' + (isEdit ? '编辑活动' : '新建营销活动') + '</div>'
-                + '<button data-click="hrmsRemoveById" data-arg="campaign-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="campaign-modal-overlay" style="border:none;background:rgba(242,234,238,.08);color:rgba(242,234,238,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 // 活动名称
-                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动名称 *</div><input id="cpm-title" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;" placeholder="如：国庆储值送好礼" value="' + escapeHtml(c.title || '') + '"></div>'
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动名称 *</div><input id="cpm-title" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;" placeholder="如：国庆储值送好礼" value="' + escapeHtml(c.title || '') + '"></div>'
                 // 渠道
                 + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动渠道</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
-                + Object.entries(CAMPAIGN_CHANNEL_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.channel === kv[0] ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (c.channel === kv[0] ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-channel" value="' + kv[0] + '"' + (c.channel === kv[0] || (!c.channel && kv[0] === 'offline') ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
+                + Object.entries(CAMPAIGN_CHANNEL_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.channel === kv[0] ? '#5C9A76' : 'rgba(242,234,238,.12)') + ';background:' + (c.channel === kv[0] ? 'rgba(92,154,118,.2)' : 'rgba(242,234,238,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-channel" value="' + kv[0] + '"' + (c.channel === kv[0] || (!c.channel && kv[0] === 'offline') ? ' checked' : '') + ' style="accent-color:#5C9A76;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
                 + '</div></div>'
                 // 活动类型
                 + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">活动类型</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
-                + CAMPAIGN_TYPE_OPTIONS.map(function(t){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.campaign_type === t ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (c.campaign_type === t ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-type" value="' + t + '"' + (c.campaign_type === t ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + t + '</span></label>'; }).join('')
+                + CAMPAIGN_TYPE_OPTIONS.map(function(t){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (c.campaign_type === t ? '#5C9A76' : 'rgba(242,234,238,.12)') + ';background:' + (c.campaign_type === t ? 'rgba(92,154,118,.2)' : 'rgba(242,234,238,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-type" value="' + t + '"' + (c.campaign_type === t ? ' checked' : '') + ' style="accent-color:#5C9A76;"> <span style="color:#fff;font-size:13px;">' + t + '</span></label>'; }).join('')
                 + '</div></div>'
                 // 状态
                 + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">当前状态</div><div style="display:flex;flex-wrap:wrap;gap:8px;">'
-                + statusOpts.map(function(kv){ var sel = c.status === kv[0] || (!c.status && kv[0] === 'planned'); return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (sel ? '#0d9488' : 'rgba(255,255,255,.12)') + ';background:' + (sel ? 'rgba(13,148,136,.2)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-status" value="' + kv[0] + '"' + (sel ? ' checked' : '') + ' style="accent-color:#0d9488;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
+                + statusOpts.map(function(kv){ var sel = c.status === kv[0] || (!c.status && kv[0] === 'planned'); return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (sel ? '#5C9A76' : 'rgba(242,234,238,.12)') + ';background:' + (sel ? 'rgba(92,154,118,.2)' : 'rgba(242,234,238,.04)') + ';cursor:pointer;"><input type="radio" name="cpm-status" value="' + kv[0] + '"' + (sel ? ' checked' : '') + ' style="accent-color:#5C9A76;"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('')
                 + '</div></div>'
                 // 日期
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">'
-                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划开始</div><input id="cpm-date" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_date || '') + '"></div>'
-                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划结束</div><input id="cpm-date-end" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_end_date || '') + '"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划开始</div><input id="cpm-date" type="date" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_date || '') + '"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">计划结束</div><input id="cpm-date-end" type="date" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.planned_end_date || '') + '"></div>'
                 + '</div>'
                 // 覆盖门店
                 + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">覆盖门店（不选=全部）</div><div style="display:flex;flex-direction:column;gap:6px;">' + storeCheckboxes + '</div></div>'
                 // 目标客群（多选）
                 + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">目标客群（可多选）</div><div style="display:flex;flex-direction:column;gap:6px;">'
-                + audiencePresetList.map(function(p){ var sel = checkedPresetValues.indexOf(p.value) >= 0; return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;border:1.5px solid ' + (sel ? '#0d9488' : 'rgba(255,255,255,.08)') + ';background:' + (sel ? 'rgba(13,148,136,.12)' : 'rgba(255,255,255,.03)') + ';cursor:pointer;"><input type="checkbox" name="cpm-audience-preset" value="' + escapeHtml(p.value) + '"' + (sel ? ' checked' : '') + ' style="accent-color:#0d9488;width:18px;height:18px;"> <span style="color:#fff;font-size:13px;">' + escapeHtml(p.label) + '</span></label>'; }).join('')
+                + audiencePresetList.map(function(p){ var sel = checkedPresetValues.indexOf(p.value) >= 0; return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;border:1.5px solid ' + (sel ? '#5C9A76' : 'rgba(242,234,238,.08)') + ';background:' + (sel ? 'rgba(92,154,118,.12)' : 'rgba(242,234,238,.03)') + ';cursor:pointer;"><input type="checkbox" name="cpm-audience-preset" value="' + escapeHtml(p.value) + '"' + (sel ? ' checked' : '') + ' style="accent-color:#5C9A76;width:18px;height:18px;"> <span style="color:#fff;font-size:13px;">' + escapeHtml(p.label) + '</span></label>'; }).join('')
                 + '</div>'
-                + '<div style="margin-top:8px;"><div style="font-size:11px;color:var(--rep-muted);margin-bottom:4px;">其他补充说明（可选）</div><input id="cpm-audience-custom" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如 储值余额50元以上" value="' + escapeHtml(audienceCustom) + '"></div>'
+                + '<div style="margin-top:8px;"><div style="font-size:11px;color:var(--rep-muted);margin-bottom:4px;">其他补充说明（可选）</div><input id="cpm-audience-custom" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如 储值余额50元以上" value="' + escapeHtml(audienceCustom) + '"></div>'
                 + '</div>'
                 // 目标人数 / 预算
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">'
-                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">目标人数</div><input id="cpm-target" type="number" min="0" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.target_count || '') + '" placeholder="0"></div>'
-                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">预算（元）</div><input id="cpm-budget" type="number" min="0" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.budget || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">目标人数</div><input id="cpm-target" type="number" min="0" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.target_count || '') + '" placeholder="0"></div>'
+                + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">预算（元）</div><input id="cpm-budget" type="number" min="0" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + (c.budget || '') + '" placeholder="0"></div>'
                 + '</div>'
                 // 提醒日期
-                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">提醒日期（可选）</div><input id="cpm-reminder" type="date" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.reminder_date || '') + '"></div>'
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">提醒日期（可选）</div><input id="cpm-reminder" type="date" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:11px 12px;color:#fff;font-size:14px;box-sizing:border-box;" value="' + escapeHtml(c.reminder_date || '') + '"></div>'
                 // 活动内容/文案
-                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动内容 / 文案</div><textarea id="cpm-content" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;min-height:80px;resize:vertical;box-sizing:border-box;" placeholder="活动内容、推广语、短信文案等…">' + escapeHtml(c.content || '') + '</textarea></div>'
+                + '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动内容 / 文案</div><textarea id="cpm-content" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;min-height:80px;resize:vertical;box-sizing:border-box;" placeholder="活动内容、推广语、短信文案等…">' + escapeHtml(c.content || '') + '</textarea></div>'
                 // 活动目标
-                + '<div style="margin-bottom:20px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动目标 / 预期效果</div><input id="cpm-goal" style="width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如：带动复购50人 / 储值增加10万" value="' + escapeHtml(c.goal || '') + '"></div>'
+                + '<div style="margin-bottom:20px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动目标 / 预期效果</div><input id="cpm-goal" style="width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:14px;box-sizing:border-box;" placeholder="如：带动复购50人 / 储值增加10万" value="' + escapeHtml(c.goal || '') + '"></div>'
                 // 底部按钮
                 + '<div style="display:flex;gap:10px;padding-bottom:16px;">'
-                + '<button data-click="submitCampaignForm" data-arg="' + (isEdit ? c.id : '') + '" style="flex:1;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
-                + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
+                + '<button data-click="submitCampaignForm" data-arg="' + (isEdit ? c.id : '') + '" style="flex:1;background:#5C9A76;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">保存活动</button>'
+                + (isEdit ? '<button data-click="deleteCampaign" data-arg="' + c.id + '" data-arg-type="number" style="background:rgba(229,139,152,.15);color:#EDA1AC;border:1px solid rgba(229,139,152,.3);border-radius:12px;padding:14px 18px;font-size:14px;cursor:pointer;">删除</button>' : '')
                 + '</div>'
                 + '</div>'
                 + '</div>';
@@ -1308,8 +1308,8 @@
                     ov.querySelectorAll('input[name="' + name + '"]').forEach(function(r) {
                         var lbl = r.closest('label');
                         if (!lbl) return;
-                        if (r.checked) { lbl.style.borderColor = '#0d9488'; lbl.style.background = 'rgba(13,148,136,.2)'; }
-                        else { lbl.style.borderColor = 'rgba(255,255,255,.12)'; lbl.style.background = 'rgba(255,255,255,.04)'; }
+                        if (r.checked) { lbl.style.borderColor = '#5C9A76'; lbl.style.background = 'rgba(92,154,118,.2)'; }
+                        else { lbl.style.borderColor = 'rgba(242,234,238,.12)'; lbl.style.background = 'rgba(242,234,238,.04)'; }
                     });
                 });
             });
@@ -1373,15 +1373,15 @@
             var ov = document.createElement('div');
             ov.id = 'result-modal-overlay';
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
-            var iStyle = 'width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;';
-            var effectOpts = Object.entries(CAMPAIGN_EFFECT_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (existing.effect_rating === kv[0] ? CAMPAIGN_EFFECT_COLORS[kv[0]] : 'rgba(255,255,255,.12)') + ';background:' + (existing.effect_rating === kv[0] ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.04)') + ';cursor:pointer;"><input type="radio" name="crm-effect" value="' + kv[0] + '"' + (existing.effect_rating === kv[0] ? ' checked' : '') + ' style="accent-color:' + CAMPAIGN_EFFECT_COLORS[kv[0]] + ';"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('');
-            ov.innerHTML = '<div style="width:100%;max-width:520px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
-                + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
+            var iStyle = 'width:100%;background:rgba(242,234,238,.07);border:1px solid rgba(242,234,238,.12);border-radius:10px;padding:12px 14px;color:#fff;font-size:15px;box-sizing:border-box;';
+            var effectOpts = Object.entries(CAMPAIGN_EFFECT_LABELS).map(function(kv){ return '<label style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ' + (existing.effect_rating === kv[0] ? CAMPAIGN_EFFECT_COLORS[kv[0]] : 'rgba(242,234,238,.12)') + ';background:' + (existing.effect_rating === kv[0] ? 'rgba(242,234,238,.08)' : 'rgba(242,234,238,.04)') + ';cursor:pointer;"><input type="radio" name="crm-effect" value="' + kv[0] + '"' + (existing.effect_rating === kv[0] ? ' checked' : '') + ' style="accent-color:' + CAMPAIGN_EFFECT_COLORS[kv[0]] + ';"> <span style="color:#fff;font-size:13px;">' + kv[1] + '</span></label>'; }).join('');
+            ov.innerHTML = '<div style="width:100%;max-width:520px;max-height:95vh;overflow-y:auto;background:#121012;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#121012;padding:16px 16px 12px;border-bottom:1px solid rgba(242,234,238,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:16px;font-weight:900;color:#fff;">' + (isEdit ? '编辑复盘' : '+ 添加门店复盘') + '</div>'
-                + '<button data-click="hrmsRemoveById" data-arg="result-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-modal-overlay" style="border:none;background:rgba(242,234,238,.08);color:rgba(242,234,238,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
-                + (campaign.goal ? '<div style="background:rgba(201,169,106,.08);border:1px solid rgba(201,169,106,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#c9a96a;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
+                + (campaign.goal ? '<div style="background:rgba(201,169,106,.08);border:1px solid rgba(201,169,106,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#CFA14A;">🎯 活动目标：' + escapeHtml(campaign.goal) + '</div>' : '')
                 + '<div style="margin-bottom:12px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">选择门店</div><select id="crm-store-sel" style="' + iStyle + '">' + '<option value="">全部门店</option>' + storeOpts + '</select></div>'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">'
                 + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">曝光人数</div><input id="crm-exposure" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_exposure_count || '') + '" placeholder="0"></div>'
@@ -1395,13 +1395,13 @@
                 + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">带动收入（元）</div><input id="crm-revenue" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_revenue || '') + '" placeholder="0"></div>'
                 + '<div><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">活动成本（元）</div><input id="crm-cost" type="number" min="0" style="' + iStyle + '" value="' + (existing.actual_cost || '') + '" placeholder="0"></div>'
                 + '</div>'
-                + '<div id="crm-derived" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;background:rgba(255,255,255,.03);border-radius:10px;padding:10px;">'
-                + '<div style="text-align:center;"><div id="crm-derived-rate" style="font-size:18px;font-weight:800;color:#38bdf8;">-</div><div style="font-size:10px;color:var(--rep-muted);">核销率</div></div>'
-                + '<div style="text-align:center;"><div id="crm-derived-roi" style="font-size:18px;font-weight:800;color:#22c55e;">-</div><div style="font-size:10px;color:var(--rep-muted);">ROI</div></div>'
+                + '<div id="crm-derived" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;background:rgba(242,234,238,.03);border-radius:10px;padding:10px;">'
+                + '<div style="text-align:center;"><div id="crm-derived-rate" style="font-size:18px;font-weight:800;color:#EABBC5;">-</div><div style="font-size:10px;color:var(--rep-muted);">核销率</div></div>'
+                + '<div style="text-align:center;"><div id="crm-derived-roi" style="font-size:18px;font-weight:800;color:#86C9A2;">-</div><div style="font-size:10px;color:var(--rep-muted);">ROI</div></div>'
                 + '</div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:8px;font-weight:600;">活动效果评级</div><div style="display:flex;flex-wrap:wrap;gap:8px;">' + effectOpts + '</div></div>'
                 + '<div style="margin-bottom:16px;"><div style="font-size:12px;color:var(--rep-muted);margin-bottom:6px;font-weight:600;">复盘备注</div><textarea id="crm-note" style="' + iStyle + 'min-height:80px;resize:vertical;" placeholder="执行情况、问题点、改进建议…">' + escapeHtml(existing.result_note || '') + '</textarea></div>'
-                + '<button data-click="submitCampaignResult" data-arg="' + campaignId + '" data-arg2="' + (resultId || '') + '" style="width:100%;background:#0d9488;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
+                + '<button data-click="submitCampaignResult" data-arg="' + campaignId + '" data-arg2="' + (resultId || '') + '" style="width:100%;background:#5C9A76;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:12px;">保存复盘结果</button>'
                 + '</div>'
                 + '</div>';
             ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
@@ -1423,8 +1423,8 @@
                     ov.querySelectorAll('input[name="crm-effect"]').forEach(function(r) {
                         var lbl = r.closest('label');
                         if (!lbl) return;
-                        if (r.checked) { lbl.style.borderColor = CAMPAIGN_EFFECT_COLORS[r.value]; lbl.style.background = 'rgba(255,255,255,.08)'; }
-                        else { lbl.style.borderColor = 'rgba(255,255,255,.12)'; lbl.style.background = 'rgba(255,255,255,.04)'; }
+                        if (r.checked) { lbl.style.borderColor = CAMPAIGN_EFFECT_COLORS[r.value]; lbl.style.background = 'rgba(242,234,238,.08)'; }
+                        else { lbl.style.borderColor = 'rgba(242,234,238,.12)'; lbl.style.background = 'rgba(242,234,238,.04)'; }
                     });
                 });
             });
@@ -1478,47 +1478,47 @@
             var roi = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost).toFixed(2) : '-';
             var dateStr = c.planned_date ? c.planned_date.slice(0, 10) + (c.planned_end_date ? ' → ' + c.planned_end_date.slice(0, 10) : '') : '未设置';
             var kpiCard = function(label, value, color) {
-                return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + color + ';">' + value + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + label + '</div></div>';
+                return '<div style="background:rgba(242,234,238,.04);border-radius:10px;padding:12px;text-align:center;"><div style="font-size:20px;font-weight:800;color:' + color + ';">' + value + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + label + '</div></div>';
             };
             var ov = document.createElement('div');
             ov.id = 'report-modal-overlay';
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:flex-end;justify-content:center;';
-            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#0f172a;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
-                + '<div style="position:sticky;top:0;background:#0f172a;padding:16px 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
+            ov.innerHTML = '<div style="width:100%;max-width:600px;max-height:95vh;overflow-y:auto;background:#121012;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom,0);">'
+                + '<div style="position:sticky;top:0;background:#121012;padding:16px 16px 12px;border-bottom:1px solid rgba(242,234,238,.08);display:flex;justify-content:space-between;align-items:center;z-index:1;">'
                 + '<div style="font-size:17px;font-weight:900;color:#fff;">活动评估报告</div>'
-                + '<button data-click="hrmsRemoveById" data-arg="report-modal-overlay" style="border:none;background:rgba(255,255,255,.08);color:rgba(226,232,240,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="report-modal-overlay" style="border:none;background:rgba(242,234,238,.08);color:rgba(242,234,238,.7);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">关闭</button>'
                 + '</div>'
                 + '<div style="padding:16px;">'
                 + '<div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">' + escapeHtml(c.title) + '</div>'
                 + '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:2px;">📅 执行时间：' + dateStr + '</div>'
-                + (c.goal ? '<div style="font-size:12px;color:#c9a96a;margin-bottom:14px;">🎯 活动目标：' + escapeHtml(c.goal) + '</div>' : '<div style="margin-bottom:14px;"></div>')
+                + (c.goal ? '<div style="font-size:12px;color:#CFA14A;margin-bottom:14px;">🎯 活动目标：' + escapeHtml(c.goal) + '</div>' : '<div style="margin-bottom:14px;"></div>')
                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
-                + kpiCard('曝光人数', totalExposure, '#a78bfa')
-                + kpiCard('发送人数', totalSend, '#38bdf8')
-                + kpiCard('核销单数', totalRedeem, '#c9a96a')
+                + kpiCard('曝光人数', totalExposure, '#D18FA0')
+                + kpiCard('发送人数', totalSend, '#EABBC5')
+                + kpiCard('核销单数', totalRedeem, '#CFA14A')
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">'
-                + kpiCard('核销率', redeemRate, '#c9a96a')
-                + kpiCard('到店/转化', totalConv, '#38bdf8')
-                + kpiCard('带动收入', fmtCustMoney(totalRevenue), '#22c55e')
+                + kpiCard('核销率', redeemRate, '#CFA14A')
+                + kpiCard('到店/转化', totalConv, '#EABBC5')
+                + kpiCard('带动收入', fmtCustMoney(totalRevenue), '#86C9A2')
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;">'
-                + kpiCard('活动成本', fmtCustMoney(totalCost), '#f87171')
-                + kpiCard('ROI', roi, '#22c55e')
+                + kpiCard('活动成本', fmtCustMoney(totalCost), '#EDA1AC')
+                + kpiCard('ROI', roi, '#86C9A2')
                 + '</div>'
                 + '<div style="font-size:12px;color:var(--rep-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">各门店明细</div>'
                 + results.map(function(res) {
-                    var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#94a3b8';
+                    var effColor = CAMPAIGN_EFFECT_COLORS[res.effect_rating] || '#97848E';
                     var effLabel = CAMPAIGN_EFFECT_LABELS[res.effect_rating] || '未评级';
                     var rRate = Number(res.actual_send_count) > 0 ? (Number(res.actual_redemption_count || 0) / Number(res.actual_send_count) * 100).toFixed(1) + '%' : '-';
                     var rRoi = Number(res.actual_cost) > 0 ? ((Number(res.actual_revenue || 0) - Number(res.actual_cost)) / Number(res.actual_cost)).toFixed(2) : '-';
-                    return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
+                    return '<div style="background:rgba(242,234,238,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
                         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
                         + '<span style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(res.store_name || res.store_id || '-') + '</span>'
-                        + '<span style="font-size:11px;font-weight:700;color:' + effColor + ';background:rgba(255,255,255,.06);border-radius:6px;padding:3px 8px;">' + effLabel + '</span>'
+                        + '<span style="font-size:11px;font-weight:700;color:' + effColor + ';background:rgba(242,234,238,.06);border-radius:6px;padding:3px 8px;">' + effLabel + '</span>'
                         + '</div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,.7);line-height:1.8;">曝光 ' + (res.actual_exposure_count || 0) + ' · 发送 ' + (res.actual_send_count || 0) + ' · 核销 ' + (res.actual_redemption_count || 0) + '（' + rRate + '）· 到店 ' + (res.actual_conversion_count || 0) + '<br>收入 ' + fmtCustMoney(res.actual_revenue) + ' · 成本 ' + fmtCustMoney(res.actual_cost) + ' · ROI ' + rRoi + '</div>'
-                        + (res.result_note ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
+                        + '<div style="font-size:12px;color:rgba(242,234,238,.7);line-height:1.8;">曝光 ' + (res.actual_exposure_count || 0) + ' · 发送 ' + (res.actual_send_count || 0) + ' · 核销 ' + (res.actual_redemption_count || 0) + '（' + rRate + '）· 到店 ' + (res.actual_conversion_count || 0) + '<br>收入 ' + fmtCustMoney(res.actual_revenue) + ' · 成本 ' + fmtCustMoney(res.actual_cost) + ' · ROI ' + rRoi + '</div>'
+                        + (res.result_note ? '<div style="font-size:12px;color:rgba(242,234,238,.55);margin-top:6px;line-height:1.5;">' + escapeHtml(res.result_note) + '</div>' : '')
                         + '</div>';
                 }).join('')
                 + '</div>'
@@ -1546,39 +1546,39 @@
                     var rep = ad && ad.report;
                     if (rep && rep.summary) {
                         var evidence = rep.evidenceDetails || rep.evidence_orders || [];
-                        var evHtml = evidence.length ? '<details style="margin-bottom:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后 7 天内产生的真实消费记录</summary>'
+                        var evHtml = evidence.length ? '<details style="margin-bottom:12px;background:rgba(242,234,238,.04);border:1px solid rgba(242,234,238,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后 7 天内产生的真实消费记录</summary>'
                             + evidence.slice(0, 20).map(function(e) {
-                                var assisted = e.attributionType === 'assisted' ? '<div style="color:#c9a96a;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
-                                return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
-                                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || e.phone || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
-                                    + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(e.touchTime || e.last_touch_date || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(e.orderTime || e.date || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || e.order_no || '-') + '</div>'
-                                    + '<div style="color:rgba(226,232,240,.55);">金额：' + fmtCustMoney(e.orderAmount || e.revenue) + ' · 用券：' + (e.couponUsed ? '是' : '否') + ' · 券：' + escapeHtml(e.couponId || '-') + '</div>'
+                                var assisted = e.attributionType === 'assisted' ? '<div style="color:#CFA14A;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                                return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.6;">'
+                                    + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || e.phone || '-') + '</b><span style="color:#EABBC5;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
+                                    + '<div style="color:rgba(242,234,238,.65);">触达：' + escapeHtml(String(e.touchTime || e.last_touch_date || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(e.orderTime || e.date || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || e.order_no || '-') + '</div>'
+                                    + '<div style="color:rgba(242,234,238,.55);">金额：' + fmtCustMoney(e.orderAmount || e.revenue) + ' · 用券：' + (e.couponUsed ? '是' : '否') + ' · 券：' + escapeHtml(e.couponId || '-') + '</div>'
                                     + assisted
                                     + '</div>';
                             }).join('') + '</details>' : '';
                         attributionHtml = '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px;">'
                             + custopsMiniMetric('触达人数', rep.summary.touched_customers || 0, '自动营销触达客户', '#fff')
-                            + custopsMiniMetric('回店人数', rep.summary.returned_customers || 0, '触达窗口内回店', '#22c55e')
-                            + custopsMiniMetric('归因营业额', fmtCustMoney(rep.summary.attributed_revenue), '有订单记录支撑', '#38bdf8')
-                            + custopsMiniMetric('转化率', pctCust(rep.summary.return_rate), '回店/触达', '#c9a96a')
+                            + custopsMiniMetric('回店人数', rep.summary.returned_customers || 0, '触达窗口内回店', '#86C9A2')
+                            + custopsMiniMetric('归因营业额', fmtCustMoney(rep.summary.attributed_revenue), '有订单记录支撑', '#EABBC5')
+                            + custopsMiniMetric('转化率', pctCust(rep.summary.return_rate), '回店/触达', '#CFA14A')
                             + '</div>' + evHtml;
                     }
                 } catch (_) {}
                 host.innerHTML = attributionHtml + (rules.length
                     ? '<div style="font-size:12px;color:var(--rep-muted);margin-bottom:10px;">' + escapeHtml(d.date_from || '') + ' 至 ' + escapeHtml(d.date_to || '') + '</div>'
                     + rules.map(function(x) {
-                        return '<div style="background:rgba(255,255,255,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
+                        return '<div style="background:rgba(242,234,238,.04);border-radius:10px;padding:12px;margin-bottom:8px;">'
                             + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                             + '<div style="color:#fff;font-weight:700;font-size:14px;">' + escapeHtml(x.rule_name || x.rule_key || '-') + '</div>'
-                            + '<div style="font-size:13px;color:#22c55e;font-weight:700;">发 ' + (x.send_count || 0) + ' 人</div>'
+                            + '<div style="font-size:13px;color:#86C9A2;font-weight:700;">发 ' + (x.send_count || 0) + ' 人</div>'
                             + '</div>'
-                            + (x.sample_message ? '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:6px;line-height:1.55;background:rgba(255,255,255,.03);border-radius:6px;padding:8px;">样本：' + escapeHtml(String(x.sample_message).slice(0, 150)) + '</div>' : '')
+                            + (x.sample_message ? '<div style="font-size:12px;color:rgba(242,234,238,.55);margin-top:6px;line-height:1.55;background:rgba(242,234,238,.03);border-radius:6px;padding:8px;">样本：' + escapeHtml(String(x.sample_message).slice(0, 150)) + '</div>' : '')
                             + '<div style="font-size:11px;color:var(--rep-muted);margin-top:5px;">最近发送：' + escapeHtml(x.last_sent_date || '-') + '</div>'
                             + '</div>';
                     }).join('')
                     : '<div class="rep-pay-empty">该时段无自动营销发送记录</div>');
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         function openCustomer360(c) {
@@ -1589,25 +1589,25 @@
             var channelHtml = ['sms','wecom','miniprogram','xiaohongshu','dianping','douyin'].map(function(k) {
                 var label = CAMPAIGN_CHANNEL_LABELS[k] || k;
                 var on = !!channels[k];
-                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(34,197,94,.12);color:#86efac;' : 'rgba(148,163,184,.10);color:rgba(226,232,240,.45);') + 'font-size:12px;">' + label + (on ? '可用' : '待补') + '</span>';
+                return '<span style="display:inline-block;margin:4px 6px 0 0;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(134,201,162,.12);color:#BEE6CE;' : 'rgba(151,132,142,.10);color:rgba(242,234,238,.45);') + 'font-size:12px;">' + label + (on ? '可用' : '待补') + '</span>';
             }).join('');
             var timeline = (c.last_orders || []).slice(0, 6).map(function(o) {
-                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
-                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#22c55e;">' + fmtCustMoney(o.amount) + '</span></div>'
-                    + '<div style="color:rgba(226,232,240,.58);">人数' + (o.diners || '-') + ' · ' + escapeHtml(o.order_type || '-') + ' · 菜品：' + escapeHtml((o.dishes || []).join('、') || '-') + '</div>'
+                return '<div style="padding:9px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#86C9A2;">' + fmtCustMoney(o.amount) + '</span></div>'
+                    + '<div style="color:rgba(242,234,238,.58);">人数' + (o.diners || '-') + ' · ' + escapeHtml(o.order_type || '-') + ' · 菜品：' + escapeHtml((o.dishes || []).join('、') || '-') + '</div>'
                     + '</div>';
             }).join('');
             var storedTimeline = (c.stored_value_timeline || []).slice(0, 6).map(function(o) {
-                return '<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
-                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#38bdf8;">余额' + fmtCustMoney(o.balance) + '</span></div>'
-                    + '<div style="color:rgba(226,232,240,.58);">充值' + fmtCustMoney(o.recharge_amount) + ' · 赠送' + fmtCustMoney(o.gift_amount) + ' · 积分' + (o.points || 0) + ' · ' + escapeHtml(o.order_type || '') + '</div>'
+                return '<div style="padding:9px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.55;">'
+                    + '<div style="display:flex;justify-content:space-between;gap:10px;"><b style="color:#fff;">' + escapeHtml(o.date || '-') + ' · ' + escapeHtml(o.store || c.primary_store || '-') + '</b><span style="color:#EABBC5;">余额' + fmtCustMoney(o.balance) + '</span></div>'
+                    + '<div style="color:rgba(242,234,238,.58);">充值' + fmtCustMoney(o.recharge_amount) + ' · 赠送' + fmtCustMoney(o.gift_amount) + ' · 积分' + (o.points || 0) + ' · ' + escapeHtml(o.order_type || '') + '</div>'
                     + '</div>';
             }).join('');
             var touchPlan = (c.touch_plan || []).map(function(x) {
-                return '<li style="margin:4px 0;color:rgba(226,232,240,.78);">' + escapeHtml(x) + '</li>';
+                return '<li style="margin:4px 0;color:rgba(242,234,238,.78);">' + escapeHtml(x) + '</li>';
             }).join('');
-            ov.innerHTML = '<div style="width:min(560px,100%);max-height:90vh;overflow:auto;background:#0f172a;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:18px;">'
-                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#38bdf8;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button data-click="hrmsRemoveClosest" data-arg="div[style*=fixed]" data-arg-self="1" style="border:none;background:rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
+            ov.innerHTML = '<div style="width:min(560px,100%);max-height:90vh;overflow:auto;background:#121012;border:1px solid rgba(242,234,238,0.12);border-radius:16px;padding:18px;">'
+                + '<div style="display:flex;justify-content:space-between;gap:12px;"><div><div style="font-size:12px;color:#EABBC5;font-weight:800;">360 CUSTOMER PROFILE</div><div style="font-size:22px;color:#fff;font-weight:900;margin-top:4px;">' + escapeHtml(c.customer_id || '-') + '</div></div><button data-click="hrmsRemoveClosest" data-arg="div[style*=fixed]" data-arg-self="1" style="border:none;background:rgba(242,234,238,0.08);color:#fff;border-radius:10px;padding:8px 12px;cursor:pointer;">关闭</button></div>'
                 + '<div class="rep-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px;">'
                 + '<div class="rep-metric"><div class="k">手机号</div><div class="v" style="font-size:18px;">' + escapeHtml(c.phone || '-') + '</div></div>'
                 + '<div class="rep-metric"><div class="k">会员号/企微</div><div class="v" style="font-size:18px;">' + escapeHtml(c.member_no || c.external_userid || '-') + '</div></div>'
@@ -1622,7 +1622,7 @@
                 + '<div class="rep-metric"><div class="k">午市占比</div><div class="v">' + Math.round((c.lunch_pct || 0) * 100) + '%</div></div>'
                 + '<div class="rep-metric"><div class="k">周末占比</div><div class="v">' + Math.round((c.weekend_pct || 0) * 100) + '%</div></div>'
                 + '</div>'
-                + '<div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.04);color:rgba(226,232,240,0.82);font-size:13px;line-height:1.8;">'
+                + '<div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(242,234,238,0.04);color:rgba(242,234,238,0.82);font-size:13px;line-height:1.8;">'
                 + '<b style="color:#fff;">最喜欢：</b>' + escapeHtml((c.favorite_dishes || []).join('、') || '-') + '<br>'
                 + '<b style="color:#fff;">常去门店：</b>' + escapeHtml(c.primary_store || (c.stores || []).join('、') || '-') + '<br>'
                 + '<b style="color:#fff;">常来时段：</b>' + escapeHtml(c.preferred_visit_time || '-') + '<br>'
@@ -1644,18 +1644,18 @@
             if (!el) return;
             var clusters = Array.isArray(data?.clusters) ? data.clusters : [];
             var total = data?.total || 0;
-            if (!clusters.length) { el.innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">暂无分群数据</div>'; return; }
-            var stageColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280', lost_90: '#a855f7', lost_180: '#7c3aed', lost_365: '#4c1d95' };
+            if (!clusters.length) { el.innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">暂无分群数据</div>'; return; }
+            var stageColors = { prospect: '#97848E', new: '#EABBC5', active: '#86C9A2', at_risk: '#CFA14A', dormant: '#E58B98', churned: '#97848E', lost_90: '#D18FA0', lost_180: '#B87B8C', lost_365: '#6E5223' };
             var stageLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客', lost_90: '流失客(3-6月)', lost_180: '流失客(6-12月)', lost_365: '流失客(1年+)' };
-            el.innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.5);margin-bottom:8px;">共' + total + '人</div>' + clusters.map(function(c) {
+            el.innerHTML = '<div style="font-size:11px;color:rgba(242,234,238,0.5);margin-bottom:8px;">共' + total + '人</div>' + clusters.map(function(c) {
                 var label = stageLabels[c.lifecycle_stage] || c.lifecycle_stage;
-                var color = stageColors[c.lifecycle_stage] || '#38bdf8';
+                var color = stageColors[c.lifecycle_stage] || '#EABBC5';
                 var pct = total > 0 ? Math.round(c.user_count / total * 100) : 0;
                 return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">'
                     + '<span style="font-size:11px;padding:2px 8px;border-radius:999px;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '55;white-space:nowrap;">' + label + '</span>'
                     + '<span style="font-size:12px;color:#fff;font-weight:700;min-width:32px;">' + c.user_count + '</span>'
-                    + '<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:3px;"></div></div>'
-                    + '<span style="font-size:11px;color:rgba(226,232,240,0.45);">' + pct + '%</span>'
+                    + '<div style="flex:1;height:6px;border-radius:3px;background:rgba(242,234,238,0.06);overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:3px;"></div></div>'
+                    + '<span style="font-size:11px;color:rgba(242,234,238,0.45);">' + pct + '%</span>'
                     + '</div>';
             }).join('');
         }
@@ -1723,22 +1723,22 @@
                     var vB = (t.variant_b && typeof t.variant_b === 'object') ? (t.variant_b.content || '') : '';
                     var aLabel = isBound ? 'A组(当前)' : 'A版本';
                     var bLabel = isBound ? 'B组(挑战)' : 'B版本';
-                    return '<div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    return '<div style="padding:14px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                         + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
                         + '<div style="min-width:0;flex:1;">'
                         + '<div style="font-size:14px;font-weight:800;color:#fff;">' + escapeHtml(t.test_name || '未命名测试') + '</div>'
                         + '<div style="font-size:12px;color:var(--rep-muted);margin-top:4px;">' + escapeHtml(metricName) + ' · ' + escapeHtml(t.start_date || '') + ' ~ ' + escapeHtml(t.end_date || '') + '</div>'
                         + '</div>'
-                        + '<div style="font-size:11px;padding:3px 10px;border-radius:999px;background:' + (t.status === 'completed' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)') + ';color:' + (t.status === 'completed' ? '#22c55e' : '#f59e0b') + ';font-weight:700;">' + escapeHtml(t.status || 'running') + '</div>'
+                        + '<div style="font-size:11px;padding:3px 10px;border-radius:999px;background:' + (t.status === 'completed' ? 'rgba(134,201,162,0.12)' : 'rgba(207,161,74,0.12)') + ';color:' + (t.status === 'completed' ? '#86C9A2' : '#CFA14A') + ';font-weight:700;">' + escapeHtml(t.status || 'running') + '</div>'
                         + '</div>'
                         + (modeLine ? '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + modeLine + '</div>' : '')
-                        + ((!isBound && (vA || vB)) ? '<div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:4px;line-height:1.5;">A：' + escapeHtml(vA.slice(0, 60)) + '　｜　B：' + escapeHtml(vB.slice(0, 60)) + '</div>' : '')
+                        + ((!isBound && (vA || vB)) ? '<div style="font-size:11px;color:rgba(242,234,238,0.6);margin-top:4px;line-height:1.5;">A：' + escapeHtml(vA.slice(0, 60)) + '　｜　B：' + escapeHtml(vB.slice(0, 60)) + '</div>' : '')
                         + '<div class="rep-grid" style="margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr));">'
                         + abVariantCell(aLabel, mA, schema)
                         + abVariantCell(bLabel, mB, schema)
                         + '<div class="rep-metric"><div class="k">胜者</div><div class="v" style="color:var(--rep-gold);">' + escapeHtml(String(winner)) + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">提升 ' + lift + '%</div></div>'
                         + '</div>'
-                        + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
+                        + '<div style="margin-top:10px;font-size:12px;color:rgba(242,234,238,0.78);line-height:1.6;">' + escapeHtml(t.ai_summary || '尚未生成总结') + '</div>'
                         + '<div style="margin-top:10px;display:flex;gap:8px;">'
                         + '<button class="rep-seg-btn" style="flex:1;" data-click="toggleAbResultForm" data-arg="' + id + '" data-arg-type="number">✏️ 录入结果</button>'
                         + ((winner === 'A' || winner === 'B')
@@ -1790,9 +1790,9 @@
                 dyn.innerHTML = ''
                     + '<div class="rep-field"><label>绑定规则 *（' + escapeHtml(tpl.bind_kind === 'payment_rule' ? '支付发券' : '规则引擎/订阅') + '）</label>'
                     + '<select id="abtest-target-rule" class="dr-store-select" data-change="onAbBindRuleChange"><option value="">加载中…</option></select></div>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>'
-                    + '<textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(226,232,240,0.7);background:rgba(255,255,255,0.03);resize:vertical;"></textarea>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B组 · 挑战版本 *（' + (tpl.bind_kind === 'payment_rule' ? '券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位') + '）</div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:10px;">A组 · 当前版本（只读）</div>'
+                    + '<textarea id="abtest-variant-a" class="dr-store-select" readonly placeholder="选择绑定规则后自动带出当前版本" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:rgba(242,234,238,0.7);background:rgba(242,234,238,0.03);resize:vertical;"></textarea>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:10px;">B组 · 挑战版本 *（' + (tpl.bind_kind === 'payment_rule' ? '券模板ID / 触发门槛' : '短信文案，可用 {name}/{姓名} 占位') + '）</div>'
                     + '<textarea id="abtest-variant-b" class="dr-store-select" placeholder="输入挑战版本内容" style="margin-top:6px;width:100%;min-height:54px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>';
                 loadAbBindableRules();
                 return;
@@ -1800,7 +1800,7 @@
             // channel / custom
             var fieldsNote = '';
             if (tpl.key !== 'custom') {
-                fieldsNote = '<div style="font-size:11px;color:rgba(226,232,240,0.55);margin-top:8px;">本模板将录入：' + tpl.fields.map(function(f) { return escapeHtml(f.label); }).join(' / ') + '；主判定指标：<b>' + escapeHtml(tpl.primary.label) + '</b>。</div>';
+                fieldsNote = '<div style="font-size:11px;color:rgba(242,234,238,0.55);margin-top:8px;">本模板将录入：' + tpl.fields.map(function(f) { return escapeHtml(f.label); }).join(' / ') + '；主判定指标：<b>' + escapeHtml(tpl.primary.label) + '</b>。</div>';
             }
             var customEditor = '';
             if (tpl.key === 'custom') {
@@ -1821,9 +1821,9 @@
             dyn.innerHTML = ''
                 + '<div class="rep-field"><label>测试变量 *（比较的是什么，如 封面图 / 标题 / 套餐组合）</label><input id="abtest-variable" class="dr-store-select" placeholder="如 封面图风格" style="padding:10px;color:var(--rep-text);"></div>'
                 + customEditor
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">A版本内容 *</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:10px;">A版本内容 *</div>'
                 + '<textarea id="abtest-variant-a-text" class="dr-store-select" placeholder="描述 A 版本（如 探店实拍封面 + 套餐价标题）" style="margin-top:6px;width:100%;min-height:48px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:10px;">B版本内容 *</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:10px;">B版本内容 *</div>'
                 + '<textarea id="abtest-variant-b-text" class="dr-store-select" placeholder="描述 B 版本" style="margin-top:6px;width:100%;min-height:48px;padding:10px;color:var(--rep-text);resize:vertical;"></textarea>'
                 + fieldsNote;
             if (tpl.key === 'custom') abAddCustomField();
@@ -2002,8 +2002,8 @@
             }
             var cols = Math.min(4, Math.max(2, fields.length));
             var gridStyle = 'display:grid;grid-template-columns:repeat(' + cols + ',minmax(0,1fr));gap:6px;';
-            return '<div id="ab-result-form-' + id + '" style="display:none;margin-top:10px;padding:12px;border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:rgba(255,255,255,0.02);">'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-bottom:8px;">录入真实投放结果，按该模板的指标分组填写，可多次录入累加。</div>'
+            return '<div id="ab-result-form-' + id + '" style="display:none;margin-top:10px;padding:12px;border:1px solid rgba(242,234,238,0.08);border-radius:10px;background:rgba(242,234,238,0.02);">'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-bottom:8px;">录入真实投放结果，按该模板的指标分组填写，可多次录入累加。</div>'
                 + '<div class="rep-field" style="margin-bottom:8px;"><label style="font-size:11px;">数据日期（留空=今天）</label><input id="abres-' + id + '-date" type="date" class="dr-store-select" style="padding:8px;color:var(--rep-text);"></div>'
                 + '<div style="font-size:12px;font-weight:700;color:#fff;margin:6px 0 4px;">A组</div>'
                 + '<div style="' + gridStyle + '">' + cells('a') + '</div>'
@@ -2097,9 +2097,9 @@
                 if (countEl) countEl.textContent = rows.length;
                 if (!host) return;
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                         + '<div style="font-size:13px;font-weight:700;color:#fff;">' + escapeHtml(x.variable || '-') + ' · ' + escapeHtml(x.channel || '-') + '</div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,0.78);margin-top:4px;">胜出：' + escapeHtml(x.winning_value || '-') + (x.losing_value ? ' ｜ 落败：' + escapeHtml(x.losing_value) : '') + '</div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,0.78);margin-top:4px;">胜出：' + escapeHtml(x.winning_value || '-') + (x.losing_value ? ' ｜ 落败：' + escapeHtml(x.losing_value) : '') + '</div>'
                         + '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">' + escapeHtml(x.effect_desc || '-') + ' · 样本' + escapeHtml(String(x.sample_size || 0)) + ' · 置信度' + escapeHtml(x.confidence || 'medium') + '</div>'
                         + '</div>';
                 }).join('') : '<div class="rep-pay-empty">暂无经验库数据</div>';
@@ -2119,18 +2119,18 @@
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     var summary = x.summary_json || {};
                     var items = Array.isArray(summary.items) ? summary.items : [];
-                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                         + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
                         + '<div><div style="font-size:14px;font-weight:800;color:#fff;">周建议 · ' + escapeHtml(summary.store_code || x.store_code || '-') + '</div><div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">周起始 ' + escapeHtml(x.week_start || '-') + '</div></div>'
-                        + '<div style="font-size:11px;color:' + (x.feishu_pushed_at ? '#22c55e' : '#f59e0b') + ';font-weight:700;">' + (x.feishu_pushed_at ? '已推飞书' : '未推送') + '</div>'
+                        + '<div style="font-size:11px;color:' + (x.feishu_pushed_at ? '#86C9A2' : '#CFA14A') + ';font-weight:700;">' + (x.feishu_pushed_at ? '已推飞书' : '未推送') + '</div>'
                         + '</div>'
-                        + '<div style="margin-top:10px;font-size:12px;color:rgba(226,232,240,0.78);line-height:1.6;">' + escapeHtml(summary.summary_text || '') + '</div>'
+                        + '<div style="margin-top:10px;font-size:12px;color:rgba(242,234,238,0.78);line-height:1.6;">' + escapeHtml(summary.summary_text || '') + '</div>'
                         + items.map(function(it) {
-                            return '<div style="margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);">'
+                            return '<div style="margin-top:10px;padding:10px;border-radius:10px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.05);">'
                                 + '<div style="font-size:13px;font-weight:700;color:#fff;">' + escapeHtml(String(it.rank || '')) + '）' + escapeHtml(it.theme || '-') + '</div>'
-                                + '<div style="font-size:12px;color:rgba(226,232,240,0.78);margin-top:4px;">' + escapeHtml(it.reason || '-') + '</div>'
+                                + '<div style="font-size:12px;color:rgba(242,234,238,0.78);margin-top:4px;">' + escapeHtml(it.reason || '-') + '</div>'
                                 + (it.sms_copy_a ? '<div style="font-size:11px;color:var(--rep-gold);margin-top:6px;">A：' + escapeHtml(it.sms_copy_a) + '</div>' : '')
-                                + (it.sms_copy_b ? '<div style="font-size:11px;color:#38bdf8;margin-top:4px;">B：' + escapeHtml(it.sms_copy_b) + '</div>' : '')
+                                + (it.sms_copy_b ? '<div style="font-size:11px;color:#EABBC5;margin-top:4px;">B：' + escapeHtml(it.sms_copy_b) + '</div>' : '')
                                 + '</div>';
                         }).join('')
                         + '</div>';
@@ -2166,9 +2166,9 @@
                 var rows = d?.items || [];
                 var host = document.getElementById('growth-content-performance-list');
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                         + '<div style="font-size:13px;font-weight:700;color:#fff;">' + escapeHtml(x.content_title || x.channel || '-') + '</div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,0.78);margin-top:4px;">' + escapeHtml(x.channel || '-') + ' · ' + escapeHtml(x.scene || '-') + ' · ' + escapeHtml(x.audience_tag || '-') + '</div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,0.78);margin-top:4px;">' + escapeHtml(x.channel || '-') + ' · ' + escapeHtml(x.scene || '-') + ' · ' + escapeHtml(x.audience_tag || '-') + '</div>'
                         + '<div style="font-size:11px;color:var(--rep-muted);margin-top:4px;">曝光' + (x.impressions || 0) + ' · 点击' + (x.clicks || 0) + ' · 订单' + (x.orders || 0) + ' · 核销' + (x.redemptions || 0) + ' · 营收¥' + Number(x.revenue || 0).toFixed(2) + '</div>'
                         + '</div>';
                 }).join('') : '<div class="rep-pay-empty">暂无内容效果记录</div>';
@@ -2222,14 +2222,14 @@
                 const rows = data?.constraints || [];
                 const host = document.getElementById('growth-constraints-list');
                 host.innerHTML = rows.length ? rows.map(function(x) {
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:13px;">'
                         + '<div style="color:#fff;font-weight:600;">' + (x.store_id || '-') + ' · ' + (x.brand || '-') + '</div>'
-                        + '<div style="color:rgba(226,232,240,0.6);margin-top:4px;">最低折扣: ' + (x.min_discount_rate || '-') + ' · 最大券面值: ' + (x.max_coupon_value_fen || '-') + '分 · 月预算: ' + (x.monthly_budget_fen || '-') + '分</div>'
-                        + '<div style="color:rgba(226,232,240,0.45);margin-top:4px;">品牌语气: ' + (x.brand_voice_style || '-') + '</div>'
+                        + '<div style="color:rgba(242,234,238,0.6);margin-top:4px;">最低折扣: ' + (x.min_discount_rate || '-') + ' · 最大券面值: ' + (x.max_coupon_value_fen || '-') + '分 · 月预算: ' + (x.monthly_budget_fen || '-') + '分</div>'
+                        + '<div style="color:rgba(242,234,238,0.45);margin-top:4px;">品牌语气: ' + (x.brand_voice_style || '-') + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无营销约束</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无营销约束</div>';
             } catch (e) {
-                document.getElementById('growth-constraints-list').innerHTML = '<div style="color:#ef4444;">加载营销约束失败</div>';
+                document.getElementById('growth-constraints-list').innerHTML = '<div style="color:#E58B98;">加载营销约束失败</div>';
             }
         }
 
@@ -2295,7 +2295,7 @@
             try {
                 var host = document.getElementById('growth-action-board');
                 if (!host) { console.error('loadGrowthActionBoard: growth-action-board element not found'); return; }
-                host.innerHTML = '<div style="color:rgba(226,232,240,0.3);padding:10px 0;">加载中...</div>';
+                host.innerHTML = '<div style="color:rgba(242,234,238,0.3);padding:10px 0;">加载中...</div>';
                 var statusFilter = document.getElementById('growth-action-status-filter')?.value || '';
                 var channelFilter = document.getElementById('growth-action-channel-filter')?.value || '';
                 var url = '/api/growth/actions?limit=200';
@@ -2320,87 +2320,87 @@
                         var anomaly = payload.anomaly_type || '';
                         var variantHtml = '';
                         if (va) {
-                            variantHtml += '<div style="margin-top:8px;padding:8px 10px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.2);border-radius:8px;">'
-                                + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">方案A — ' + escapeHtml(va.label || '') + '</div>'
-                                + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(va.action || '') + '</div>'
-                                + (va.execution_guide ? '<div style="font-size:10px;color:rgba(226,232,240,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(va.execution_guide) + '</div>' : '')
+                            variantHtml += '<div style="margin-top:8px;padding:8px 10px;background:rgba(134,201,162,0.06);border:1px solid rgba(134,201,162,0.2);border-radius:8px;">'
+                                + '<div style="font-size:10px;color:#86C9A2;font-weight:700;margin-bottom:4px;">方案A — ' + escapeHtml(va.label || '') + '</div>'
+                                + '<div style="font-size:11px;color:rgba(242,234,238,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(va.action || '') + '</div>'
+                                + (va.execution_guide ? '<div style="font-size:10px;color:rgba(242,234,238,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(va.execution_guide) + '</div>' : '')
                                 + '</div>';
                         }
                         if (vb) {
-                            variantHtml += '<div style="margin-top:6px;padding:8px 10px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);border-radius:8px;">'
-                                + '<div style="font-size:10px;color:#818cf8;font-weight:700;margin-bottom:4px;">方案B — ' + escapeHtml(vb.label || '') + '</div>'
-                                + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(vb.action || '') + '</div>'
-                                + (vb.execution_guide ? '<div style="font-size:10px;color:rgba(226,232,240,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(vb.execution_guide) + '</div>' : '')
+                            variantHtml += '<div style="margin-top:6px;padding:8px 10px;background:rgba(209,143,160,0.06);border:1px solid rgba(209,143,160,0.2);border-radius:8px;">'
+                                + '<div style="font-size:10px;color:#E0A6B4;font-weight:700;margin-bottom:4px;">方案B — ' + escapeHtml(vb.label || '') + '</div>'
+                                + '<div style="font-size:11px;color:rgba(242,234,238,0.85);line-height:1.55;white-space:pre-wrap;">' + escapeHtml(vb.action || '') + '</div>'
+                                + (vb.execution_guide ? '<div style="font-size:10px;color:rgba(242,234,238,0.45);margin-top:4px;line-height:1.5;white-space:pre-wrap;">' + escapeHtml(vb.execution_guide) + '</div>' : '')
                                 + '</div>';
                         }
                         var ts = (function(d){ try { return new Date(d).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return String(d).slice(0,16); } })(x.created_at);
-                        return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);border-left:3px solid #a78bfa;padding-left:10px;">'
+                        return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.05);border-left:3px solid #D18FA0;padding-left:10px;">'
                             + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                             + '<div style="flex:1;min-width:0;">'
-                            + '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(167,139,250,0.18);color:#a78bfa;font-weight:700;margin-right:6px;vertical-align:middle;">🧭 PLLM策略实验</span>'
-                            + (anomaly ? '<span style="font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:600;margin-right:6px;vertical-align:middle;">' + escapeHtml(anomaly) + '</span>' : '')
+                            + '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(209,143,160,0.18);color:#D18FA0;font-weight:700;margin-right:6px;vertical-align:middle;">🧭 PLLM策略实验</span>'
+                            + (anomaly ? '<span style="font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(207,161,74,0.15);color:#CFA14A;font-weight:600;margin-right:6px;vertical-align:middle;">' + escapeHtml(anomaly) + '</span>' : '')
                             + '<span style="font-weight:700;color:#fff;font-size:14px;">' + escapeHtml(x.title || '-') + '</span>'
-                            + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:600;">⚡ 待审批</span>'
+                            + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(207,161,74,0.15);color:#CFA14A;font-weight:600;">⚡ 待审批</span>'
                             + '</div>'
-                            + '<div style="font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(167,139,250,0.12);color:#a78bfa;font-weight:600;flex-shrink:0;">PLLM</div>'
+                            + '<div style="font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(209,143,160,0.12);color:#D18FA0;font-weight:600;flex-shrink:0;">PLLM</div>'
                             + '</div>'
-                            + '<div style="font-size:11px;color:rgba(226,232,240,0.45);margin-top:4px;">' + ts + (expCode ? ' · ' + expCode : '') + '</div>'
-                            + (x.detail ? '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;line-height:1.5;">' + escapeHtml(x.detail) + '</div>' : '')
+                            + '<div style="font-size:11px;color:rgba(242,234,238,0.45);margin-top:4px;">' + ts + (expCode ? ' · ' + expCode : '') + '</div>'
+                            + (x.detail ? '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:6px;line-height:1.5;">' + escapeHtml(x.detail) + '</div>' : '')
                             + variantHtml
                             + '<div style="display:flex;gap:8px;margin-top:10px;">'
-                            + '<button data-click="approvePllmExp" data-arg="' + expCode + '" style="flex:1;padding:7px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
-                            + '<button data-click="rejectPllmExp" data-arg="' + expCode + '" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">不适合</button>'
+                            + '<button data-click="approvePllmExp" data-arg="' + expCode + '" style="flex:1;padding:7px 12px;border:none;border-radius:8px;background:rgba(134,201,162,0.15);color:#86C9A2;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                            + '<button data-click="rejectPllmExp" data-arg="' + expCode + '" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:8px;background:rgba(229,139,152,0.1);color:#E58B98;cursor:pointer;font-size:11px;">不适合</button>'
                             + '</div>'
                             + '</div>';
                     }
 
                     var posterUrl = payload.poster_url || payload.output_url || '';
                     var confidence = payload.confidence_level || '';
-                    var confidenceColor = confidence === '高置信' ? '#22c55e' : confidence === '试验性' ? '#f59e0b' : confidence === '需人工判断' ? '#ef4444' : '#64748b';
+                    var confidenceColor = confidence === '高置信' ? '#86C9A2' : confidence === '试验性' ? '#CFA14A' : confidence === '需人工判断' ? '#E58B98' : '#7A6B72';
                     var channel = payload.channel || '';
                     var channelLabel = channelLabels[channel] || channel || '-';
-                    var channelColor = channel === 'wecom' ? '#22c55e' : channel === 'miniprogram' ? '#38bdf8' : channel === 'xiaohongshu' ? '#ef4444' : '#94a3b8';
+                    var channelColor = channel === 'wecom' ? '#86C9A2' : channel === 'miniprogram' ? '#EABBC5' : channel === 'xiaohongshu' ? '#E58B98' : '#97848E';
                     var typeLabel = actionTypeLabels[x.action_type] || '✅ 触达';
                     var isPllm = x.action_type === 'pllm_task';
                     var isFinal = x.status === 'executed' || x.status === 'ignored';
                     var kpi = payload.expected_kpi || {};
                     var kpiHtml = (kpi && (kpi.redemption_rate || kpi.revenue_fen || kpi.reach)) ?
                         '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">'
-                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">🎯 预计核销率 ' + (kpi.redemption_rate || 0) + '%</span>'
-                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">预计营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + '</span>'
-                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(99,102,241,0.12);color:#a5b4fc;">预计触达 ' + (kpi.reach || 0) + '人</span>'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(209,143,160,0.12);color:#EABBC5;">🎯 预计核销率 ' + (kpi.redemption_rate || 0) + '%</span>'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(209,143,160,0.12);color:#EABBC5;">预计营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + '</span>'
+                        + '<span style="font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(209,143,160,0.12);color:#EABBC5;">预计触达 ' + (kpi.reach || 0) + '人</span>'
                         + '</div>' : '';
                     var readyCopy = payload.ready_copy || '';
                     var readyCopyHtml = readyCopy ?
-                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(34,197,94,0.05);border:1px solid rgba(34,197,94,0.18);border-radius:8px;">'
-                        + '<div style="font-size:10px;color:#22c55e;font-weight:700;margin-bottom:4px;">📝 成品文案（可直接使用）</div>'
-                        + '<div style="font-size:11px;color:rgba(226,232,240,0.85);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(readyCopy) + '</div>'
-                        + '<button data-click="hrmsCopyReadyCopy" data-arg-self="1" data-stop data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;font-size:10px;cursor:pointer;">📋 复制文案</button>'
+                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(134,201,162,0.05);border:1px solid rgba(134,201,162,0.18);border-radius:8px;">'
+                        + '<div style="font-size:10px;color:#86C9A2;font-weight:700;margin-bottom:4px;">📝 成品文案（可直接使用）</div>'
+                        + '<div style="font-size:11px;color:rgba(242,234,238,0.85);line-height:1.6;white-space:pre-wrap;">' + escapeHtml(readyCopy) + '</div>'
+                        + '<button data-click="hrmsCopyReadyCopy" data-arg-self="1" data-stop data-copy="' + escapeHtml(readyCopy) + '" style="margin-top:6px;padding:3px 10px;border:none;border-radius:6px;background:rgba(134,201,162,0.15);color:#86C9A2;font-size:10px;cursor:pointer;">📋 复制文案</button>'
                         + '</div>' : '';
                     var oc = payload.outcome_summary || null;
                     var ocHtml = (oc && oc.effectiveness_score != null) ?
-                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:8px;">'
-                        + '<span style="font-size:11px;font-weight:700;color:' + (oc.effectiveness === '有效' ? '#22c55e' : oc.effectiveness === '无效' ? '#ef4444' : '#f59e0b') + ';">📊 实际效果 ' + oc.effectiveness + ' · ' + oc.effectiveness_score + '分</span>'
-                        + '<span style="font-size:10px;color:rgba(226,232,240,0.5);margin-left:8px;">核销率' + (oc.actual_redemption_rate != null ? oc.actual_redemption_rate + '%' : '-') + ' / 营收¥' + (oc.actual && oc.actual.revenue_fen != null ? Math.round(oc.actual.revenue_fen / 100) : '-') + ' / 达成' + (oc.achievement != null ? Math.round(oc.achievement * 100) + '%' : '-') + '</span>'
+                        '<div style="margin-top:6px;padding:8px 10px;background:rgba(242,234,238,0.03);border-radius:8px;">'
+                        + '<span style="font-size:11px;font-weight:700;color:' + (oc.effectiveness === '有效' ? '#86C9A2' : oc.effectiveness === '无效' ? '#E58B98' : '#CFA14A') + ';">📊 实际效果 ' + oc.effectiveness + ' · ' + oc.effectiveness_score + '分</span>'
+                        + '<span style="font-size:10px;color:rgba(242,234,238,0.5);margin-left:8px;">核销率' + (oc.actual_redemption_rate != null ? oc.actual_redemption_rate + '%' : '-') + ' / 营收¥' + (oc.actual && oc.actual.revenue_fen != null ? Math.round(oc.actual.revenue_fen / 100) : '-') + ' / 达成' + (oc.achievement != null ? Math.round(oc.achievement * 100) + '%' : '-') + '</span>'
                         + '</div>' : '';
-                    var draftPreview = '<div style="margin-top:6px;padding:8px 10px;background:rgba(14,165,233,0.04);border:1px solid rgba(14,165,233,0.12);border-radius:8px;font-size:11px;">'
+                    var draftPreview = '<div style="margin-top:6px;padding:8px 10px;background:rgba(209,143,160,0.04);border:1px solid rgba(209,143,160,0.12);border-radius:8px;font-size:11px;">'
                         + '<div style="display:flex;gap:8px;flex-wrap:wrap;color:var(--rep-muted);">'
                         + '<span>门店 ' + escapeHtml(growthStoreName(x.store_id) || '-') + (confidence ? ' <span style="font-size:10px;padding:1px 6px;border-radius:999px;background:' + confidenceColor + '22;color:' + confidenceColor + ';">' + confidence + '</span>' : '') + '</span>'
                         + '<span>目标 ' + (payload.target_audience || payload.audience || '活跃客群') + '</span>'
                         + (payload.execution_time ? '<span>🕐 ' + escapeHtml(payload.execution_time) + '</span>' : '')
                         + (payload.cost_estimate ? '<span>' + escapeHtml(payload.cost_estimate) + '</span>' : (payload.budget_fen ? '<span>预算 ¥' + Math.round(Number(payload.budget_fen) / 100) + '</span>' : ''))
-                        + '<span style="color:rgba(226,232,240,0.4);">' + (function(ts){ try { return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return String(ts).slice(0,16); } })(x.executed_at || x.created_at) + '</span>'
+                        + '<span style="color:rgba(242,234,238,0.4);">' + (function(ts){ try { return new Date(ts).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return String(ts).slice(0,16); } })(x.executed_at || x.created_at) + '</span>'
                         + '</div>'
                         + kpiHtml
                         + readyCopyHtml
-                        + (readyCopy ? '' : (function(){ var fullText = payload.execution_action || x.detail || ''; var eid = 'exp-' + key.replace(/[^a-z0-9]/gi,'_'); var isLong = fullText.length > 150; var preview = isLong ? fullText.slice(0,150) + '…' : fullText; return '<div style="margin-top:4px;color:rgba(226,232,240,0.6);line-height:1.6;">' + '<span id="' + eid + '-txt" style="white-space:pre-wrap;">' + escapeHtml(preview) + '</span>' + (isLong ? '<span id="' + eid + '-full" style="white-space:pre-wrap;display:none;">' + escapeHtml(fullText) + '</span>' + '<button data-click="hrmsExpandCollapsePair" data-arg="' + eid + '-txt" data-arg2="' + eid + '-full" data-arg-self data-stop style="margin-left:6px;padding:1px 8px;border:none;border-radius:6px;background:rgba(167,139,250,0.15);color:#a78bfa;font-size:10px;cursor:pointer;">展开全文</button>' : '') + '</div>'; })())
+                        + (readyCopy ? '' : (function(){ var fullText = payload.execution_action || x.detail || ''; var eid = 'exp-' + key.replace(/[^a-z0-9]/gi,'_'); var isLong = fullText.length > 150; var preview = isLong ? fullText.slice(0,150) + '…' : fullText; return '<div style="margin-top:4px;color:rgba(242,234,238,0.6);line-height:1.6;">' + '<span id="' + eid + '-txt" style="white-space:pre-wrap;">' + escapeHtml(preview) + '</span>' + (isLong ? '<span id="' + eid + '-full" style="white-space:pre-wrap;display:none;">' + escapeHtml(fullText) + '</span>' + '<button data-click="hrmsExpandCollapsePair" data-arg="' + eid + '-txt" data-arg2="' + eid + '-full" data-arg-self data-stop style="margin-left:6px;padding:1px 8px;border:none;border-radius:6px;background:rgba(209,143,160,0.15);color:#D18FA0;font-size:10px;cursor:pointer;">展开全文</button>' : '') + '</div>'; })())
                         + ocHtml
                         + '</div>';
                     var posterHtml;
                     if (posterUrl) {
-                        posterHtml = '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:10px;"><img src="' + escapeHtml(posterUrl) + '" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.08);"><div style="font-size:11px;color:rgba(226,232,240,0.58);">已绑定海报</div></div>';
+                        posterHtml = '<div style="margin-top:8px;display:flex;gap:10px;align-items:center;padding:8px 10px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.05);border-radius:10px;"><img src="' + escapeHtml(posterUrl) + '" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid rgba(242,234,238,0.08);"><div style="font-size:11px;color:rgba(242,234,238,0.58);">已绑定海报</div></div>';
                     } else if (x.status === 'proposed' && (x.action_type === 'send_voucher' || x.action_type === 'campaign_activate')) {
-                        posterHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:11px;color:#f59e0b;cursor:pointer;" data-click="openPosterPicker" data-arg="' + key + '">🖼️ 未绑定海报 — 点此选择海报</div>';
+                        posterHtml = '<div style="margin-top:8px;padding:8px 10px;background:rgba(207,161,74,0.06);border:1px dashed rgba(207,161,74,0.3);border-radius:10px;font-size:11px;color:#CFA14A;cursor:pointer;" data-click="openPosterPicker" data-arg="' + key + '">🖼️ 未绑定海报 — 点此选择海报</div>';
                     } else {
                         posterHtml = '';
                     }
@@ -2409,28 +2409,28 @@
                     var actionButtons;
                     if (isLlm) {
                         if (x.status === 'proposed') {
-                            actionButtons = '<button data-click="adoptGrowthSuggestion" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
-                                + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>';
+                            actionButtons = '<button data-click="adoptGrowthSuggestion" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(134,201,162,0.15);color:#86C9A2;cursor:pointer;font-size:11px;font-weight:700;">✅ 采纳·我要执行</button>'
+                                + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(229,139,152,0.1);color:#E58B98;cursor:pointer;font-size:11px;">忽略</button>';
                         } else if (x.status === 'executing' || x.status === 'adopted') {
-                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(245,158,11,0.15);color:#f59e0b;cursor:pointer;font-size:11px;font-weight:700;">⏳ 回填活动结果</button>';
+                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(207,161,74,0.15);color:#CFA14A;cursor:pointer;font-size:11px;font-weight:700;">⏳ 回填活动结果</button>';
                         } else if (x.status === 'measured') {
-                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);cursor:pointer;font-size:11px;">✏️ 修正结果</button>';
+                            actionButtons = '<button data-click="openResultFeedbackForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.7);cursor:pointer;font-size:11px;">✏️ 修正结果</button>';
                         } else {
                             actionButtons = '';
                         }
                     } else {
                         actionButtons = !isFinal ?
-                            '<button data-click="executeGrowthAction" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(34,197,94,0.15);color:#22c55e;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
-                            + '<button data-click="openEditExecuteForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(14,165,233,0.12);color:#38bdf8;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
-                            + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;">忽略</button>'
+                            '<button data-click="executeGrowthAction" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(134,201,162,0.15);color:#86C9A2;cursor:pointer;font-size:11px;font-weight:700;">批准执行</button>'
+                            + '<button data-click="openEditExecuteForm" data-arg="' + key + '" style="flex:1;padding:6px 12px;border:none;border-radius:8px;background:rgba(209,143,160,0.12);color:#EABBC5;cursor:pointer;font-size:11px;font-weight:600;">修改后执行</button>'
+                            + '<button data-click="ignoreGrowthAction" data-arg="' + key + '" style="flex-shrink:0;padding:6px 10px;border:none;border-radius:8px;background:rgba(229,139,152,0.1);color:#E58B98;cursor:pointer;font-size:11px;">忽略</button>'
                             : '';
                     }
                     var statusBadge = x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可执行' : x.status === 'executing' || x.status === 'adopted' ? '⏳ 执行中·待回填' : x.status === 'measured' ? '📊 已测评' : x.status || '-';
-                    var statusBadgeStyle = x.status === 'executed' || x.status === 'measured' ? 'background:rgba(34,197,94,0.15);color:#22c55e' : x.status === 'ignored' ? 'background:rgba(239,68,68,0.12);color:#ef4444' : 'background:rgba(245,158,11,0.15);color:#f59e0b';
-                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);' + (isPllm ? 'border-left:3px solid #a78bfa;padding-left:10px;' : '') + '">'
+                    var statusBadgeStyle = x.status === 'executed' || x.status === 'measured' ? 'background:rgba(134,201,162,0.15);color:#86C9A2' : x.status === 'ignored' ? 'background:rgba(229,139,152,0.12);color:#E58B98' : 'background:rgba(207,161,74,0.15);color:#CFA14A';
+                    return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.05);' + (isPllm ? 'border-left:3px solid #D18FA0;padding-left:10px;' : '') + '">'
                         + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
                         + '<div style="flex:1;min-width:0;cursor:pointer;" data-click="openActionDetailModal" data-arg="' + key + '">'
-                        + (isPllm ? '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(167,139,250,0.18);color:#a78bfa;font-weight:700;margin-right:6px;vertical-align:middle;">🤖 PLLM智能检测</span>' : '')
+                        + (isPllm ? '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(209,143,160,0.18);color:#D18FA0;font-weight:700;margin-right:6px;vertical-align:middle;">🤖 PLLM智能检测</span>' : '')
                         + '<span style="font-weight:700;color:#fff;font-size:14px;">' + (isPllm ? '' : typeLabel + ' ') + (x.title || '-') + '</span>'
                         + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;' + statusBadgeStyle + ';font-weight:600;">' + statusBadge + '</span>'
                         + '</div>'
@@ -2440,9 +2440,9 @@
                         + draftPreview
                         + (actionButtons ? '<div style="margin-top:8px;display:flex;gap:6px;align-items:center;">' + actionButtons + '</div>' : '')
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无AI建议</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无AI建议</div>';
             } catch (e) {
-                document.getElementById('growth-action-board').innerHTML = '<div style="color:#ef4444;">加载AI建议失败</div>';
+                document.getElementById('growth-action-board').innerHTML = '<div style="color:#E58B98;">加载AI建议失败</div>';
             }
         }
 
@@ -2468,44 +2468,44 @@
             var body = document.getElementById('exec-confirm-body');
             var posterUrl = payload.poster_url || payload.output_url || '';
 
-            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'pengyouquan': '#06b6d4', 'dianping': '#a78bfa', 'waimai': '#f97316' };
-            var cc = channelColors[channel] || '#94a3b8';
+            var channelColors = { 'wecom': '#86C9A2', 'miniprogram': '#EABBC5', 'xiaohongshu': '#E58B98', 'douyin': '#CFA14A', 'pengyouquan': '#5C9A76', 'dianping': '#D18FA0', 'waimai': '#CFA14A' };
+            var cc = channelColors[channel] || '#97848E';
 
             var matchStatus = '';
-            var matchColor = '#22c55e';
+            var matchColor = '#86C9A2';
             if (x.action_type === 'send_voucher' || x.action_type === 'campaign_activate') {
                 if (!couponValue && !payload.execution_action) {
                     matchStatus = '⚠️ 缺少券金额或执行动作';
-                    matchColor = '#f59e0b';
+                    matchColor = '#CFA14A';
                 } else if (!posterUrl) {
                     matchStatus = '⚠️ 未绑定海报，客户看不到视觉素材';
-                    matchColor = '#f59e0b';
+                    matchColor = '#CFA14A';
                 } else {
                     matchStatus = '✅ 消息文案与券匹配正常';
-                    matchColor = '#22c55e';
+                    matchColor = '#86C9A2';
                 }
             } else {
                 matchStatus = '✅ 触达任务';
-                matchColor = '#22c55e';
+                matchColor = '#86C9A2';
             }
 
             body.innerHTML =
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;">'
-                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">发送渠道</span><div style="color:' + cc + ';font-weight:700;margin-top:4px;font-size:14px;">📡 ' + channelLabel + '</div></div>'
-                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">目标人群</span><div style="color:#fff;font-weight:600;margin-top:4px;font-size:14px;">' + (audienceLabels[audience] || audience) + '</div></div>'
-                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">门店</span><div style="color:#fff;margin-top:4px;font-size:14px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
-                + '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;"><span style="color:rgba(226,232,240,0.5);">执行动作</span><div style="color:#fff;margin-top:4px;font-size:13px;">' + (payload.execution_action || x.detail || x.title || '-') + '</div></div>'
+                + '<div style="padding:10px;background:rgba(242,234,238,0.03);border-radius:8px;"><span style="color:rgba(242,234,238,0.5);">发送渠道</span><div style="color:' + cc + ';font-weight:700;margin-top:4px;font-size:14px;">📡 ' + channelLabel + '</div></div>'
+                + '<div style="padding:10px;background:rgba(242,234,238,0.03);border-radius:8px;"><span style="color:rgba(242,234,238,0.5);">目标人群</span><div style="color:#fff;font-weight:600;margin-top:4px;font-size:14px;">' + (audienceLabels[audience] || audience) + '</div></div>'
+                + '<div style="padding:10px;background:rgba(242,234,238,0.03);border-radius:8px;"><span style="color:rgba(242,234,238,0.5);">门店</span><div style="color:#fff;margin-top:4px;font-size:14px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
+                + '<div style="padding:10px;background:rgba(242,234,238,0.03);border-radius:8px;"><span style="color:rgba(242,234,238,0.5);">执行动作</span><div style="color:#fff;margin-top:4px;font-size:13px;">' + (payload.execution_action || x.detail || x.title || '-') + '</div></div>'
                 + '</div>'
-                + (couponValue ? '<div style="padding:12px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:10px;margin-top:10px;"><span style="color:rgba(226,232,240,0.5);font-size:12px;">优惠券</span><div style="color:#22c55e;font-weight:700;margin-top:4px;">🎫 ¥' + (Math.round(couponValue / 100)) + ' · 有效期 ' + validDays + ' 天</div></div>' : '')
-                + (budget ? '<div style="padding:12px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.15);border-radius:10px;margin-top:4px;"><span style="color:rgba(226,232,240,0.5);font-size:12px;">预算</span><div style="color:#f59e0b;font-weight:700;margin-top:4px;">💰 ¥' + (Math.round(budget / 100)) + '</div></div>' : '')
-                + (posterUrl ? '<div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-top:10px;"><span style="color:rgba(226,232,240,0.5);font-size:12px;">附带海报</span><div style="margin-top:6px;"><img src="' + escapeHtml(posterUrl) + '" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);object-fit:contain;"></div></div>' : '')
-                + '<div style="margin-top:12px;padding:14px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">'
-                + '<div style="font-size:12px;font-weight:700;color:rgba(226,232,240,0.75);margin-bottom:8px;">📱 客户将收到的消息预览</div>'
-                + '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;font-size:13px;line-height:1.8;color:rgba(226,232,240,0.85);">'
+                + (couponValue ? '<div style="padding:12px;background:rgba(134,201,162,0.06);border:1px solid rgba(134,201,162,0.15);border-radius:10px;margin-top:10px;"><span style="color:rgba(242,234,238,0.5);font-size:12px;">优惠券</span><div style="color:#86C9A2;font-weight:700;margin-top:4px;">🎫 ¥' + (Math.round(couponValue / 100)) + ' · 有效期 ' + validDays + ' 天</div></div>' : '')
+                + (budget ? '<div style="padding:12px;background:rgba(207,161,74,0.06);border:1px solid rgba(207,161,74,0.15);border-radius:10px;margin-top:4px;"><span style="color:rgba(242,234,238,0.5);font-size:12px;">预算</span><div style="color:#CFA14A;font-weight:700;margin-top:4px;">💰 ¥' + (Math.round(budget / 100)) + '</div></div>' : '')
+                + (posterUrl ? '<div style="padding:10px;background:rgba(242,234,238,0.03);border-radius:8px;margin-top:10px;"><span style="color:rgba(242,234,238,0.5);font-size:12px;">附带海报</span><div style="margin-top:6px;"><img src="' + escapeHtml(posterUrl) + '" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid rgba(242,234,238,0.08);object-fit:contain;"></div></div>' : '')
+                + '<div style="margin-top:12px;padding:14px;background:rgba(242,234,238,0.02);border:1px solid rgba(242,234,238,0.06);border-radius:10px;">'
+                + '<div style="font-size:12px;font-weight:700;color:rgba(242,234,238,0.75);margin-bottom:8px;">📱 客户将收到的消息预览</div>'
+                + '<div style="background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);border-radius:10px;padding:14px;font-size:13px;line-height:1.8;color:rgba(242,234,238,0.85);">'
                 + '<div style="font-weight:700;color:#fff;font-size:14px;margin-bottom:6px;">' + escapeHtml(x.title || '营销活动') + '</div>'
-                + '<div style="color:rgba(226,232,240,0.7);margin-bottom:8px;">' + escapeHtml(x.detail || payload.execution_action || '') + '</div>'
-                + (couponValue ? '<div style="display:inline-block;padding:4px 12px;background:rgba(34,197,94,0.12);border-radius:999px;color:#22c55e;font-weight:700;">券 ¥' + (Math.round(couponValue / 100)) + ' · ' + validDays + '天有效</div>' : '')
-                + (payload.execution_action ? '<div style="margin-top:6px;color:rgba(226,232,240,0.5);font-size:11px;">动作：' + escapeHtml(payload.execution_action) + '</div>' : '')
+                + '<div style="color:rgba(242,234,238,0.7);margin-bottom:8px;">' + escapeHtml(x.detail || payload.execution_action || '') + '</div>'
+                + (couponValue ? '<div style="display:inline-block;padding:4px 12px;background:rgba(134,201,162,0.12);border-radius:999px;color:#86C9A2;font-weight:700;">券 ¥' + (Math.round(couponValue / 100)) + ' · ' + validDays + '天有效</div>' : '')
+                + (payload.execution_action ? '<div style="margin-top:6px;color:rgba(242,234,238,0.5);font-size:11px;">动作：' + escapeHtml(payload.execution_action) + '</div>' : '')
                 + '</div></div>'
                 + '<div style="margin-top:10px;padding:10px;border-radius:8px;font-size:12px;font-weight:600;background:' + matchColor + '15;color:' + matchColor + ';border:1px solid ' + matchColor + '33;">' + matchStatus + '</div>';
 
@@ -2583,21 +2583,21 @@
             ov.id = 'result-feedback-overlay';
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
             ov.innerHTML =
-                '<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:14px;max-width:420px;width:100%;padding:18px;max-height:90vh;overflow:auto;">'
+                '<div style="background:#121012;border:1px solid rgba(242,234,238,0.1);border-radius:14px;max-width:420px;width:100%;padding:18px;max-height:90vh;overflow:auto;">'
                 + '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px;">📊 回填活动结果</div>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:6px;">' + escapeHtml(x.title || '') + '</div>'
-                + '<div style="font-size:11px;color:#a5b4fc;background:rgba(99,102,241,0.1);border-radius:8px;padding:8px 10px;margin-bottom:12px;">预计目标：核销率 ' + (kpi.redemption_rate || 0) + '% · 营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + ' · 触达 ' + (kpi.reach || 0) + '人</div>'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">实际触达人数</label>'
-                + '<input id="rf-reach" type="number" min="0" value="' + (ac.reach != null ? ac.reach : '') + '" placeholder="如 47" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">实际核销/到店数</label>'
-                + '<input id="rf-redemptions" type="number" min="0" value="' + (ac.redemptions != null ? ac.redemptions : '') + '" placeholder="如 6" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">带来营收（元）</label>'
-                + '<input id="rf-revenue" type="number" min="0" value="' + (ac.revenue_fen != null ? Math.round(ac.revenue_fen / 100) : '') + '" placeholder="如 2800" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
-                + '<label style="font-size:12px;color:rgba(226,232,240,0.7);display:block;margin-bottom:4px;">备注（可选）</label>'
-                + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.55);margin-bottom:6px;">' + escapeHtml(x.title || '') + '</div>'
+                + '<div style="font-size:11px;color:#EABBC5;background:rgba(209,143,160,0.1);border-radius:8px;padding:8px 10px;margin-bottom:12px;">预计目标：核销率 ' + (kpi.redemption_rate || 0) + '% · 营收 ¥' + Math.round(Number(kpi.revenue_fen || 0) / 100) + ' · 触达 ' + (kpi.reach || 0) + '人</div>'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">实际触达人数</label>'
+                + '<input id="rf-reach" type="number" min="0" value="' + (ac.reach != null ? ac.reach : '') + '" placeholder="如 47" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">实际核销/到店数</label>'
+                + '<input id="rf-redemptions" type="number" min="0" value="' + (ac.redemptions != null ? ac.redemptions : '') + '" placeholder="如 6" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">带来营收（元）</label>'
+                + '<input id="rf-revenue" type="number" min="0" value="' + (ac.revenue_fen != null ? Math.round(ac.revenue_fen / 100) : '') + '" placeholder="如 2800" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">备注（可选）</label>'
+                + '<textarea id="rf-note" rows="2" placeholder="执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;">' + escapeHtml(payload.feedback_note || '') + '</textarea>'
                 + '<div style="display:flex;gap:8px;">'
-                + '<button data-click="submitResultFeedback" data-arg="' + actionKey + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
-                + '<button data-click="hrmsRemoveById" data-arg="result-feedback-overlay" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;cursor:pointer;">取消</button>'
+                + '<button data-click="submitResultFeedback" data-arg="' + actionKey + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#86C9A2;color:#fff;font-weight:700;cursor:pointer;">提交并打分</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="result-feedback-overlay" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(242,234,238,0.08);color:#fff;cursor:pointer;">取消</button>'
                 + '</div></div>';
             ov.addEventListener('click', function(e) { if (e.target === ov) ov.remove(); });
             document.body.appendChild(ov);
@@ -2635,10 +2635,10 @@
             var key = x.action_key || '';
             var actionType = x.action_type || '';
             var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
-            var channelColors = { 'wecom': '#22c55e', 'miniprogram': '#38bdf8', 'xiaohongshu': '#ef4444', 'douyin': '#f59e0b', 'pengyouquan': '#06b6d4', 'dianping': '#a78bfa', 'waimai': '#f97316' };
+            var channelColors = { 'wecom': '#86C9A2', 'miniprogram': '#EABBC5', 'xiaohongshu': '#E58B98', 'douyin': '#CFA14A', 'pengyouquan': '#5C9A76', 'dianping': '#D18FA0', 'waimai': '#CFA14A' };
             var channel = payload.channel || '';
             var channelLabel = channelLabels[channel] || channel || '-';
-            var channelColor = channelColors[channel] || '#94a3b8';
+            var channelColor = channelColors[channel] || '#97848E';
             var actionTypeLabel = '';
             if (actionType === 'send_voucher' || actionType === 'campaign_activate') actionTypeLabel = '🎫 发券/激活活动 — 将创建券记录+计划';
             else if (actionType === 'create_content' || actionType === 'promo_task') actionTypeLabel = '📝 创建内容 — 将写入内容日历';
@@ -2650,25 +2650,25 @@
             document.getElementById('growth-action-detail-title').textContent = x.title || '执行草稿';
             var host = document.getElementById('growth-action-detail-body');
             host.innerHTML = '<div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
-                + '<span style="padding:6px 12px;border-radius:8px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:#22c55e;font-weight:700;font-size:12px;">' + actionTypeLabel + '</span>'
+                + '<span style="padding:6px 12px;border-radius:8px;background:rgba(134,201,162,0.1);border:1px solid rgba(134,201,162,0.3);color:#86C9A2;font-weight:700;font-size:12px;">' + actionTypeLabel + '</span>'
                 + '<span style="padding:4px 10px;border-radius:999px;background:' + channelColor + '22;color:' + channelColor + ';font-size:12px;font-weight:600;">📡 ' + channelLabel + '</span>'
                 + '</div>'
                 + '<div style="display:flex;flex-direction:column;gap:8px;">'
                 + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">门店</span><div style="color:#fff;font-weight:600;margin-top:2px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">状态</span><div style="color:' + (x.status === 'executed' ? '#22c55e' : x.status === 'ignored' ? '#ef4444' : '#f59e0b') + ';font-weight:600;margin-top:2px;">' + (x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可一键执行' : x.status || '-') + '</div></div>'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">渠道</span><div style="color:' + channelColor + ';margin-top:2px;font-weight:600;">' + channelLabel + '</div></div>'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">预算</span><div style="color:#fff;margin-top:2px;">' + (payload.budget_fen ? '¥' + Math.round(Number(payload.budget_fen) / 100) : '-') + '</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">门店</span><div style="color:#fff;font-weight:600;margin-top:2px;">' + escapeHtml(growthStoreName(x.store_id) || '-') + '</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">状态</span><div style="color:' + (x.status === 'executed' ? '#86C9A2' : x.status === 'ignored' ? '#E58B98' : '#CFA14A') + ';font-weight:600;margin-top:2px;">' + (x.status === 'executed' ? '✅ 已执行' : x.status === 'ignored' ? '⛔ 已忽略' : x.status === 'proposed' ? '⚡ 可一键执行' : x.status || '-') + '</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">渠道</span><div style="color:' + channelColor + ';margin-top:2px;font-weight:600;">' + channelLabel + '</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">预算</span><div style="color:#fff;margin-top:2px;">' + (payload.budget_fen ? '¥' + Math.round(Number(payload.budget_fen) / 100) : '-') + '</div></div>'
                 + '</div>'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">目标人群</span><div style="color:#fff;margin-top:2px;">' + (payload.target_audience || payload.audience || '门店活跃客群') + '</div></div>'
-                + '<div><span style="color:rgba(226,232,240,0.5);font-size:12px;">执行动作</span><div style="color:' + (x.status === 'executed' ? 'rgba(34,197,94,0.8)' : 'rgba(226,232,240,0.8)') + ';margin-top:2px;font-size:13px;line-height:1.5;">' + (payload.execution_action || x.detail || '-') + '</div></div>'
-                + (x.status === 'executed' && payload.real_executions ? '<div style="padding:12px;background:rgba(34,197,94,0.08);border-radius:8px;"><div style="color:#22c55e;font-weight:700;margin-bottom:6px;">✅ 执行结果</div><div style="color:rgba(226,232,240,0.75);font-size:12px;line-height:1.6;">' + payload.real_executions.map(function(e) { return '• ' + Object.entries(e).map(function(kv) { return kv[0] + ': <span style="color:#fff;">' + kv[1] + '</span>'; }).join(' · '); }).join('<br>') + '</div></div>' : '')
-                + '<div style="padding:10px;background:rgba(14,165,233,0.08);border-radius:8px;"><div style="color:rgba(226,232,240,0.5);font-size:12px;margin-bottom:4px;">📊 说明</div><div style="color:rgba(226,232,240,0.7);font-size:12px;line-height:1.5;">基于门店增长数据与营销约束生成。</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">目标人群</span><div style="color:#fff;margin-top:2px;">' + (payload.target_audience || payload.audience || '门店活跃客群') + '</div></div>'
+                + '<div><span style="color:rgba(242,234,238,0.5);font-size:12px;">执行动作</span><div style="color:' + (x.status === 'executed' ? 'rgba(134,201,162,0.8)' : 'rgba(242,234,238,0.8)') + ';margin-top:2px;font-size:13px;line-height:1.5;">' + (payload.execution_action || x.detail || '-') + '</div></div>'
+                + (x.status === 'executed' && payload.real_executions ? '<div style="padding:12px;background:rgba(134,201,162,0.08);border-radius:8px;"><div style="color:#86C9A2;font-weight:700;margin-bottom:6px;">✅ 执行结果</div><div style="color:rgba(242,234,238,0.75);font-size:12px;line-height:1.6;">' + payload.real_executions.map(function(e) { return '• ' + Object.entries(e).map(function(kv) { return kv[0] + ': <span style="color:#fff;">' + kv[1] + '</span>'; }).join(' · '); }).join('<br>') + '</div></div>' : '')
+                + '<div style="padding:10px;background:rgba(209,143,160,0.08);border-radius:8px;"><div style="color:rgba(242,234,238,0.5);font-size:12px;margin-bottom:4px;">📊 说明</div><div style="color:rgba(242,234,238,0.7);font-size:12px;line-height:1.5;">基于门店增长数据与营销约束生成。</div></div>'
                 + '</div>';
             if (payload.poster_url || payload.output_url) {
-                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);"><div style="font-size:12px;color:rgba(226,232,240,0.55);margin-bottom:8px;">来源海报</div><img src="' + escapeHtml(payload.poster_url || payload.output_url) + '" style="max-width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid rgba(255,255,255,0.08);"></div>';
+                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(242,234,238,0.04);border-radius:10px;border:1px solid rgba(242,234,238,0.06);"><div style="font-size:12px;color:rgba(242,234,238,0.55);margin-bottom:8px;">来源海报</div><img src="' + escapeHtml(payload.poster_url || payload.output_url) + '" style="max-width:100%;max-height:320px;object-fit:contain;border-radius:8px;border:1px solid rgba(242,234,238,0.08);"></div>';
             } else if (x.status === 'proposed' && (actionType === 'send_voucher' || actionType === 'campaign_activate')) {
-                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.06);border:1px dashed rgba(245,158,11,0.3);border-radius:10px;font-size:12px;color:#f59e0b;cursor:pointer;" data-click="hrmsCloseActionOpenPoster" data-arg="' + key + '">🖼️ 尚未绑定海报 — 点击选择海报</div>';
+                host.innerHTML += '<div style="margin-top:16px;padding:12px;background:rgba(207,161,74,0.06);border:1px dashed rgba(207,161,74,0.3);border-radius:10px;font-size:12px;color:#CFA14A;cursor:pointer;" data-click="hrmsCloseActionOpenPoster" data-arg="' + key + '">🖼️ 尚未绑定海报 — 点击选择海报</div>';
             }
             var detailIsLlm = (payload.source === 'llm_campaign_autopilot') || !!payload.expected_kpi || !!payload.confidence_level;
             var execBtn = document.getElementById('growth-action-detail-execute');
@@ -2854,7 +2854,7 @@
             try {
                 var host = document.getElementById('growth-exec-logs-list');
                 if (!host) return;
-                host.innerHTML = '<div style="color:rgba(226,232,240,0.3);padding:10px 0;">加载中...</div>';
+                host.innerHTML = '<div style="color:rgba(242,234,238,0.3);padding:10px 0;">加载中...</div>';
                 var decision = document.getElementById('exec-log-decision-filter')?.value || '';
                 var url = '/api/growth/execution-logs?limit=100';
                 if (decision) url += '&decision=' + encodeURIComponent(decision);
@@ -2866,12 +2866,12 @@
                 var decisionLabels = { 'executed': '引擎已处理', 'ignored': '已忽略', 'edited_then_executed': '修改后处理', 'feedback': '已回填' };
                 // 真实触达状态（核心语义：只有「打通的渠道把消息送到客人」才算已触达）
                 var reachMeta = {
-                    'reached':       { label: '✅ 已触达客户', color: '#22c55e' },
-                    'failed':        { label: '❌ 发送失败（未触达）', color: '#ef4444' },
-                    'skipped':       { label: '⏭️ 已跳过（未触达）', color: '#f59e0b' },
-                    'internal_only': { label: '⚪ 仅内部执行（未触达客户）', color: '#94a3b8' },
-                    'ignored':       { label: '⛔ 已忽略', color: '#ef4444' },
-                    'na':            { label: '—', color: '#94a3b8' }
+                    'reached':       { label: '✅ 已触达客户', color: '#86C9A2' },
+                    'failed':        { label: '❌ 发送失败（未触达）', color: '#E58B98' },
+                    'skipped':       { label: '⏭️ 已跳过（未触达）', color: '#CFA14A' },
+                    'internal_only': { label: '⚪ 仅内部执行（未触达客户）', color: '#97848E' },
+                    'ignored':       { label: '⛔ 已忽略', color: '#E58B98' },
+                    'na':            { label: '—', color: '#97848E' }
                 };
                 host.innerHTML = logs.length ? logs.map(function(l) {
                     var dLabel = decisionLabels[l.decision] || l.decision || '-';
@@ -2882,19 +2882,19 @@
                     else if (l.reach === 'failed') reachDetail = (channels ? '渠道：' + channels + ' · ' : '') + '失败 ' + (l.delivery_failed || 0) + ' 条' + (l.delivery_last_error ? '（' + growthCnToken(l.delivery_last_error) + '）' : '');
                     else if (l.reach === 'skipped') reachDetail = (channels ? '渠道：' + channels + ' · ' : '') + '跳过 ' + (l.delivery_skipped || 0) + ' 条' + (l.delivery_last_error ? '（' + growthCnToken(l.delivery_last_error) + '）' : '');
                     else if (l.reach === 'internal_only') reachDetail = '仅生成了券/活动/海报等内部动作，未通过任何渠道发送给客人';
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:12px;">'
                         + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                         + '<span style="color:#fff;font-weight:600;word-break:break-all;">' + escapeHtml(growthCnActionKey(l.action_key, l.rule_name)) + '</span>'
                         + '<span style="color:' + reach.color + ';font-size:11px;white-space:nowrap;font-weight:600;">' + reach.label + '</span>'
                         + '</div>'
                         + (reachDetail ? '<div style="color:' + reach.color + ';opacity:0.85;margin-top:3px;font-size:11px;">' + escapeHtml(reachDetail) + '</div>' : '')
-                        + '<div style="color:rgba(226,232,240,0.5);margin-top:4px;">门店：' + growthCnStore(l.store_id) + ' · 类型：' + growthCnToken(l.action_type) + ' · 操作人：' + growthCnToken(l.operator_username) + ' · 引擎处理：' + dLabel + ' · ' + (l.created_at ? String(l.created_at).slice(0, 16).replace('T',' ') : '') + '</div>'
-                        + (l.decision_reason ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">原因：' + escapeHtml(growthCnReason(l.decision_reason, l.action_key, l.rule_name)) + '</div>' : '')
-                        + (l.result_summary ? '<div style="color:rgba(226,232,240,0.6);margin-top:2px;">内部动作：' + escapeHtml(growthCnResultSummary(l.result_summary)) + '</div>' : '')
+                        + '<div style="color:rgba(242,234,238,0.5);margin-top:4px;">门店：' + growthCnStore(l.store_id) + ' · 类型：' + growthCnToken(l.action_type) + ' · 操作人：' + growthCnToken(l.operator_username) + ' · 引擎处理：' + dLabel + ' · ' + (l.created_at ? String(l.created_at).slice(0, 16).replace('T',' ') : '') + '</div>'
+                        + (l.decision_reason ? '<div style="color:rgba(242,234,238,0.6);margin-top:2px;">原因：' + escapeHtml(growthCnReason(l.decision_reason, l.action_key, l.rule_name)) + '</div>' : '')
+                        + (l.result_summary ? '<div style="color:rgba(242,234,238,0.6);margin-top:2px;">内部动作：' + escapeHtml(growthCnResultSummary(l.result_summary)) + '</div>' : '')
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无执行记录</div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无执行记录</div>';
             } catch (e) {
-                document.getElementById('growth-exec-logs-list').innerHTML = '<div style="color:#ef4444;">加载执行记录失败：' + escapeHtml(e.message) + '</div>';
+                document.getElementById('growth-exec-logs-list').innerHTML = '<div style="color:#E58B98;">加载执行记录失败：' + escapeHtml(e.message) + '</div>';
             }
         }
 
@@ -2904,7 +2904,7 @@
             document.getElementById('poster-picker-modal').classList.remove('hidden');
             document.getElementById('poster-picker-modal').style.display = 'flex';
             var host = document.getElementById('poster-picker-list');
-            host.innerHTML = '<div style="color:rgba(226,232,240,0.3);grid-column:1/-1;padding:20px;">加载海报列表...</div>';
+            host.innerHTML = '<div style="color:rgba(242,234,238,0.3);grid-column:1/-1;padding:20px;">加载海报列表...</div>';
             try {
                 const r = await fetch('/api/growth/content-library?limit=50', { headers: growthAuthHeaders() });
                 const data = await r.json();
@@ -2912,13 +2912,13 @@
                 host.innerHTML = posters.length ? posters.map(function(p) {
                     var imgUrl = p.image_url || p.output_url || p.thumbnail_url || '';
                     var title = p.name || p.title || p.prompt || '未命名';
-                    return '<div data-click="bindPosterToAction" data-arg="' + p.id + '" data-arg-type="number" style="cursor:pointer;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#22c55e\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\'">'
-                        + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(255,255,255,0.06);">' : '<div style="width:100%;height:120px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(226,232,240,0.3);">无预览</div>')
-                        + '<div style="padding:6px 8px;font-size:11px;color:rgba(226,232,240,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
+                    return '<div data-click="bindPosterToAction" data-arg="' + p.id + '" data-arg-type="number" style="cursor:pointer;border:1px solid rgba(242,234,238,0.08);border-radius:10px;overflow:hidden;background:rgba(242,234,238,0.02);transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'#86C9A2\'" onmouseout="this.style.borderColor=\'rgba(242,234,238,0.08)\'">'
+                        + (imgUrl ? '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:120px;object-fit:cover;border-bottom:1px solid rgba(242,234,238,0.06);">' : '<div style="width:100%;height:120px;background:rgba(242,234,238,0.04);display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(242,234,238,0.3);">无预览</div>')
+                        + '<div style="padding:6px 8px;font-size:11px;color:rgba(242,234,238,0.7);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">' + escapeHtml(title) + '</div>'
                         + '</div>';
-                }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#38bdf8;cursor:pointer;" data-click="hrmsClosePosterShowGrowth">去生成</span></div>';
+                }).join('') : '<div style="color:rgba(242,234,238,0.4);grid-column:1/-1;padding:20px;text-align:center;">暂无已生成海报，<span style="color:#EABBC5;cursor:pointer;" data-click="hrmsClosePosterShowGrowth">去生成</span></div>';
             } catch (e) {
-                host.innerHTML = '<div style="color:#ef4444;grid-column:1/-1;padding:20px;">加载失败：' + escapeHtml(e.message) + '</div>';
+                host.innerHTML = '<div style="color:#E58B98;grid-column:1/-1;padding:20px;">加载失败：' + escapeHtml(e.message) + '</div>';
             }
         }
         function closePosterPicker() {
@@ -3157,22 +3157,22 @@
         function amRenderGlossary(){
             var host = document.getElementById('am-glossary');
             if (!host || host.dataset.rendered === '1') return;
-            function row(name, tip){ return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;"><span style="color:#fff;min-width:78px;font-weight:600;">' + escapeHtml(name) + '</span><span style="color:rgba(226,232,240,0.65);">' + escapeHtml(tip) + '</span></div>'; }
+            function row(name, tip){ return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;"><span style="color:#fff;min-width:78px;font-weight:600;">' + escapeHtml(name) + '</span><span style="color:rgba(242,234,238,0.65);">' + escapeHtml(tip) + '</span></div>'; }
             var life = Object.keys(AM_LIFECYCLE).map(function(k){ return row(AM_LIFECYCLE[k].name, AM_LIFECYCLE[k].tip); }).join('');
             var tier = Object.keys(AM_VALUE_TIER).map(function(k){ return row(AM_VALUE_TIER[k].name, AM_VALUE_TIER[k].tip); }).join('');
             var chan = ['sms','subscribe','member'].map(function(k){ var c = AM_CHANNELS[k]; return row(c.name, c.note + '（成本 ' + c.cost + '）'); }).join('');
             var drafts = AM_SMS_DRAFTS.map(function(d){
-                return '<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
-                    + '<div style="color:#fff;font-weight:600;margin-bottom:2px;">' + escapeHtml(d.name) + ' <span style="color:#f59e0b;font-size:11px;font-weight:400;">（待报备）</span></div>'
-                    + '<div style="color:rgba(226,232,240,0.7);">' + escapeHtml(d.text) + '</div>'
+                return '<div style="padding:7px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
+                    + '<div style="color:#fff;font-weight:600;margin-bottom:2px;">' + escapeHtml(d.name) + ' <span style="color:#CFA14A;font-size:11px;font-weight:400;">（待报备）</span></div>'
+                    + '<div style="color:rgba(242,234,238,0.7);">' + escapeHtml(d.text) + '</div>'
                     + '</div>';
             }).join('');
             host.innerHTML =
-                '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin-bottom:4px;">🧭 生命周期（6 段）</div>' + life
-                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">💎 价值分层（3 级）</div>' + tier
-                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">📣 可用投放渠道</div>' + chan
-                + '<div style="color:#a5b4fc;font-size:12px;font-weight:700;margin:12px 0 4px;">✉️ 待报备短信文案库（变量固定 name/days/value）</div>'
-                + '<div style="color:rgba(226,232,240,0.5);font-size:11px;margin-bottom:6px;">将下列文案提交阿里云短信平台报备，审核通过后把得到的 SMS_xxx 模板号发我，我加入「短信模板」下拉即可下发。</div>'
+                '<div style="color:#EABBC5;font-size:12px;font-weight:700;margin-bottom:4px;">🧭 生命周期（6 段）</div>' + life
+                + '<div style="color:#EABBC5;font-size:12px;font-weight:700;margin:12px 0 4px;">💎 价值分层（3 级）</div>' + tier
+                + '<div style="color:#EABBC5;font-size:12px;font-weight:700;margin:12px 0 4px;">📣 可用投放渠道</div>' + chan
+                + '<div style="color:#EABBC5;font-size:12px;font-weight:700;margin:12px 0 4px;">✉️ 待报备短信文案库（变量固定 name/days/value）</div>'
+                + '<div style="color:rgba(242,234,238,0.5);font-size:11px;margin-bottom:6px;">将下列文案提交阿里云短信平台报备，审核通过后把得到的 SMS_xxx 模板号发我，我加入「短信模板」下拉即可下发。</div>'
                 + drafts;
             host.dataset.rendered = '1';
         }
@@ -3201,7 +3201,7 @@
             var days = document.getElementById('am-stats-days')?.value || '0';
             if (document.getElementById('am-sub-fields') && !document.querySelector('#am-sub-fields [data-sub-field]')) amRenderSubFields();
             amRenderGlossary();
-            host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">加载中…</div>';
+            host.innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:14px 0;">加载中…</div>';
             try {
                 var hdr = growthAuthHeaders();
                 var rs = await Promise.all([
@@ -3225,7 +3225,7 @@
                     amApplyBlacklist((d && d.items) || []);
                 }).catch(function(){});
             } catch (e) {
-                host.innerHTML = '<div style="color:#ef4444;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
+                host.innerHTML = '<div style="color:#E58B98;padding:14px 0;">加载自动营销失败：' + escapeHtml(String(e && e.message || e)) + '</div>';
             }
             loadAmRedemptions();
         }
@@ -3276,7 +3276,7 @@
                     + card('自动执行中', autoLiveCount + ' / ' + rules.length)
                     + card('🔴 红名单', '<span id="am-redlist-total">计算中</span>');
 
-                if (!rules.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:14px 0;">暂无营销规则</div>'; return; }
+                if (!rules.length) { host.innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:14px 0;">暂无营销规则</div>'; return; }
 
                 host.innerHTML = rules.map(function(rule){
                     var st = statMap[rule.rule_key] || {};
@@ -3311,22 +3311,22 @@
                     var costYuan = (Number(st.cost_fen || 0) / 100).toFixed(2);
                     var roiTxt = (st.roi == null) ? '—' : (Number(st.roi).toFixed(2) + '×');
                     var scoreVal = (st.score == null) ? null : Number(st.score);
-                    var scoreColor = scoreVal == null ? '#94a3b8' : (scoreVal >= 70 ? '#22c55e' : (scoreVal >= 40 ? '#f59e0b' : '#ef4444'));
+                    var scoreColor = scoreVal == null ? '#97848E' : (scoreVal >= 70 ? '#86C9A2' : (scoreVal >= 40 ? '#CFA14A' : '#E58B98'));
                     var scoreTxt = scoreVal == null ? '未发送' : (scoreVal + ' 分');
                     var suggestionTxt = st.suggestion || '';
                     var approved = !!rule.approved_at;
                     var autoLive = approved && rule.enabled && rule.auto_execute !== false;
                     var statusBadge = autoLive
-                        ? '<span style="background:rgba(34,197,94,0.15);color:#22c55e;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">自动执行中</span>'
+                        ? '<span style="background:rgba(134,201,162,0.15);color:#86C9A2;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">自动执行中</span>'
                         : (approved
-                            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已审核·未启用</span>'
-                            : '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>');
+                            ? '<span style="background:rgba(207,161,74,0.15);color:#CFA14A;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">已审核·未启用</span>'
+                            : '<span style="background:rgba(151,132,142,0.18);color:#97848E;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>');
                     var lastRun = rule.last_run_at ? new Date(rule.last_run_at).toLocaleString('zh-CN') : '从未运行';
                     var approver = approved ? ('审核人 ' + escapeHtml(rule.approved_by || '?') + ' · ' + new Date(rule.approved_at).toLocaleDateString('zh-CN')) : '尚未审核';
                     var rk = escapeHtml(rule.rule_key);
                     var isSubscribe = ((rule.action_payload || {}).channel === 'subscribe');
                     var storeNm = amStoreName(amRuleStoreId(rule));
-                    var storeBadge = '<span style="background:rgba(99,102,241,0.16);color:#a5b4fc;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">🏪 ' + escapeHtml(storeNm) + '</span>';
+                    var storeBadge = '<span style="background:rgba(209,143,160,0.16);color:#EABBC5;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">🏪 ' + escapeHtml(storeNm) + '</span>';
                     var critTip = amCriteriaTip(rule.criteria);
                     // 投放渠道下拉：短信/订阅消息/小程序站内券；旧规则若为企微则保留该选项
                     var channelOpts = ['sms','subscribe','member'].concat(curChannel === 'wecom' ? ['wecom'] : []).map(function(k){
@@ -3334,7 +3334,7 @@
                     }).join('');
                     // 各渠道覆盖标注（命中人群中可触达人数）
                     var covLine = cov
-                        ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
+                        ? ('短信 <strong style="color:#EABBC5;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#EABBC5;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#EABBC5;">' + cov.member + '</strong> 人')
                         : '计算中/未知';
                     var campaignOpts = '<option value="">（请选择营销活动）</option>' + Object.keys(AM_CAMPAIGNS).map(function(k){ return '<option value="' + k + '"' + (curCampaign === k ? ' selected' : '') + '>' + escapeHtml(AM_CAMPAIGNS[k].name) + '</option>'; }).join('');
                     var campaignTip = curCampaign ? amCampaignPairTip(curCampaign) : '选定活动即自动绑定「马己仙＋洪潮」双门店已报备模板，规则标题同步为活动名（无需从十几条模板里逐条挑选）。';
@@ -3350,8 +3350,8 @@
                         +   '<div class="amr-sec-title">🎯 人群与动作</div>'
                         +   '<div class="amr-info">目标人群：' + escapeHtml(isBalance ? '有储值余额且久未消费的会员' : amDescribeCriteria(rule.criteria)) + '</div>'
                         +   (isBalance ? '<div class="amr-info amr-info--sub">判定口径：余额≥下限（默认1元）且超过设定天数未消费</div>' : (critTip ? '<div class="amr-info amr-info--sub">判定口径：' + escapeHtml(critTip) + '</div>' : ''))
-                        +   '<div class="amr-info">涉及会员：<span id="am-reach-' + rk + '">' + (reach == null ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</span></div>'
-                        +   (isAbcCampaign ? ('<div class="amr-info">🔴 红名单：<span id="am-redlist-' + rk + '"><span style="color:rgba(226,232,240,0.4);">计算中/未知</span></span></div>') : '')
+                        +   '<div class="amr-info">涉及会员：<span id="am-reach-' + rk + '">' + (reach == null ? '<span style="color:rgba(242,234,238,0.4);">计算中/未知</span>' : ('<strong>' + reach + '</strong> 人（命中人群且可触达）')) + '</span></div>'
+                        +   (isAbcCampaign ? ('<div class="amr-info">🔴 红名单：<span id="am-redlist-' + rk + '"><span style="color:rgba(242,234,238,0.4);">计算中/未知</span></span></div>') : '')
                         +   '<div class="amr-info amr-info--sub">统计范围：' + escapeHtml(storeFilter ? (amStoreName(storeFilter) + ' · 按上方门店筛选') : (storeNm + ' · 全部门店')) + '；与「近N天发送/核销」统计周期无关</div>'
                         +   '<div class="amr-info amr-info--sub">分渠道覆盖：<span id="am-cov-' + rk + '">' + covLine + '</span></div>'
                         +   '<div class="amr-info">触达动作：' + escapeHtml(amDescribeAction(rule)) + '</div>'
@@ -3426,13 +3426,13 @@
                         +   '<div class="amr-sec-title" style="margin-bottom:8px;">📊 活动数据（' + periodLabel + '）</div>'
                         +   '<div class="amr-stats">'
                         +     '<div class="amr-stat"><span class="amr-stat-k">发送</span><span class="amr-stat-v">' + sent + '</span></div>'
-                        +     '<div class="amr-stat"><span class="amr-stat-k">核销</span><span class="amr-stat-v" style="color:#22c55e;">' + red + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">核销</span><span class="amr-stat-v" style="color:#86C9A2;">' + red + '</span></div>'
                         +     '<div class="amr-stat"><span class="amr-stat-k">核销率</span><span class="amr-stat-v">' + rrate + '%</span></div>'
-                        +     '<div class="amr-stat"><span class="amr-stat-k">营收</span><span class="amr-stat-v" style="color:#22c55e;">¥' + revYuan + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">营收</span><span class="amr-stat-v" style="color:#86C9A2;">¥' + revYuan + '</span></div>'
                         +     '<div class="amr-stat"><span class="amr-stat-k">成本</span><span class="amr-stat-v">¥' + costYuan + '</span></div>'
-                        +     '<div class="amr-stat"><span class="amr-stat-k">ROI</span><span class="amr-stat-v" style="color:#a5b4fc;">' + roiTxt + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">ROI</span><span class="amr-stat-v" style="color:#EABBC5;">' + roiTxt + '</span></div>'
                         +     '<div class="amr-stat"><span class="amr-stat-k">评分</span><span class="amr-stat-v" style="color:' + scoreColor + ';">' + scoreTxt + '</span></div>'
-                        +     '<div class="amr-stat"><span class="amr-stat-k">上次运行</span><span class="amr-stat-v" style="font-size:12px;font-weight:600;color:rgba(226,232,240,0.7);">' + escapeHtml(lastRun) + '</span></div>'
+                        +     '<div class="amr-stat"><span class="amr-stat-k">上次运行</span><span class="amr-stat-v" style="font-size:12px;font-weight:600;color:rgba(242,234,238,0.7);">' + escapeHtml(lastRun) + '</span></div>'
                         +   '</div>'
                         +   (isAbcCampaign
                               ? '<div class="amr-hint" style="margin-top:8px;">🔴 红名单：<span id="am-redlist-' + escapeHtml(curCampaign) + '">统计中…</span></div>'
@@ -3466,13 +3466,13 @@
                 var reachEl = document.getElementById('am-reach-' + rk);
                 if (reachEl) {
                     reachEl.innerHTML = (reach == null)
-                        ? '<span style="color:rgba(226,232,240,0.4);">计算中/未知</span>'
+                        ? '<span style="color:rgba(242,234,238,0.4);">计算中/未知</span>'
                         : ('<strong>' + reach + '</strong> 人（命中人群且可触达）');
                 }
                 var covEl = document.getElementById('am-cov-' + rk);
                 if (covEl) {
                     covEl.innerHTML = cov
-                        ? ('短信 <strong style="color:#a5b4fc;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#a5b4fc;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#a5b4fc;">' + cov.member + '</strong> 人')
+                        ? ('短信 <strong style="color:#EABBC5;">' + cov.sms + '</strong> 人 · 订阅消息 <strong style="color:#EABBC5;">' + cov.subscribe + '</strong> 人(上限·需授权) · 小程序站内 <strong style="color:#EABBC5;">' + cov.member + '</strong> 人')
                         : '计算中/未知';
                 }
             });
@@ -3488,7 +3488,7 @@
                 var el = document.getElementById('am-redlist-' + rk);
                 if (el) {
                     var n = Number(it.blacklisted || 0);
-                    el.innerHTML = '<strong style="color:' + (n > 0 ? '#ef4444' : '#94a3b8') + ';">' + n + '</strong> 人（阶梯走完仍未回应，本活动不再自动触达）';
+                    el.innerHTML = '<strong style="color:' + (n > 0 ? '#E58B98' : '#97848E') + ';">' + n + '</strong> 人（阶梯走完仍未回应，本活动不再自动触达）';
                 }
             });
             var sumEl = document.getElementById('am-redlist-total');
@@ -3500,7 +3500,7 @@
         function amMarkRulePendingReview(ruleKey) {
             var rk = (typeof escapeHtml === 'function') ? escapeHtml(ruleKey) : ruleKey;
             var el = document.getElementById('am-status-' + rk);
-            if (el) el.innerHTML = '<span style="background:rgba(148,163,184,0.18);color:#94a3b8;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>';
+            if (el) el.innerHTML = '<span style="background:rgba(151,132,142,0.18);color:#97848E;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">待审核（仅建议）</span>';
         }
 
         async function loadAmRedemptions() {
@@ -3511,7 +3511,7 @@
                 var url = '/api/growth/redemptions?limit=100' + (store ? ('&store_id=' + encodeURIComponent(store)) : '');
                 var d = await fetch(url, { headers: growthAuthHeaders() }).then(function(r){return r.json();});
                 var rows = (d && d.redemptions) || [];
-                if (!rows.length) { host.innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无核销记录</div>'; return; }
+                if (!rows.length) { host.innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无核销记录</div>'; return; }
                 host.innerHTML = rows.map(function(x){
                     var amt = Number(x.amount_fen || 0) / 100;
                     var md = x.metadata || {};
@@ -3519,12 +3519,12 @@
                     var actName = x.campaign_name || md.campaign_name || amCampaignLabelFromTemplate(md.template_id) || md.coupon_label || md.coupon_name || md.rule_name || md.rule_key || x.campaign_id || md.coupon_source || '—';
                     var storeNm = amStoreName(String(x.store_id || ''));
                     var dateTxt = x.redeemed_at ? new Date(x.redeemed_at).toLocaleString('zh-CN') : '—';
-                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:12px;">'
+                    return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.06);font-size:12px;">'
                         + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;">'
                         +   '<span style="color:#fff;font-weight:600;">🎟 ' + escapeHtml(String(actName)) + '</span>'
-                        +   '<span style="color:#22c55e;font-weight:700;">核销 ¥' + amt.toFixed(2) + '</span>'
+                        +   '<span style="color:#86C9A2;font-weight:700;">核销 ¥' + amt.toFixed(2) + '</span>'
                         + '</div>'
-                        + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;color:rgba(226,232,240,0.6);">'
+                        + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;color:rgba(242,234,238,0.6);">'
                         +   '<span>🏪 ' + escapeHtml(storeNm) + '</span>'
                         +   '<span>券号 ' + escapeHtml(String(x.coupon_id || '—')) + '</span>'
                         +   '<span>客户#' + escapeHtml(String(x.customer_id || '—')) + '</span>'
@@ -3533,7 +3533,7 @@
                         + '</div>';
                 }).join('');
             } catch (e) {
-                host.innerHTML = '<div style="color:#ef4444;padding:10px 0;">加载核销记录失败</div>';
+                host.innerHTML = '<div style="color:#E58B98;padding:10px 0;">加载核销记录失败</div>';
             }
         }
 

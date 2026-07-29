@@ -229,10 +229,10 @@
 
             if (scoreEl) {
                 scoreEl.textContent = String(score);
-                scoreEl.style.color = score >= 70 ? 'rgba(34,197,94,0.95)' : score >= 40 ? 'rgba(234,179,8,0.95)' : 'rgba(239,68,68,0.95)';
+                scoreEl.style.color = score >= 70 ? 'rgba(134,201,162,0.95)' : score >= 40 ? 'rgba(207,161,74,0.95)' : 'rgba(229,139,152,0.95)';
             }
             if (barEl) barEl.style.width = score + '%';
-            if (dotEl) dotEl.style.background = faceDetected ? (lookingAtScreen ? '#22c55e' : '#eab308') : '#ef4444';
+            if (dotEl) dotEl.style.background = faceDetected ? (lookingAtScreen ? '#86C9A2' : '#CFA14A') : '#E58B98';
 
             if (statusEl) {
                 if (!faceDetected) statusEl.textContent = '未检测到人脸';
@@ -303,7 +303,7 @@
             // 每秒检测一次
             __ATTN.intervalId = setInterval(() => attnDetectOnce(), 1000);
 
-            if (btn) { btn.disabled = false; btn.textContent = '停止监控'; btn.style.background = 'rgba(239,68,68,0.15)'; btn.style.borderColor = 'rgba(239,68,68,0.3)'; btn.style.color = '#ef4444'; }
+            if (btn) { btn.disabled = false; btn.textContent = '停止监控'; btn.style.background = 'rgba(229,139,152,0.15)'; btn.style.borderColor = 'rgba(229,139,152,0.3)'; btn.style.color = '#E58B98'; }
             if (detailRow) detailRow.style.display = 'flex';
             if (statusEl) statusEl.textContent = '监控中...';
             showNotification('专注度监控已开启', 'info');
@@ -621,7 +621,7 @@
                 const cat = String(item.category || '');
                 const groupName = String(item.groupName || getKnowledgeGroupLabel(item.groupId) || '').trim();
                 const sz = item.size ? formatFileSize(item.size) : '';
-                meta.innerHTML = `<span class="kb-v2-chip kb-v2-chip-type">${typeIcon} ${t}</span>${groupName ? `<span class="kb-v2-chip" style="background:rgba(124,141,255,0.16);color:#d8ddff;">${escapeHtml(groupName)}</span>` : ''}${cat ? `<span class="kb-v2-chip" style="background:rgba(255,255,255,0.07);color:rgba(148,163,184,0.8);">${escapeHtml(cat)}</span>` : ''}${sz ? `<span class="kb-v2-item-date">${escapeHtml(sz)}</span>` : ''}`;
+                meta.innerHTML = `<span class="kb-v2-chip kb-v2-chip-type">${typeIcon} ${t}</span>${groupName ? `<span class="kb-v2-chip" style="background:rgba(224,166,180,0.16);color:#F2D3DA;">${escapeHtml(groupName)}</span>` : ''}${cat ? `<span class="kb-v2-chip" style="background:rgba(242,234,238,0.07);color:rgba(151,132,142,0.8);">${escapeHtml(cat)}</span>` : ''}${sz ? `<span class="kb-v2-item-date">${escapeHtml(sz)}</span>` : ''}`;
             }
 
             // 管理员按钮
@@ -689,7 +689,7 @@
         async function kbLoadAiSummary(itemId, container, opts = {}) {
             const token = HRMS_API.token() || '';
             container.innerHTML = `
-                <div style="text-align:center;padding:44px 0;color:rgba(255,255,255,0.38);">
+                <div style="text-align:center;padding:44px 0;color:rgba(242,234,238,0.38);">
                     <div style="font-size:32px;margin-bottom:12px;opacity:0.8;">✨</div>
                     <div style="font-size:13px;">AI 正在整理知识要点，请稍候…</div>
                 </div>`;
@@ -707,7 +707,7 @@
                         `<div style="margin:6px 0"><strong>${escapeHtml(s.name)}</strong> (${s.weight}分): ${(s.checks||[]).map(c=>escapeHtml(c)).join('；')}</div>`
                     ).join('');
                     const failHtml = rubric.fail_criteria?.length
-                        ? `<div style="margin-top:8px;color:#fca5a5;">⚠️ 一票否决: ${rubric.fail_criteria.map(f=>escapeHtml(f)).join('；')}</div>`
+                        ? `<div style="margin-top:8px;color:#EDA1AC;">⚠️ 一票否决: ${rubric.fail_criteria.map(f=>escapeHtml(f)).join('；')}</div>`
                         : '';
                     return `<div class="kb-ai-card" style="margin-top:12px;">
                         <div class="kb-ai-card-hdr">
@@ -726,8 +726,8 @@
                 if (data.success && data.explanation) {
                     const rawExplanation = data.explanation;
                     const cacheBadge = data.cached
-                        ? '<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(52,211,153,0.15);color:#6ee7b7;margin-left:6px;">已缓存</span>'
-                        : '<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(251,191,36,0.15);color:#fde68a;margin-left:6px;">✨ 新生成</span>';
+                        ? '<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(134,201,162,0.15);color:#9ED9B4;margin-left:6px;">已缓存</span>'
+                        : '<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(221,182,106,0.15);color:#EAD2A0;margin-left:6px;">✨ 新生成</span>';
                     const html = rawExplanation
                         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                         .replace(/^## (.+)$/gm,'<div class="kb-ai-h2">$1</div>')
@@ -740,17 +740,17 @@
                     let fileBtnHtml = '';
                     if (opts.showFileBtn && opts.fileSrc) {
                         const typeLabel = opts.fileType === 'pdf' ? 'PDF' : (opts.fileType === 'doc' ? '原文档' : '原文件');
-                        fileBtnHtml = `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);font-size:12px;text-decoration:none;">📎 查看${typeLabel}</a>`;
+                        fileBtnHtml = `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.1);color:rgba(242,234,238,0.6);font-size:12px;text-decoration:none;">📎 查看${typeLabel}</a>`;
                     }
 
                     const isAdmin = isAdminUser();
                     const editBtnHtml = isAdmin
-                        ? `<button data-click="editKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
+                        ? `<button data-click="editKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>`
                         : '';
                     const regenBtnHtml = isAdmin && data.cached
-                        ? `<button data-click="regenKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);color:#fde68a;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
+                        ? `<button data-click="regenKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(221,182,106,0.1);border:1px solid rgba(221,182,106,0.25);color:#EAD2A0;font-size:11px;cursor:pointer;">🔄 重新生成</button>`
                         : '';
-                    const copyBtnHtml = `<button data-click="copyKnowledgeExplanation" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
+                    const copyBtnHtml = `<button data-click="copyKnowledgeExplanation" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.5);font-size:11px;cursor:pointer;">📋 复制</button>`;
 
                     container.innerHTML = `
                         <div class="kb-ai-card">
@@ -783,16 +783,16 @@
                     container.innerHTML = `
                         <div class="kb-ai-empty">
                             <div style="font-size:36px;margin-bottom:12px;">${isMedia ? '🖼️' : '📄'}</div>
-                            <div style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.6);margin-bottom:6px;">${isMedia ? '图片/视频文件' : '暂无可解析内容'}</div>
-                            <div style="font-size:12px;color:rgba(255,255,255,0.35);line-height:1.7;margin-bottom:${canGenRubric ? '16px' : '0'};">${isMedia ? 'AI 可分析此文件并生成实操评分标准（步骤图谱）' : '文件正在处理中，通常需要 1-2 分钟<br>视频请确保管理员已填写内容摘要'}</div>
-                            ${canGenRubric ? `<button data-click="analyzeKnowledgeRubric" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
-                            ${opts.showFileBtn && opts.fileSrc ? `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5);font-size:12px;text-decoration:none;">📎 查看原文件</a>` : ''}
+                            <div style="font-size:14px;font-weight:600;color:rgba(242,234,238,0.6);margin-bottom:6px;">${isMedia ? '图片/视频文件' : '暂无可解析内容'}</div>
+                            <div style="font-size:12px;color:rgba(242,234,238,0.35);line-height:1.7;margin-bottom:${canGenRubric ? '16px' : '0'};">${isMedia ? 'AI 可分析此文件并生成实操评分标准（步骤图谱）' : '文件正在处理中，通常需要 1-2 分钟<br>视频请确保管理员已填写内容摘要'}</div>
+                            ${canGenRubric ? `<button data-click="analyzeKnowledgeRubric" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:12px;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.4);color:#EABBC5;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.02em;">🎯 生成步骤图谱</button>` : ''}
+                            ${opts.showFileBtn && opts.fileSrc ? `<a href="${escapeHtml(opts.fileSrc)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:10px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.1);color:rgba(242,234,238,0.5);font-size:12px;text-decoration:none;">📎 查看原文件</a>` : ''}
                         </div>`;
                 } else {
-                    container.innerHTML = `<div class="kb-ai-empty"><div style="font-size:32px;margin-bottom:10px;">⚠️</div><div style="font-size:13px;color:rgba(255,255,255,0.4);">${escapeHtml(data.message || 'AI 解析失败，请稍后重试')}</div></div>`;
+                    container.innerHTML = `<div class="kb-ai-empty"><div style="font-size:32px;margin-bottom:10px;">⚠️</div><div style="font-size:13px;color:rgba(242,234,238,0.4);">${escapeHtml(data.message || 'AI 解析失败，请稍后重试')}</div></div>`;
                 }
             } catch(e) {
-                container.innerHTML = `<div class="kb-ai-empty"><div style="font-size:32px;margin-bottom:10px;">📡</div><div style="font-size:13px;color:rgba(255,255,255,0.4);">网络错误，请检查连接后重试</div></div>`;
+                container.innerHTML = `<div class="kb-ai-empty"><div style="font-size:32px;margin-bottom:10px;">📡</div><div style="font-size:13px;color:rgba(242,234,238,0.4);">网络错误，请检查连接后重试</div></div>`;
             }
         }
 
@@ -829,7 +829,7 @@
                             </div>
                             <div class="kb-ai-content" style="font-size:12px;">
                                 ${data.rubric.items.map(s => `<div style="margin:6px 0"><strong>${escapeHtml(s.name)}</strong> (${s.weight}分): ${(s.checks||[]).map(c=>escapeHtml(c)).join('；')}</div>`).join('')}
-                                ${data.rubric.fail_criteria?.length ? `<div style="margin-top:8px;color:#fca5a5;">⚠️ 一票否决: ${data.rubric.fail_criteria.map(f=>escapeHtml(f)).join('；')}</div>` : ''}
+                                ${data.rubric.fail_criteria?.length ? `<div style="margin-top:8px;color:#EDA1AC;">⚠️ 一票否决: ${data.rubric.fail_criteria.map(f=>escapeHtml(f)).join('；')}</div>` : ''}
                             </div>`;
                         viewerBody.appendChild(rubricInfo);
                     }
@@ -994,9 +994,9 @@
             textarea.style.minHeight = '200px';
             textarea.style.padding = '12px';
             textarea.style.borderRadius = '10px';
-            textarea.style.border = '1px solid rgba(255,255,255,0.15)';
+            textarea.style.border = '1px solid rgba(242,234,238,0.15)';
             textarea.style.background = 'rgba(0,0,0,0.25)';
-            textarea.style.color = 'rgba(255,255,255,0.85)';
+            textarea.style.color = 'rgba(242,234,238,0.85)';
             textarea.style.fontSize = '13px';
             textarea.style.lineHeight = '1.7';
             textarea.style.resize = 'vertical';
@@ -1005,8 +1005,8 @@
             const actions = card?.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button data-click="saveKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button data-click="cancelEditKnowledgeExplanation" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeExplanation" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.3);color:#EABBC5;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeExplanation" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }
@@ -1056,8 +1056,8 @@
             try {
                 await navigator.clipboard.writeText(raw);
                 btn.textContent = '✅ 已复制';
-                btn.style.color = '#6ee7b7';
-                setTimeout(() => { btn.textContent = '📋 复制'; btn.style.color = 'rgba(255,255,255,0.5)'; }, 2000);
+                btn.style.color = '#9ED9B4';
+                setTimeout(() => { btn.textContent = '📋 复制'; btn.style.color = 'rgba(242,234,238,0.5)'; }, 2000);
             } catch (e) {
                 const ta = document.createElement('textarea');
                 ta.value = raw;
@@ -1104,7 +1104,7 @@
 
         // ── 知识库 教材原文（可编辑，留痕）──
         async function kbLoadRawContent(itemId, container) {
-            container.innerHTML = `<div style="text-align:center;padding:16px 0;color:rgba(255,255,255,0.3);font-size:12px;">加载教材原文…</div>`;
+            container.innerHTML = `<div style="text-align:center;padding:16px 0;color:rgba(242,234,238,0.3);font-size:12px;">加载教材原文…</div>`;
             try {
                 const resp = await HRMS_API.request('/api/knowledge/' + encodeURIComponent(itemId) + '/content', { method: 'GET' });
                 const content = String(resp?.content || '').trim();
@@ -1113,9 +1113,9 @@
                 container.dataset.rawContent = content;
                 container.innerHTML = `
                     <details class="kb-ai-card kb-content-card">
-                        <summary style="cursor:pointer;font-weight:700;color:#EEF1FA;font-size:13px;">📄 教材原文（${content.length}字，可编辑）</summary>
+                        <summary style="cursor:pointer;font-weight:700;color:#F2EAEE;font-size:13px;">📄 教材原文（${content.length}字，可编辑）</summary>
                         <div class="kb-ai-card-actions" style="margin-top:12px;">
-                            <button data-click="editKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
+                            <button data-click="editKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:4px 12px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.5);font-size:11px;cursor:pointer;">✏️ 编辑</button>
                         </div>
                         <div class="kb-ai-content" style="margin-top:12px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow-y:auto;">${esc(content)}</div>
                     </details>`;
@@ -1137,9 +1137,9 @@
             textarea.style.marginTop = '12px';
             textarea.style.padding = '12px';
             textarea.style.borderRadius = '10px';
-            textarea.style.border = '1px solid rgba(255,255,255,0.15)';
+            textarea.style.border = '1px solid rgba(242,234,238,0.15)';
             textarea.style.background = 'rgba(0,0,0,0.25)';
-            textarea.style.color = 'rgba(255,255,255,0.85)';
+            textarea.style.color = 'rgba(242,234,238,0.85)';
             textarea.style.fontSize = '12px';
             textarea.style.lineHeight = '1.7';
             textarea.style.resize = 'vertical';
@@ -1148,8 +1148,8 @@
             const actions = card.querySelector('.kb-ai-card-actions');
             if (actions) {
                 actions.innerHTML = `
-                    <button data-click="saveKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#a5b4fc;font-size:12px;cursor:pointer;">💾 保存</button>
-                    <button data-click="cancelEditKnowledgeContent" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.5);font-size:12px;cursor:pointer;">取消</button>
+                    <button data-click="saveKnowledgeContent" data-arg="${escapeHtml(itemId)}" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.3);color:#EABBC5;font-size:12px;cursor:pointer;">💾 保存</button>
+                    <button data-click="cancelEditKnowledgeContent" data-arg-self="1" style="padding:6px 16px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.5);font-size:12px;cursor:pointer;">取消</button>
                 `;
             }
         }
@@ -1404,7 +1404,7 @@
                     <div class="kb-v2-item-body">
                         <div class="kb-v2-item-title">${escapeHtml(title)}</div>
                         <div class="kb-v2-item-meta">
-                            <span class="kb-v2-chip" style="background:rgba(255,255,255,0.07);color:rgba(148,163,184,0.8);">${fileCount} 个文件</span>
+                            <span class="kb-v2-chip" style="background:rgba(242,234,238,0.07);color:rgba(151,132,142,0.8);">${fileCount} 个文件</span>
                             ${updated ? `<span class="kb-v2-item-date">${updated}</span>` : ''}
                         </div>
                     </div>
@@ -1420,7 +1420,7 @@
             __KB_ACTIVE_GROUP_ID = groupId;
             const cardsEl = document.getElementById('knowledge-cards');
             const empty = document.getElementById('knowledge-list-empty');
-            if (cardsEl) cardsEl.innerHTML = '<div class="kb-list-empty-msg" style="padding:40px 0;text-align:center;color:rgba(255,255,255,0.3);">加载中...</div>';
+            if (cardsEl) cardsEl.innerHTML = '<div class="kb-list-empty-msg" style="padding:40px 0;text-align:center;color:rgba(242,234,238,0.3);">加载中...</div>';
             try {
                 const data = await HRMS_API.getKnowledgeGroupFiles(groupId);
                 const items = (data?.items || []);
@@ -1466,7 +1466,7 @@
                     updateKnowledgeHeroStats([], '空分组', `当前分组「${getKnowledgeGroupLabel(groupId) || '未命名分组'}」还没有文件。`);
                     return;
                 }
-                const backHtml = `<div style="margin-bottom:16px;"><button data-click="kbBackToGroups" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
+                const backHtml = `<div style="margin-bottom:16px;"><button data-click="kbBackToGroups" style="background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.1);color:rgba(242,234,238,0.6);padding:6px 14px;border-radius:8px;font-size:12px;cursor:pointer;">‹ 返回所有分组</button></div>`;
                 if (cardsEl) cardsEl.innerHTML = backHtml + itemsMapped.map(it => {
                     const icon = typeIcon2(it.type);
                     const badge = typeBadge(it.type);
@@ -1494,7 +1494,7 @@
         function kbBackToGroups() {
             __KB_ACTIVE_GROUP_ID = '';
             const cardsEl = document.getElementById('knowledge-cards');
-            if (cardsEl) cardsEl.innerHTML = '<div class="kb-list-empty-msg" style="padding:40px 0;text-align:center;color:rgba(255,255,255,0.3);">加载中...</div>';
+            if (cardsEl) cardsEl.innerHTML = '<div class="kb-list-empty-msg" style="padding:40px 0;text-align:center;color:rgba(242,234,238,0.3);">加载中...</div>';
             const empty = document.getElementById('knowledge-list-empty');
             if (empty) empty.style.display = 'none';
             loadKnowledgeGroups().then(() => {
@@ -1911,7 +1911,7 @@
                 return `<span class="training-admin-badge" style="background:rgba(229,139,152,0.16);color:#EDA1AC;">逾期 ${Math.max(1, state.daysOverdue)} 天</span>`;
             }
             if (state.isDueToday) {
-                return `<span class="training-admin-badge" style="background:rgba(207,161,74,0.16);color:#fcd34d;">今日到期</span>`;
+                return `<span class="training-admin-badge" style="background:rgba(207,161,74,0.16);color:#DDB66A;">今日到期</span>`;
             }
             return '';
         }
@@ -1943,7 +1943,7 @@
                 const panel = document.getElementById('training-' + t + '-panel');
                 if (btn) {
                     const isActive = t === tab;
-                    btn.style.background = isActive ? 'rgba(99,102,241,0.9)' : 'rgba(242,234,238,0.06)';
+                    btn.style.background = isActive ? 'rgba(209,143,160,0.9)' : 'rgba(242,234,238,0.06)';
                     btn.style.color = isActive ? '#F2EAEE' : 'rgba(242,234,238,0.7)';
                     btn.style.border = isActive ? 'none' : '1px solid rgba(242,234,238,0.15)';
                 }
@@ -1989,7 +1989,7 @@
                     body.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(242,234,238,0.4);font-size:13px;">目前没有在途晋升培训</div>';
                     return;
                 }
-                const tierLabel = t => t?.promoTier === 'skill_bump' ? '<span style="font-size:10px;background:rgba(221,182,106,0.2);color:#DDB66A;border-radius:4px;padding:1px 6px;">技能提升</span>' : '<span style="font-size:10px;background:rgba(99,102,241,0.2);color:#a5b4fc;border-radius:4px;padding:1px 6px;">级别晋升</span>';
+                const tierLabel = t => t?.promoTier === 'skill_bump' ? '<span style="font-size:10px;background:rgba(221,182,106,0.2);color:#DDB66A;border-radius:4px;padding:1px 6px;">技能提升</span>' : '<span style="font-size:10px;background:rgba(209,143,160,0.2);color:#EABBC5;border-radius:4px;padding:1px 6px;">级别晋升</span>';
                 let html = '';
                 for (const tr of tracks) {
                     const items = Array.isArray(tr.trainingProgress?.items) ? tr.trainingProgress.items : [];
@@ -2072,12 +2072,12 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
                     <div style="font-size:13px;color:rgba(242,234,238,0.6);">
                         共 <b style="color:#F2EAEE">${topics.length}</b> 个知识点，
-                        当前 <b style="color:#a5b4fc">${reqCount}</b> 个设为晋升必须认证
+                        当前 <b style="color:#EABBC5">${reqCount}</b> 个设为晋升必须认证
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button data-click="promoReqSelectAll" data-arg="true" style="padding:6px 12px;border-radius:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;cursor:pointer;">全选</button>
+                        <button data-click="promoReqSelectAll" data-arg="true" style="padding:6px 12px;border-radius:8px;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.4);color:#EABBC5;font-size:12px;cursor:pointer;">全选</button>
                         <button data-click="promoReqSelectAll" data-arg="false" style="padding:6px 12px;border-radius:8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.15);color:rgba(242,234,238,0.6);font-size:12px;cursor:pointer;">全不选</button>
-                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
+                        <button data-click="savePromoReqTopics" style="padding:6px 16px;border-radius:8px;background:rgba(209,143,160,0.9);border:none;color:#F2EAEE;font-size:12px;font-weight:600;cursor:pointer;">保存设置</button>
                     </div>
                 </div>
                 <div style="font-size:11px;color:rgba(242,234,238,0.35);margin-bottom:12px;">✓ 勾选 = 员工晋升到「${position} ${level}」时必须通过此知识点认证；取消勾选 = 不强制要求</div>
@@ -2090,19 +2090,19 @@
                     const title = stageM ? t.title.slice(stageM[0].length) : t.title;
                     html += `
                     <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);cursor:pointer;transition:background .15s;"
-                           onmouseover="this.style.background='rgba(99,102,241,0.08)'" onmouseout="this.style.background='rgba(242,234,238,0.04)'">
-                        <input type="checkbox" data-id="${t.id}" ${checked} style="width:16px;height:16px;accent-color:#6366f1;flex-shrink:0;margin-top:2px;">
+                           onmouseover="this.style.background='rgba(209,143,160,0.08)'" onmouseout="this.style.background='rgba(242,234,238,0.04)'">
+                        <input type="checkbox" data-id="${t.id}" ${checked} style="width:16px;height:16px;accent-color:#D18FA0;flex-shrink:0;margin-top:2px;">
                         <div style="flex:1;min-width:0;">
                             <div style="font-size:13px;color:#F2EAEE;line-height:1.4;">${stage}${escapeHtml(title)}</div>
                             <div style="font-size:11px;color:rgba(242,234,238,0.35);margin-top:2px;">有效期 ${t.validity_days || 180} 天${t.practice_task ? ' · 含实操' : ''}</div>
                         </div>
-                        <span style="font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;${t.promotion_required ? 'background:rgba(99,102,241,0.2);color:#a5b4fc;' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.35);'}">${t.promotion_required ? '必须认证' : '不要求'}</span>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:20px;flex-shrink:0;${t.promotion_required ? 'background:rgba(209,143,160,0.2);color:#EABBC5;' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.35);'}">${t.promotion_required ? '必须认证' : '不要求'}</span>
                     </label>`;
                 });
 
                 html += `</div>
                 <div style="margin-top:14px;text-align:right;">
-                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
+                    <button data-click="savePromoReqTopics" style="padding:8px 20px;border-radius:10px;background:rgba(209,143,160,0.9);border:none;color:#F2EAEE;font-size:13px;font-weight:600;cursor:pointer;">💾 保存晋升认证要求</button>
                 </div>`;
 
                 body.innerHTML = html;
@@ -2117,8 +2117,8 @@
                 const badge = cb.closest('label')?.querySelector('span[style*="border-radius:20px"]');
                 if (badge) {
                     badge.textContent = val ? '必须认证' : '不要求';
-                    badge.style.background = val ? 'rgba(99,102,241,0.2)' : 'rgba(242,234,238,0.06)';
-                    badge.style.color = val ? '#a5b4fc' : 'rgba(242,234,238,0.35)';
+                    badge.style.background = val ? 'rgba(209,143,160,0.2)' : 'rgba(242,234,238,0.06)';
+                    badge.style.color = val ? '#EABBC5' : 'rgba(242,234,238,0.35)';
                 }
             });
         }
@@ -2181,7 +2181,7 @@
                                         <div class="training-admin-title">${escapeHtml(displayTitle)}</div>
                                         <div class="training-admin-sub">${t.kb_article_ids?.length ? `关联 ${t.kb_article_ids.length} 篇知识库文章` : '未配置知识库文章数量展示'}</div>
                                     </div>
-                                    <span class="training-admin-badge" style="background:rgba(99,102,241,0.14);color:#c7d2fe;">${posArr.length || 0} 岗位</span>
+                                    <span class="training-admin-badge" style="background:rgba(209,143,160,0.14);color:#F2D3DA;">${posArr.length || 0} 岗位</span>
                                 </div>
                                 <div class="training-admin-meta">
                                     ${storeBadge}
@@ -2243,7 +2243,7 @@
                     <details class="tt-level-group" open>
                         <summary>
                             <span>${escapeHtml(g.position)} · ${escapeHtml(levelLabel)}</span>
-                            <span class="training-admin-badge" style="background:rgba(94,234,212,0.16);color:#5EEAD4;">${g.items.length} 项</span>
+                            <span class="training-admin-badge" style="background:rgba(134,201,162,0.16);color:#86C9A2;">${g.items.length} 项</span>
                         </summary>
                         <div class="tt-level-body">${bodyHtml}</div>
                     </details>`;
@@ -2362,7 +2362,7 @@
                 container.innerHTML = '<div class="tt-kb-empty">还没有选中文章。先在下方搜索，再点“加入”。</div>';
                 return;
             }
-            const head = `<div class="tt-kb-selected-head"><span class="tt-kb-selected-count">已选文件（每个知识点限 1 个）</span><span style="color:rgba(148,163,184,0.72);">保存后员工学习时会看到此文件</span></div>`;
+            const head = `<div class="tt-kb-selected-head"><span class="tt-kb-selected-count">已选文件（每个知识点限 1 个）</span><span style="color:rgba(151,132,142,0.72);">保存后员工学习时会看到此文件</span></div>`;
             const cards = _selectedKbArticles.map((a, idx) =>
                 `<div class="tt-kb-chip">
                     <div class="tt-kb-chip-main">
@@ -2560,9 +2560,9 @@
                 }
                 return `<label data-click="togglePositionBox" data-arg="${containerId}" data-arg2="${p}" data-arg-self="1"
                     style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;cursor:pointer;font-size:13px;
-                    background:${checked ? 'rgba(99,102,241,0.25)' : 'rgba(242,234,238,0.06)'};
-                    border:1px solid ${checked ? 'rgba(99,102,241,0.5)' : 'rgba(242,234,238,0.12)'};
-                    color:${checked ? '#a5b4fc' : 'rgba(242,234,238,0.6)'};"
+                    background:${checked ? 'rgba(209,143,160,0.25)' : 'rgba(242,234,238,0.06)'};
+                    border:1px solid ${checked ? 'rgba(209,143,160,0.5)' : 'rgba(242,234,238,0.12)'};
+                    color:${checked ? '#EABBC5' : 'rgba(242,234,238,0.6)'};"
                     data-pos="${p}" data-checked="${checked ? '1' : '0'}">
                     <span style="font-size:11px;">${checked ? '☑' : '☐'}</span> ${p}
                 </label>`;
@@ -2582,9 +2582,9 @@
                 if (containerId === 'training-assign-positions') updateTrainingAssignFilterSummary();
                 if (containerId === 'training-topic-positions') updateTrainingTopicSummary();
             } else {
-                el.style.background = newChecked ? 'rgba(99,102,241,0.25)' : 'rgba(242,234,238,0.06)';
-                el.style.border = `1px solid ${newChecked ? 'rgba(99,102,241,0.5)' : 'rgba(242,234,238,0.12)'}`;
-                el.style.color = newChecked ? '#a5b4fc' : 'rgba(242,234,238,0.6)';
+                el.style.background = newChecked ? 'rgba(209,143,160,0.25)' : 'rgba(242,234,238,0.06)';
+                el.style.border = `1px solid ${newChecked ? 'rgba(209,143,160,0.5)' : 'rgba(242,234,238,0.12)'}`;
+                el.style.color = newChecked ? '#EABBC5' : 'rgba(242,234,238,0.6)';
                 el.querySelector('span').textContent = newChecked ? '☑' : '☐';
             }
             // 如果是指派弹窗的岗位选择，自动刷新员工列表
@@ -2820,7 +2820,7 @@
                     return;
                 }
                 const sMap = {not_started:'未开始',learning:'学习中',quiz:'待测验',practice:'待实操认证',certified:'已认证',failed:'未通过'};
-                const sColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#a78bfa',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
+                const sColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#D18FA0',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
                 list.innerHTML = `<div class="training-admin-stack">` + data.assignments.map(a => {
                     const st = a.session_status || 'not_started';
                     const color = sColor[st] || '#97848E';
@@ -2831,7 +2831,7 @@
                     const badge = `<span class="training-admin-badge" style="background:rgba(242,234,238,0.07);color:${color};">${sMap[st]||'未开始'}</span>`;
                     const deadlineBadge = getTrainingDeadlineBadge(deadline);
                     const cardStyle = deadline.isOverdue
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.42), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.38);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.42), rgba(28,24,28,0.96));border:1px solid rgba(237,161,172,0.38);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
                         : '';
                     return `
                     <div class="training-admin-card" style="${cardStyle}">
@@ -2846,7 +2846,7 @@
                                 </div>
                                 <div class="training-admin-meta">
                                     <span class="training-admin-chip">${escapeHtml(a.position || '未标注岗位')}</span>
-                                    <span class="training-admin-chip" style="${deadline.isOverdue ? 'color:#fecaca;border-color:rgba(237,161,172,0.35);background:rgba(127,29,29,0.22);' : deadline.isDueToday ? 'color:#EAD2A0;border-color:rgba(207,161,74,0.3);background:rgba(120,53,15,0.22);' : ''}">${escapeHtml(deadline.dueText)}</span>
+                                    <span class="training-admin-chip" style="${deadline.isOverdue ? 'color:#F1C5CC;border-color:rgba(237,161,172,0.35);background:rgba(127,29,29,0.22);' : deadline.isDueToday ? 'color:#EAD2A0;border-color:rgba(207,161,74,0.3);background:rgba(120,53,15,0.22);' : ''}">${escapeHtml(deadline.dueText)}</span>
                                     ${a.quiz_score !== null ? `<span class="training-admin-chip">测验 ${a.quiz_score}分</span>` : ''}
                                     ${deadlineBadge}
                                 </div>
@@ -2854,7 +2854,7 @@
                             <button class="training-admin-toggle" type="button" data-click="hrmsToggleParentOpen" data-arg-self="1">查看详情</button>
                             <div class="training-admin-details">
                                 <div class="training-admin-sub">指派人：${escapeHtml(a.assigned_by || '系统')} · 员工账号：${escapeHtml(a.employee_username || '')}</div>
-                                ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#fecaca;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
+                                ${deadline.isOverdue ? `<div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#F1C5CC;">该培训任务已逾期，系统会继续在进度看板中高亮，并向指派人发送飞书催办提醒。</div>` : ''}
                                 ${revokeBtn ? `<div style="margin-top:12px;">${revokeBtn}</div>` : ''}
                             </div>
                         </details>
@@ -3062,8 +3062,8 @@
                     return;
                 }
                 const stMap = {not_started:'未开始',learning:'学习中',quiz:'待测验',practice:'待实操认证',certified:'已认证',failed:'未通过'};
-                const stBg   = {not_started:'rgba(71,85,105,0.5)',learning:'rgba(224,166,180,0.2)',quiz:'rgba(139,92,246,0.25)',practice:'rgba(207,161,74,0.2)',certified:'rgba(134,201,162,0.2)',failed:'rgba(237,161,172,0.2)'};
-                const stColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#a78bfa',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
+                const stBg   = {not_started:'rgba(110,95,103,0.5)',learning:'rgba(224,166,180,0.2)',quiz:'rgba(209,143,160,0.25)',practice:'rgba(207,161,74,0.2)',certified:'rgba(134,201,162,0.2)',failed:'rgba(237,161,172,0.2)'};
+                const stColor = {not_started:'#97848E',learning:'#E0A6B4',quiz:'#D18FA0',practice:'#DDB66A',certified:'#86C9A2',failed:'#EDA1AC'};
                 content.innerHTML = `<div class="training-admin-stack">` + data.dashboard.map((d, idx) => {
                     const rate = d.assigned_count > 0 ? Math.round(d.certified_count / d.assigned_count * 100) : 0;
                     const barColor = rate >= 80 ? '#86C9A2' : rate >= 50 ? '#DDB66A' : '#EDA1AC';
@@ -3075,7 +3075,7 @@
                         const deadline = getTrainingDeadlineState(m);
                         const needsRetake = st === 'quiz' && m.quiz_score !== null && m.quiz_score !== undefined;
                         const label = deadline.isOverdue ? `逾期 ${Math.max(1, deadline.daysOverdue)} 天` : (needsRetake ? '需补考' : (stMap[st] || st));
-                        const bg = deadline.isOverdue ? 'rgba(229,139,152,0.18)' : (needsRetake ? 'rgba(229,139,152,0.18)' : (stBg[st] || 'rgba(71,85,105,0.5)'));
+                        const bg = deadline.isOverdue ? 'rgba(229,139,152,0.18)' : (needsRetake ? 'rgba(229,139,152,0.18)' : (stBg[st] || 'rgba(110,95,103,0.5)'));
                         const color = deadline.isOverdue ? '#EDA1AC' : (needsRetake ? '#EDA1AC' : (stColor[st] || '#97848E'));
                         const scoreNote = (m.quiz_score !== null && m.quiz_score !== undefined) ? ` · ${m.quiz_score}分` : '';
                         // 考试历史
@@ -3111,10 +3111,10 @@
                         </div>`;
                     }).join('') : '<div style="padding:8px 0;font-size:13px;color:rgba(242,234,238,0.3);">暂无指派成员</div>';
                     const cardStyle = overdueCount > 0
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.4), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.4);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.4), rgba(28,24,28,0.96));border:1px solid rgba(237,161,172,0.4);box-shadow:0 0 0 1px rgba(229,139,152,0.08) inset;'
                         : '';
                     const overdueBanner = overdueCount > 0
-                        ? `<div style="margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#fecaca;">当前有 ${overdueCount} 人逾期未完成，该培训主题已进入重点跟进状态。</div>`
+                        ? `<div style="margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgba(127,29,29,0.22);border:1px solid rgba(237,161,172,0.24);font-size:12px;line-height:1.6;color:#F1C5CC;">当前有 ${overdueCount} 人逾期未完成，该培训主题已进入重点跟进状态。</div>`
                         : '';
                     return `
                     <div class="training-admin-card" style="${cardStyle}">
@@ -3167,7 +3167,7 @@
             const btn = el.previousElementSibling;
             if (el.style.display === 'none') {
                 el.style.display = 'block';
-                if (btn) btn.style.background = 'rgba(99,102,241,0.15)';
+                if (btn) btn.style.background = 'rgba(209,143,160,0.15)';
             } else {
                 el.style.display = 'none';
                 if (btn) btn.style.background = 'rgba(242,234,238,0.06)';
@@ -3193,9 +3193,9 @@
                     const stepScores = c.ai_step_scores;
                     const totalScore = c.ai_total_score;
                     const sourceLabel = c.assignment_source === 'promotion_qualification'
-                        ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(139,92,246,0.15);color:#c4b5fd;margin-left:6px;">晋升培训</span>'
+                        ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(209,143,160,0.15);color:#EABBC5;margin-left:6px;">晋升培训</span>'
                         : (c.assignment_source === 'recert'
-                            ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(59,130,246,0.15);color:#EABBC5;margin-left:6px;">复训</span>'
+                            ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(224,166,180,0.15);color:#EABBC5;margin-left:6px;">复训</span>'
                             : '');
                     let scoreHtml = '';
                     if (stepScores && Array.isArray(stepScores) && stepScores.length) {
@@ -3284,7 +3284,7 @@
                 dialog.innerHTML = `
                     <div class="modal show" style="display:flex;z-index:9999;">
                         <div class="modal-backdrop" data-click="hrmsRemoveParent" data-arg-self="1"></div>
-                        <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(30,41,59,0.98),rgba(15,23,42,0.98));border:1px solid rgba(148,163,184,0.16);">
+                        <div class="modal-content" style="width:min(480px,calc(100vw-20px));max-height:90vh;overflow-y:auto;border-radius:18px;padding:24px;background:linear-gradient(180deg,rgba(28,24,28,0.98),rgba(28,24,28,0.98));border:1px solid rgba(151,132,142,0.16);">
                             <h3 style="color:#F2EAEE;margin:0 0 4px;">手动覆盖评分</h3>
                             <div style="font-size:12px;color:rgba(242,234,238,0.35);margin-bottom:16px;">AI评分：${total}分。你可以逐项调整分数。</div>
                             ${stepsHtml}
@@ -3294,7 +3294,7 @@
                             </div>
                             <div style="display:flex;gap:8px;margin-top:16px;">
                                 <button data-click="hrmsRemoveClosest" data-arg=".modal" data-arg-self="1" style="flex:1;padding:12px;border-radius:10px;background:rgba(242,234,238,0.08);border:1px solid rgba(242,234,238,0.12);color:rgba(242,234,238,0.6);font-size:14px;cursor:pointer;">取消</button>
-                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
+                                <button data-click="submitOverride" data-arg="${id}" data-arg-type="number" style="flex:1;padding:12px;border-radius:10px;background:rgba(209,143,160,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:600;cursor:pointer;">提交人工评分</button>
                             </div>
                         </div>
                     </div>`;
@@ -3349,7 +3349,7 @@
             const certsBtn = document.getElementById('emp-tab-certs');
             const tasksPanel = document.getElementById('emp-tasks-panel');
             const certsPanel = document.getElementById('emp-certs-panel');
-            const active = 'flex:1;padding:10px;border-radius:12px;background:rgba(99,102,241,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:700;cursor:pointer;';
+            const active = 'flex:1;padding:10px;border-radius:12px;background:rgba(209,143,160,0.9);border:none;color:#F2EAEE;font-size:14px;font-weight:700;cursor:pointer;';
             const inactive = 'flex:1;padding:10px;border-radius:12px;background:rgba(242,234,238,0.07);border:1px solid rgba(242,234,238,0.15);color:rgba(242,234,238,0.7);font-size:14px;font-weight:600;cursor:pointer;';
             if (tab === 'tasks') {
                 if (tasksBtn) tasksBtn.style.cssText = active;
@@ -3385,7 +3385,7 @@
                     const certDate = c.certified_at ? c.certified_at.slice(0, 10) : '—';
                     const score = c.quiz_score !== null && c.quiz_score !== undefined ? c.quiz_score + '分' : '—';
                     const posArr = (c.position || '').split(',').map(s => s.trim()).filter(Boolean);
-                    const posTags = posArr.map(p => `<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(99,102,241,0.2);color:#a5b4fc;">${escapeHtml(p)}</span>`).join('');
+                    const posTags = posArr.map(p => `<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(209,143,160,0.2);color:#EABBC5;">${escapeHtml(p)}</span>`).join('');
                     // 实操评分
                     let practiceScoreHtml = '';
                     const finalScore = c.final_score;
@@ -3458,9 +3458,9 @@
                 list.innerHTML = data.topics.map(t => {
                     const sMap = {'learning':'学习中','quiz':'待测验','practice':'实操审核中','certified':'已认证','not_started':'未开始'};
                     const sIcon = {'learning':'📖','quiz':'📝','practice':'⏳','certified':'✅','not_started':'🔔'};
-                    const sBg   = {'learning':'rgba(224,166,180,0.12)','quiz':'rgba(139,92,246,0.12)','practice':'rgba(207,161,74,0.12)','certified':'rgba(134,201,162,0.12)','not_started':'rgba(148,163,184,0.1)'};
-                    const sBorder = {'learning':'rgba(224,166,180,0.3)','quiz':'rgba(139,92,246,0.3)','practice':'rgba(207,161,74,0.3)','certified':'rgba(134,201,162,0.3)','not_started':'rgba(148,163,184,0.2)'};
-                    const sColor = {'learning':'#E0A6B4','quiz':'#a78bfa','practice':'#DDB66A','certified':'#86C9A2','not_started':'#97848E'};
+                    const sBg   = {'learning':'rgba(224,166,180,0.12)','quiz':'rgba(209,143,160,0.12)','practice':'rgba(207,161,74,0.12)','certified':'rgba(134,201,162,0.12)','not_started':'rgba(151,132,142,0.1)'};
+                    const sBorder = {'learning':'rgba(224,166,180,0.3)','quiz':'rgba(209,143,160,0.3)','practice':'rgba(207,161,74,0.3)','certified':'rgba(134,201,162,0.3)','not_started':'rgba(151,132,142,0.2)'};
+                    const sColor = {'learning':'#E0A6B4','quiz':'#D18FA0','practice':'#DDB66A','certified':'#86C9A2','not_started':'#97848E'};
                     const st = t.effective_status || t.session_status || 'not_started';
                     const deadline = getTrainingDeadlineState(t);
                     const isDone = st === 'certified';
@@ -3473,7 +3473,7 @@
                     const statusColor = deadline.isOverdue ? '#EDA1AC' : sColor[st];
                     const statusLabel = deadline.isOverdue ? `⚠️ 已逾期 ${Math.max(1, deadline.daysOverdue)} 天` : `${sIcon[st]} ${sMap[st]||'未开始'}`;
                     const cardStyle = deadline.isOverdue
-                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.36), rgba(30,41,59,0.96));border:1px solid rgba(237,161,172,0.34);'
+                        ? 'background:linear-gradient(145deg, rgba(127,29,29,0.36), rgba(28,24,28,0.96));border:1px solid rgba(237,161,172,0.34);'
                         : 'background:rgba(242,234,238,0.05);border:1px solid rgba(242,234,238,0.08);';
                     return `
                         <div style="${cardStyle}border-radius:16px;overflow:hidden;">
@@ -3488,7 +3488,7 @@
                                 </div>
                             </div>
                             <button ${btnDisabled ? '' : 'data-click="hrmsOpenTrainingSession" data-arg="'+t.topic_id+'" data-arg-type="number"'}
-                                style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(242,234,238,0.03)' : 'rgba(99,102,241,0.8)'};color:${btnDisabled ? 'rgba(242,234,238,0.3)' : '#F2EAEE'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
+                                style="width:100%;padding:13px;border:none;border-top:1px solid var(--pf-line);background:${btnDisabled ? 'rgba(242,234,238,0.03)' : 'rgba(209,143,160,0.8)'};color:${btnDisabled ? 'rgba(242,234,238,0.3)' : '#F2EAEE'};font-size:14px;font-weight:600;cursor:${btnDisabled ? 'default' : 'pointer'};letter-spacing:.3px;">
                                 ${btnLabel}
                             </button>
                         </div>
@@ -3570,8 +3570,8 @@
                         tabsDiv.innerHTML = articles.map((a, i) => `
                             <button id="training-article-tab-${i}" data-click="showTrainingArticle" data-arg="${i}" data-arg-type="number"
                                 style="padding:6px 14px;border-radius:20px;border:1px solid rgba(242,234,238,0.18);
-                                       background:${i === 0 ? 'rgba(167,139,250,0.25)' : 'rgba(242,234,238,0.06)'};
-                                       color:${i === 0 ? '#c4b5fd' : 'rgba(242,234,238,0.6)'};
+                                       background:${i === 0 ? 'rgba(209,143,160,0.25)' : 'rgba(242,234,238,0.06)'};
+                                       color:${i === 0 ? '#EABBC5' : 'rgba(242,234,238,0.6)'};
                                        font-size:13px;cursor:pointer;white-space:nowrap;transition:all .2s;">
                                 📖 ${escapeHtml(a.title)}
                             </button>`).join('');
@@ -3587,8 +3587,8 @@
                     articles.forEach((_, i) => {
                         const tab = document.getElementById(`training-article-tab-${i}`);
                         if (!tab) return;
-                        tab.style.background = i === idx ? 'rgba(167,139,250,0.25)' : 'rgba(242,234,238,0.06)';
-                        tab.style.color = i === idx ? '#c4b5fd' : 'rgba(242,234,238,0.6)';
+                        tab.style.background = i === idx ? 'rgba(209,143,160,0.25)' : 'rgba(242,234,238,0.06)';
+                        tab.style.color = i === idx ? '#EABBC5' : 'rgba(242,234,238,0.6)';
                     });
                     const a = articles[idx];
                     articlesDiv.innerHTML = '';
@@ -3608,7 +3608,7 @@
 
                         if (data.success && data.explanation) {
                             const cacheBadge = data.cached
-                                ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(134,201,162,0.15);color:#6ee7b7;margin-left:6px;">已缓存</span>'
+                                ? '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(134,201,162,0.15);color:#9ED9B4;margin-left:6px;">已缓存</span>'
                                 : '<span style="font-size:10px;padding:2px 8px;border-radius:8px;background:rgba(221,182,106,0.15);color:#EAD2A0;margin-left:6px;">✨ 新生成</span>';
                             container.innerHTML = buildTrainingExplanationView(data.explanation, cacheBadge);
                         } else if (data.error === 'no_content') {
@@ -3726,9 +3726,9 @@
                     <div style="font-weight:700;color:#F2EAEE;font-size:15px;margin-bottom:14px;line-height:1.5;">第 ${i+1} 题 &nbsp;·&nbsp; ${escapeHtml(q.q)}</div>
                     <div style="display:flex;flex-direction:column;gap:10px;">
                         ${(q.options || []).map((opt, j) => `
-                            <label style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.1);border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:rgba(99,102,241,0.15);" ontouchstart="this.style.background='rgba(99,102,241,0.12)'" ontouchend="this.style.background='rgba(242,234,238,0.04)'">
-                                <input type="radio" name="quiz-q${i}" value="${j}" style="width:20px;height:20px;flex-shrink:0;accent-color:#6366f1;">
-                                <span style="color:rgba(242,234,238,0.9);font-size:14px;line-height:1.5;"><span style="color:#a5b4fc;font-weight:600;">${String.fromCharCode(65+j)}.</span> ${escapeHtml(opt)}</span>
+                            <label style="display:flex;align-items:center;gap:12px;padding:14px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.1);border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:rgba(209,143,160,0.15);" ontouchstart="this.style.background='rgba(209,143,160,0.12)'" ontouchend="this.style.background='rgba(242,234,238,0.04)'">
+                                <input type="radio" name="quiz-q${i}" value="${j}" style="width:20px;height:20px;flex-shrink:0;accent-color:#D18FA0;">
+                                <span style="color:rgba(242,234,238,0.9);font-size:14px;line-height:1.5;"><span style="color:#EABBC5;font-weight:600;">${String.fromCharCode(65+j)}.</span> ${escapeHtml(opt)}</span>
                             </label>
                         `).join('')}
                     </div>
@@ -3791,8 +3791,8 @@
                     if (oi === r.correct) {
                         bg = 'rgba(134,201,162,0.12)';
                         border = 'rgba(134,201,162,0.4)';
-                        color = '#6ee7b7';
-                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(134,201,162,0.2);color:#6ee7b7;padding:1px 6px;border-radius:8px;">✓ 正确</span>`;
+                        color = '#9ED9B4';
+                        badge = `<span style="margin-left:6px;font-size:11px;background:rgba(134,201,162,0.2);color:#9ED9B4;padding:1px 6px;border-radius:8px;">✓ 正确</span>`;
                     } else if (oi === r.userAnswer && !r.isCorrect) {
                         bg = 'rgba(237,161,172,0.1)';
                         border = 'rgba(237,161,172,0.35)';
@@ -3820,10 +3820,10 @@
             }).join('');
 
             const actionBtn = passed
-                ? `<button data-click="hrmsTrainingQuizContinue" data-arg="${data.next_status}" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(134,201,162,0.9),rgba(16,185,129,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
+                ? `<button data-click="hrmsTrainingQuizContinue" data-arg="${data.next_status}" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(134,201,162,0.9),rgba(134,201,162,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
                         🎉 继续
                    </button>`
-                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(99,102,241,0.9),rgba(139,92,246,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
+                : `<button data-click="startTrainingQuiz" style="width:100%;padding:14px;border-radius:12px;background:linear-gradient(135deg,rgba(209,143,160,0.9),rgba(209,143,160,0.9));border:none;color:#F2EAEE;font-size:15px;font-weight:700;cursor:pointer;">
                         🔄 重新生成题目再考一次
                    </button>`;
 
@@ -3901,7 +3901,7 @@
                       </div>`;
                 }).join('')
                 + (!hasVideo && _trainingPracticeFiles.length < TRAINING_PRACTICE_MAX_FILES
-                    ? `<div data-click="hrmsTriggerClick" data-arg="training-practice-file" style="border:1px dashed rgba(255,255,255,0.25);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(255,255,255,0.55);font-size:28px;aspect-ratio:1;">+</div>`
+                    ? `<div data-click="hrmsTriggerClick" data-arg="training-practice-file" style="border:1px dashed rgba(242,234,238,0.25);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(242,234,238,0.55);font-size:28px;aspect-ratio:1;">+</div>`
                     : '')
                 + '</div>';
 
@@ -3910,13 +3910,13 @@
                 countEl.style.display = '';
                 if (hasVideo) {
                     countEl.textContent = '已选择 1 段视频，可直接提交';
-                    countEl.style.color = 'rgba(52,211,153,0.9)';
+                    countEl.style.color = 'rgba(134,201,162,0.9)';
                 } else {
                     const ok = imageCount >= TRAINING_PRACTICE_MIN_IMAGES;
                     countEl.textContent = ok
                         ? `已选 ${imageCount} 张图片（满足至少 ${TRAINING_PRACTICE_MIN_IMAGES} 张）`
                         : `已选 ${imageCount} 张，还需 ${TRAINING_PRACTICE_MIN_IMAGES - imageCount} 张才能提交`;
-                    countEl.style.color = ok ? 'rgba(52,211,153,0.9)' : '#fbbf24';
+                    countEl.style.color = ok ? 'rgba(134,201,162,0.9)' : '#DDB66A';
                 }
             }
             const canSubmit = hasVideo || imageCount >= TRAINING_PRACTICE_MIN_IMAGES;
@@ -4004,41 +4004,41 @@
 
                     // 图谱评分结果
                     if (hasRubric && stepScores && Array.isArray(stepScores) && stepScores.length) {
-                        const scoreColor = totalScore >= 80 ? '#22c55e' : totalScore >= 60 ? '#eab308' : '#ef4444';
+                        const scoreColor = totalScore >= 80 ? '#86C9A2' : totalScore >= 60 ? '#CFA14A' : '#E58B98';
                         const scoreEmoji = totalScore >= 80 ? '✅' : totalScore >= 60 ? '⚠️' : '❌';
                         const stepsHtml = stepScores.map(s => {
                             const pct = Math.round((s.score || 0) / Math.max(1, s.max || 1) * 100);
-                            const barColor = pct >= 80 ? '#22c55e' : pct >= 60 ? '#eab308' : '#ef4444';
+                            const barColor = pct >= 80 ? '#86C9A2' : pct >= 60 ? '#CFA14A' : '#E58B98';
                             return `<div style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px;">
-                                <span style="min-width:80px;color:rgba(255,255,255,0.7);">${escapeHtml(s.name || '')}</span>
-                                <div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;">
+                                <span style="min-width:80px;color:rgba(242,234,238,0.7);">${escapeHtml(s.name || '')}</span>
+                                <div style="flex:1;height:6px;border-radius:3px;background:rgba(242,234,238,0.06);overflow:hidden;">
                                     <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;"></div>
                                 </div>
                                 <span style="min-width:45px;text-align:right;color:${barColor};font-weight:600;">${s.score}/${s.max}</span>
                             </div>
-                            ${s.feedback ? `<div style="margin-left:90px;margin-bottom:4px;font-size:11px;color:rgba(255,255,255,0.4);">${escapeHtml(s.feedback)}</div>` : ''}`;
+                            ${s.feedback ? `<div style="margin-left:90px;margin-bottom:4px;font-size:11px;color:rgba(242,234,238,0.4);">${escapeHtml(s.feedback)}</div>` : ''}`;
                         }).join('');
 
-                        resultDiv.innerHTML = `<div style="background:rgba(30,41,59,0.98);border:1px solid rgba(148,163,184,0.2);border-radius:14px;padding:24px;">
+                        resultDiv.innerHTML = `<div style="background:rgba(28,24,28,0.98);border:1px solid rgba(151,132,142,0.2);border-radius:14px;padding:24px;">
                             <div style="text-align:center;margin-bottom:16px;">
                                 <div style="font-size:36px;margin-bottom:8px;">${scoreEmoji}</div>
                                 <div style="font-size:28px;font-weight:800;color:${scoreColor};">${totalScore !== null ? totalScore + '分' : 'N/A'}</div>
-                                <div style="font-size:12px;color:rgba(255,255,255,0.4);">AI自动评分 · 待派发人审核确认</div>
+                                <div style="font-size:12px;color:rgba(242,234,238,0.4);">AI自动评分 · 待派发人审核确认</div>
                             </div>
-                            <div style="border-top:1px solid rgba(148,163,184,0.1);padding-top:12px;">
+                            <div style="border-top:1px solid rgba(151,132,142,0.1);padding-top:12px;">
                                 ${stepsHtml}
                             </div>
-                            <div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.2);text-align:center;font-size:12px;color:#eab308;">
+                            <div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(207,161,74,0.1);border:1px solid rgba(207,161,74,0.2);text-align:center;font-size:12px;color:#CFA14A;">
                                 ⏳ 评分已提交，等待派发人审核确认后生效
                             </div>
                         </div>`;
                     } else if (data.verdict === 'passed') {
-                        resultDiv.innerHTML = `<div style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">🎉</div><div style="font-size:18px;font-weight:600;color:#22c55e;">认证通过</div><div style="color:rgba(255,255,255,0.6);margin-top:8px;">${escapeHtml(data.feedback || '操作规范，符合要求')}</div></div>`;
+                        resultDiv.innerHTML = `<div style="background:rgba(134,201,162,0.2);border:1px solid rgba(134,201,162,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">🎉</div><div style="font-size:18px;font-weight:600;color:#86C9A2;">认证通过</div><div style="color:rgba(242,234,238,0.6);margin-top:8px;">${escapeHtml(data.feedback || '操作规范，符合要求')}</div></div>`;
                         setTimeout(() => backToTrainingHome(), 2000);
                     } else if (data.verdict === 'review') {
-                        resultDiv.innerHTML = `<div style="background:rgba(234,179,8,0.2);border:1px solid rgba(234,179,8,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">⏳</div><div style="font-size:18px;font-weight:600;color:#eab308;">等待人工审核</div><div style="color:rgba(255,255,255,0.6);margin-top:8px;">${escapeHtml(data.feedback || '已提交，请等待管理员审核')}</div></div>`;
+                        resultDiv.innerHTML = `<div style="background:rgba(207,161,74,0.2);border:1px solid rgba(207,161,74,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">⏳</div><div style="font-size:18px;font-weight:600;color:#CFA14A;">等待人工审核</div><div style="color:rgba(242,234,238,0.6);margin-top:8px;">${escapeHtml(data.feedback || '已提交，请等待管理员审核')}</div></div>`;
                     } else {
-                        resultDiv.innerHTML = `<div style="background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">❌</div><div style="font-size:18px;font-weight:600;color:#ef4444;">需要重新练习</div><div style="color:rgba(255,255,255,0.6);margin-top:8px;">${escapeHtml(data.feedback || '操作不符合要求，请重新练习后再次提交')}</div></div>`;
+                        resultDiv.innerHTML = `<div style="background:rgba(229,139,152,0.2);border:1px solid rgba(229,139,152,0.3);border-radius:12px;padding:20px;text-align:center;"><div style="font-size:48px;margin-bottom:12px;">❌</div><div style="font-size:18px;font-weight:600;color:#E58B98;">需要重新练习</div><div style="color:rgba(242,234,238,0.6);margin-top:8px;">${escapeHtml(data.feedback || '操作不符合要求，请重新练习后再次提交')}</div></div>`;
                     }
                 } else {
                     showNotification(data.error || '上传失败', 'error');
@@ -4256,7 +4256,7 @@
                     ? '未在 HRMS 本进程跑本地 Agent 定时调度（环境变量 DISABLE_AGENT_SCHEDULING），由 Agent V2 负责调度；红点不代表故障。'
                     : 'HRMS 内 Agent 定时调度（巡检、数据推送等）是否已启动。';
                 const llmOk = ag.llmHealthy === true;
-                const dotCol = (ok) => (ok ? '#22c55e' : '#ef4444');
+                const dotCol = (ok) => (ok ? '#86C9A2' : '#E58B98');
                 const chip = (ok, label, sub, tip) =>
                     `<span class="dc-chip" title="${tip ? escapeHtml(tip) : ''}"><span class="dc-dot" style="background:${dotCol(ok)};"></span><span>${escapeHtml(label)}${sub ? '<span style="opacity:.72;font-weight:500;margin-left:4px;">' + escapeHtml(sub) + '</span>' : ''}</span></span>`;
                 let chips = [
@@ -4275,7 +4275,7 @@
                     );
                     if (health.databaseSizeGb != null) {
                         chips.push(
-                            `<span class="dc-chip" title="PostgreSQL 当前库体积（约）"><span class="dc-dot" style="background:#22c55e;"></span><span>库<span style="opacity:.72;font-weight:500;margin-left:4px;">${escapeHtml(String(health.databaseSizeGb))}GiB</span></span></span>`
+                            `<span class="dc-chip" title="PostgreSQL 当前库体积（约）"><span class="dc-dot" style="background:#86C9A2;"></span><span>库<span style="opacity:.72;font-weight:500;margin-left:4px;">${escapeHtml(String(health.databaseSizeGb))}GiB</span></span></span>`
                         );
                     }
                 }
@@ -4311,15 +4311,15 @@
                     if (wk && Array.isArray(wk.mdFiles) && wk.mdFiles.length) {
                         const pre = wk.mdFiles.map((f) => escapeHtml(String(f))).join('\n');
                         bits.push(
-                            '<details style="cursor:pointer;margin-bottom:8px;"><summary style="color:#cbd5e1;">Wiki 文档明细（' +
+                            '<details style="cursor:pointer;margin-bottom:8px;"><summary style="color:#B8AAB1;">Wiki 文档明细（' +
                             escapeHtml(String(wk.mdCount != null ? wk.mdCount : wk.mdFiles.length)) +
-                            ' 篇）</summary><pre style="margin:8px 0 0;padding:8px;border-radius:8px;background:rgba(2,6,23,0.45);overflow:auto;max-height:200px;white-space:pre-wrap;font-size:10px;color:#94a3b8;">' +
+                            ' 篇）</summary><pre style="margin:8px 0 0;padding:8px;border-radius:8px;background:rgba(18,16,18,0.45);overflow:auto;max-height:200px;white-space:pre-wrap;font-size:10px;color:#97848E;">' +
                             pre +
                             '</pre></details>'
                         );
                     } else if (wk && wk.mdCount != null) {
                         bits.push(
-                            '<div style="color:#64748b;margin-bottom:6px;">Wiki：共 <strong>' +
+                            '<div style="color:#7A6B72;margin-bottom:6px;">Wiki：共 <strong>' +
                             escapeHtml(String(wk.mdCount)) +
                             '</strong> 篇；当前 agents 健康接口未返回文件名列表，请确认已部署最新 agents-service-v2。</div>'
                         );
@@ -4344,21 +4344,21 @@
                                     escapeHtml(String(it.type || '—')) +
                                     (it.score != null ? ' · score ' + escapeHtml(String(it.score)) : '');
                                 return (
-                                    '<div style="margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(2,6,23,0.4);border:1px solid rgba(148,163,184,0.08);">' +
-                                    '<div style="color:#94a3b8;font-size:10px;">' +
+                                    '<div style="margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(18,16,18,0.4);border:1px solid rgba(151,132,142,0.08);">' +
+                                    '<div style="color:#97848E;font-size:10px;">' +
                                     meta +
                                     '</div>' +
-                                    '<div style="color:#64748b;font-size:10px;margin-top:3px;">' +
+                                    '<div style="color:#7A6B72;font-size:10px;margin-top:3px;">' +
                                     escapeHtml(ts) +
                                     '</div>' +
-                                    '<pre style="margin:6px 0 0;white-space:pre-wrap;font-size:10px;color:#e2e8f0;max-height:140px;overflow:auto;">' +
+                                    '<pre style="margin:6px 0 0;white-space:pre-wrap;font-size:10px;color:#F2EAEE;max-height:140px;overflow:auto;">' +
                                     pv +
                                     (it.truncated ? '\n…' : '') +
                                     '</pre></div>'
                                 );
                             });
                             bits.push(
-                                '<details style="cursor:pointer;margin-bottom:8px;"><summary style="color:#cbd5e1;">MemPalace 记忆明细（最近 ' +
+                                '<details style="cursor:pointer;margin-bottom:8px;"><summary style="color:#B8AAB1;">MemPalace 记忆明细（最近 ' +
                                 escapeHtml(String(mp.inventory.returned != null ? mp.inventory.returned : mp.inventory.items.length)) +
                                 ' 条 · 进程内共 ' +
                                 escapeHtml(String(mp.inventory.total != null ? mp.inventory.total : '—')) +
@@ -4367,7 +4367,7 @@
                                 '</div></details>'
                             );
                         } else if (mp.detailHint) {
-                            bits.push('<div style="color:#64748b;margin-bottom:6px;">MemPalace：' + escapeHtml(String(mp.detailHint)) + '</div>');
+                            bits.push('<div style="color:#7A6B72;margin-bottom:6px;">MemPalace：' + escapeHtml(String(mp.detailHint)) + '</div>');
                         }
                     }
                     hExtra.innerHTML = bits.join('');
@@ -4390,9 +4390,9 @@
             }
             if (actBody) {
                 if (!canBrief) {
-                    actBody.innerHTML = '<div style="padding:6px 4px 10px;color:#94a3b8;font-size:13px;line-height:1.55;">当前角色仅展示公开健康状态；完整活动摘要需管理员 / 总部营运 / HR。</div>';
+                    actBody.innerHTML = '<div style="padding:6px 4px 10px;color:#97848E;font-size:13px;line-height:1.55;">当前角色仅展示公开健康状态；完整活动摘要需管理员 / 总部营运 / HR。</div>';
                 } else if (!brief) {
-                    actBody.innerHTML = '<div style="padding:6px 4px 10px;color:#f87171;font-size:13px;">活动摘要加载失败（请确认已登录且接口可用）</div>';
+                    actBody.innerHTML = '<div style="padding:6px 4px 10px;color:#EDA1AC;font-size:13px;">活动摘要加载失败（请确认已登录且接口可用）</div>';
                 } else {
                     const a = brief.activityToday || {};
                     const n = (x) => escapeHtml(String(x ?? 0));
@@ -4403,7 +4403,7 @@
                             <div class="dc-kpi dc-kpi--c"><div class="dc-kpi-label">异常触发</div><div class="dc-kpi-val">${n(a.anomalyTriggers)}</div></div>
                             <div class="dc-kpi dc-kpi--d"><div class="dc-kpi-label">管理告警</div><div class="dc-kpi-val">${n(a.adminAlerts)}</div></div>
                         </div>
-                        <p style="margin:12px 4px 0;font-size:11px;color:#64748b;line-height:1.45;">以上为所选上海日历日汇总，与 Agent 控制台「Agent 活动」一致。</p>`;
+                        <p style="margin:12px 4px 0;font-size:11px;color:#7A6B72;line-height:1.45;">以上为所选上海日历日汇总，与 Agent 控制台「Agent 活动」一致。</p>`;
                 }
             }
 
@@ -4413,17 +4413,17 @@
                     actDetail.innerHTML = '';
                 } else {
                     const d0 = brief?.activitySummaryDate || picked;
-                    actDetail.innerHTML = '<div style="color:#64748b;padding:4px 0;">加载 ' + escapeHtml(d0) + ' 明细…</div>';
+                    actDetail.innerHTML = '<div style="color:#7A6B72;padding:4px 0;">加载 ' + escapeHtml(d0) + ' 明细…</div>';
                     try {
                         const dr = await fetch('/api/agents/activity-detail?date=' + encodeURIComponent(d0), { headers: hdr });
                         const dj = await dr.json();
                         if (dj.error) {
-                            actDetail.innerHTML = '<span style="color:#ef4444;">' + escapeHtml(String(dj.error)) + '</span>';
+                            actDetail.innerHTML = '<span style="color:#E58B98;">' + escapeHtml(String(dj.error)) + '</span>';
                         } else {
                             actDetail.innerHTML = renderDcActivityDetailHtml(dj);
                         }
                     } catch (e) {
-                        actDetail.innerHTML = '<span style="color:#ef4444;">活动明细请求失败</span>';
+                        actDetail.innerHTML = '<span style="color:#E58B98;">活动明细请求失败</span>';
                     }
                 }
             }
@@ -4431,17 +4431,17 @@
             const perfBody = document.getElementById('dc-perf-body');
             if (perfBody) {
                 if (!dash) {
-                    perfBody.innerHTML = '<div style="color:#ef4444;font-size:12px;">绩效摘要加载失败' + (_dashRaw?.error ? ' (' + escapeHtml(String(_dashRaw.error)) + ')' : '') + '</div>';
+                    perfBody.innerHTML = '<div style="color:#E58B98;font-size:12px;">绩效摘要加载失败' + (_dashRaw?.error ? ' (' + escapeHtml(String(_dashRaw.error)) + ')' : '') + '</div>';
                 } else {
                     const br = brief?.performanceRollup14d || {};
                     const avgBi = br.avgScore != null ? Number(br.avgScore).toFixed(1) : '—';
                     const tiles = [
-                        { k: '待处理异常', v: dash.openIssues ?? '—', c: (Number(dash.openIssues) > 0 ? '#f87171' : '#34d399') },
-                        { k: '近14天·周度BI均分', v: avgBi, c: '#60a5fa', sub: br.rowCount != null ? br.rowCount + ' 条 rollup' : '' },
-                        { k: '30天·仪表盘均分', v: dash.avgScore != null ? Number(dash.avgScore).toFixed(1) : '—', c: '#a78bfa', sub: '含全部 score 模型' },
-                        { k: '飞书消息(7天)', v: dash.totalMessages ?? '—', c: '#22d3ee' },
-                        { k: '飞书用户', v: dash.totalFeishuUsers ?? '—', c: '#fbbf24' },
-                        { k: '视觉审核(30天)', v: dash.totalAudits ?? '—', c: '#c084fc' }
+                        { k: '待处理异常', v: dash.openIssues ?? '—', c: (Number(dash.openIssues) > 0 ? '#EDA1AC' : '#86C9A2') },
+                        { k: '近14天·周度BI均分', v: avgBi, c: '#E0A6B4', sub: br.rowCount != null ? br.rowCount + ' 条 rollup' : '' },
+                        { k: '30天·仪表盘均分', v: dash.avgScore != null ? Number(dash.avgScore).toFixed(1) : '—', c: '#D18FA0', sub: '含全部 score 模型' },
+                        { k: '飞书消息(7天)', v: dash.totalMessages ?? '—', c: '#5C9A76' },
+                        { k: '飞书用户', v: dash.totalFeishuUsers ?? '—', c: '#DDB66A' },
+                        { k: '视觉审核(30天)', v: dash.totalAudits ?? '—', c: '#E0A6B4' }
                     ];
                     perfBody.innerHTML = tiles.map(t => `
                         <div class="dc-perf-card">
@@ -4455,22 +4455,22 @@
             const alertsBody = document.getElementById('dc-alerts-body');
             if (alertsBody) {
                 if (!canBrief || !brief) {
-                    alertsBody.innerHTML = '<div style="padding:16px;color:#64748b;font-size:12px;">' + (!canBrief ? '无权限查看管理告警。' : '告警列表加载失败。') + '</div>';
+                    alertsBody.innerHTML = '<div style="padding:16px;color:#7A6B72;font-size:12px;">' + (!canBrief ? '无权限查看管理告警。' : '告警列表加载失败。') + '</div>';
                 } else {
                     const rows = brief.adminAlerts || [];
                     if (!rows.length) {
-                        alertsBody.innerHTML = '<div style="padding:16px;color:#64748b;font-size:12px;">暂无最近管理告警记录。</div>';
+                        alertsBody.innerHTML = '<div style="padding:16px;color:#7A6B72;font-size:12px;">暂无最近管理告警记录。</div>';
                     } else {
                         alertsBody.innerHTML = rows.map(r => {
                             const pr = String(r.priority || '').toUpperCase();
-                            const col = pr === 'A' ? '#f87171' : pr === 'C' ? '#fbbf24' : '#fb923c';
-                            return `<div style="padding:10px 18px;border-bottom:1px solid rgba(148,163,184,0.06);font-size:12px;">
+                            const col = pr === 'A' ? '#EDA1AC' : pr === 'C' ? '#DDB66A' : '#DDB66A';
+                            return `<div style="padding:10px 18px;border-bottom:1px solid rgba(151,132,142,0.06);font-size:12px;">
                                 <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
                                     <span style="flex-shrink:0;padding:2px 6px;border-radius:4px;background:${col}22;color:${col};font-size:10px;font-weight:700;">${escapeHtml(pr || '—')}</span>
-                                    <span style="color:#e2e8f0;font-weight:600;flex:1;min-width:0;">${_dcEsc(r.title)}</span>
-                                    <span style="color:#475569;font-size:10px;white-space:nowrap;">${_dcFmtTime(r.sent_at)}</span>
+                                    <span style="color:#F2EAEE;font-weight:600;flex:1;min-width:0;">${_dcEsc(r.title)}</span>
+                                    <span style="color:#6E5F67;font-size:10px;white-space:nowrap;">${_dcFmtTime(r.sent_at)}</span>
                                 </div>
-                                <div style="margin-top:4px;color:#64748b;font-size:11px;line-height:1.45;">${_dcEsc(r.body_preview || r.alert_type || '')}</div>
+                                <div style="margin-top:4px;color:#7A6B72;font-size:11px;line-height:1.45;">${_dcEsc(r.body_preview || r.alert_type || '')}</div>
                             </div>`;
                         }).join('');
                     }
@@ -4480,30 +4480,30 @@
             const dw = document.getElementById('dc-dualwrite-strip');
             if (dw) {
                 if (brief?.dualWrite) {
-                    const sc = (brief.dualWrite.scopes || []).map(s => `<span style="display:inline-block;margin:2px 6px 2px 0;padding:2px 8px;border-radius:999px;background:rgba(59,130,246,0.12);color:#93c5fd;font-size:10px;">${_dcEsc(s)}</span>`).join('');
+                    const sc = (brief.dualWrite.scopes || []).map(s => `<span style="display:inline-block;margin:2px 6px 2px 0;padding:2px 8px;border-radius:999px;background:rgba(224,166,180,0.12);color:#EABBC5;font-size:10px;">${_dcEsc(s)}</span>`).join('');
                     dw.innerHTML = `<div style="margin-bottom:6px;">${_dcEsc(brief.dualWrite.summary || '')}</div><div>${sc}</div>`;
                 } else {
-                    dw.innerHTML = '<span style="color:#64748b;">双写范围说明需管理员加载 data-center-brief。</span>';
+                    dw.innerHTML = '<span style="color:#7A6B72;">双写范围说明需管理员加载 data-center-brief。</span>';
                 }
             }
 
             const cronBody = document.getElementById('dc-cron-body');
             if (cronBody) {
                 if (!canBrief || !brief || !Array.isArray(brief.cronRuns)) {
-                    cronBody.innerHTML = '<div style="padding:8px 6px;color:#64748b;">—</div>';
+                    cronBody.innerHTML = '<div style="padding:8px 6px;color:#7A6B72;">—</div>';
                 } else if (!brief.cronRuns.length) {
-                    cronBody.innerHTML = '<div style="padding:8px 6px;color:#64748b;">暂无 cron 运行记录（表未创建或无数据）。</div>';
+                    cronBody.innerHTML = '<div style="padding:8px 6px;color:#7A6B72;">暂无 cron 运行记录（表未创建或无数据）。</div>';
                 } else {
                     cronBody.innerHTML = brief.cronRuns.map(c => {
                         const ok = c.ok === true;
                         const label = c.job_label_zh || c.job_key;
                         const statusZh = ok ? '成功' : _dcEsc(c.error_preview || '失败');
                         const tip = ok ? '' : String(c.error_preview || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-                        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(148,163,184,0.05);">
-                            <span style="width:7px;height:7px;border-radius:50%;background:${ok ? '#22c55e' : '#ef4444'};flex-shrink:0;"></span>
-                            <span style="flex:1;min-width:0;color:#cbd5e1;">${_dcEsc(label)}</span>
-                            <span style="color:#64748b;white-space:nowrap;">${_dcEsc(c.run_ymd || '')}</span>
-                            <span style="color:#475569;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${tip}">${statusZh}</span>
+                        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(151,132,142,0.05);">
+                            <span style="width:7px;height:7px;border-radius:50%;background:${ok ? '#86C9A2' : '#E58B98'};flex-shrink:0;"></span>
+                            <span style="flex:1;min-width:0;color:#B8AAB1;">${_dcEsc(label)}</span>
+                            <span style="color:#7A6B72;white-space:nowrap;">${_dcEsc(c.run_ymd || '')}</span>
+                            <span style="color:#6E5F67;font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${tip}">${statusZh}</span>
                         </div>`;
                     }).join('');
                 }
@@ -4511,26 +4511,26 @@
 
             const sList = document.getElementById('dc-sync-list');
             if (sList && !sync) {
-                sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#ef4444;font-size:12px;">同步数据加载失败' + (_syncRaw?.error ? ' (' + escapeHtml(String(_syncRaw.error)) + ')' : '') + '</div>';
+                sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#E58B98;font-size:12px;">同步数据加载失败' + (_syncRaw?.error ? ' (' + escapeHtml(String(_syncRaw.error)) + ')' : '') + '</div>';
             }
             const syncItems = sync?.items || sync?.sources || [];
             if (sList && sync && Array.isArray(syncItems)) {
                 if (syncItems.length === 0) {
-                    sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#64748b;font-size:12px;">暂无数据源</div>';
+                    sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#7A6B72;font-size:12px;">暂无数据源</div>';
                 } else {
                     sList.innerHTML = syncItems.map(s => {
                         const ago = s.lastSync ? _dcTimeAgo(s.lastSync) : '从未同步';
                         const ok = s.count > 0;
-                        return `<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid rgba(148,163,184,0.06);font-size:12px;">
-                            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${ok ? '#22c55e' : '#f59e0b'};flex-shrink:0;"></span>
-                            <span style="color:#e2e8f0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_dcEsc(s.name)}</span>
-                            <span style="color:#64748b;white-space:nowrap;">${s.count}条</span>
-                            <span style="color:#475569;white-space:nowrap;">${ago}</span>
+                        return `<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid rgba(151,132,142,0.06);font-size:12px;">
+                            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${ok ? '#86C9A2' : '#CFA14A'};flex-shrink:0;"></span>
+                            <span style="color:#F2EAEE;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_dcEsc(s.name)}</span>
+                            <span style="color:#7A6B72;white-space:nowrap;">${s.count}条</span>
+                            <span style="color:#6E5F67;white-space:nowrap;">${ago}</span>
                         </div>`;
                     }).join('');
                 }
             } else if (sList) {
-                sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#64748b;font-size:12px;">无法获取同步状态</div>';
+                sList.innerHTML = '<div style="padding:12px 18px;text-align:center;color:#7A6B72;font-size:12px;">无法获取同步状态</div>';
             }
         }
 
@@ -4637,7 +4637,7 @@
             };
             const sec = (title, rows, cols) => {
                 if (!rows || !rows.length) {
-                    return `<div class="dc-act-sec"><div class="dc-act-sec-title">${escapeHtml(title)}<span class="dc-act-count">0</span></div><div style="color:#64748b;font-size:12px;padding:2px 0 8px;">暂无</div></div>`;
+                    return `<div class="dc-act-sec"><div class="dc-act-sec-title">${escapeHtml(title)}<span class="dc-act-count">0</span></div><div style="color:#7A6B72;font-size:12px;padding:2px 0 8px;">暂无</div></div>`;
                 }
                 const th = cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('');
                 const trs = rows
@@ -4665,7 +4665,7 @@
             };
             const secMasterTasks = (rows) => {
                 if (!rows || !rows.length) {
-                    return `<div class="dc-act-sec"><div class="dc-act-sec-title">调度任务<span class="dc-act-count">0</span></div><div style="color:#64748b;font-size:12px;padding:2px 0 8px;">暂无</div></div>`;
+                    return `<div class="dc-act-sec"><div class="dc-act-sec-title">调度任务<span class="dc-act-count">0</span></div><div style="color:#7A6B72;font-size:12px;padding:2px 0 8px;">暂无</div></div>`;
                 }
                 const cards = rows.map((r) => {
                     const tid = escapeHtml(String(r.task_id || '—'));
@@ -4686,9 +4686,9 @@
                 return `<div class="dc-act-sec"><div class="dc-act-sec-title">调度任务<span class="dc-act-count">${rows.length}</span></div><div class="dc-mt-list">${cards}</div></div>`;
             };
             const legend =
-                '<details class="dc-doc" style="margin:0 0 14px 2px;border-radius:12px;border:1px dashed rgba(148,163,184,0.2);background:rgba(2,6,23,0.28);">' +
-                '<summary style="cursor:pointer;padding:10px 12px;font-size:12px;font-weight:600;color:#94a3b8;list-style:none;">列说明：触发日、落库、状态码（展开）</summary>' +
-                '<div class="dc-doc-body" style="border-top:1px solid rgba(148,163,184,0.08);">「触发日」= 本条判定所指的<strong>营业日日历</strong>（充值：该日日报充值为 0 才记一条）。「落库」= 写入数据库时刻。充值绩效分：<strong>落库当日即重算</strong>当周汇总行，周一 08:25 再全量跑一遍。状态 <code style="font-size:10px;">open</code> / <code style="font-size:10px;">closed</code> 均参与扣分汇总；飞书结案后会标 <code style="font-size:10px;">closed</code>。</div>' +
+                '<details class="dc-doc" style="margin:0 0 14px 2px;border-radius:12px;border:1px dashed rgba(151,132,142,0.2);background:rgba(18,16,18,0.28);">' +
+                '<summary style="cursor:pointer;padding:10px 12px;font-size:12px;font-weight:600;color:#97848E;list-style:none;">列说明：触发日、落库、状态码（展开）</summary>' +
+                '<div class="dc-doc-body" style="border-top:1px solid rgba(151,132,142,0.08);">「触发日」= 本条判定所指的<strong>营业日日历</strong>（充值：该日日报充值为 0 才记一条）。「落库」= 写入数据库时刻。充值绩效分：<strong>落库当日即重算</strong>当周汇总行，周一 08:25 再全量跑一遍。状态 <code style="font-size:10px;">open</code> / <code style="font-size:10px;">closed</code> 均参与扣分汇总；飞书结案后会标 <code style="font-size:10px;">closed</code>。</div>' +
                 '</details>';
             return (
                 legend +
@@ -4803,7 +4803,7 @@
                 parsed = JSON.parse(t);
             } catch (_e) {
                 return (
-                    '<pre style="margin:6px 0 0;font-size:9px;color:#64748b;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;">' +
+                    '<pre style="margin:6px 0 0;font-size:9px;color:#7A6B72;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;">' +
                     _dcEsc(t) +
                     '</pre>'
                 );
@@ -4811,44 +4811,44 @@
             const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === 'object' ? [parsed] : [];
             if (!items.length) {
                 return (
-                    '<pre style="margin:6px 0 0;font-size:9px;color:#64748b;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;">' +
+                    '<pre style="margin:6px 0 0;font-size:9px;color:#7A6B72;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;">' +
                     _dcEsc(t) +
                     '</pre>'
                 );
             }
             return (
-                '<div style="margin:6px 0 0;font-size:10px;color:#94a3b8;line-height:1.45;">' +
+                '<div style="margin:6px 0 0;font-size:10px;color:#97848E;line-height:1.45;">' +
                 items
                     .map((obj) => {
                         if (!obj || typeof obj !== 'object') {
                             return (
-                                '<div style="margin-top:4px;padding:6px;border-radius:6px;background:rgba(30,41,59,0.35);">' +
+                                '<div style="margin-top:4px;padding:6px;border-radius:6px;background:rgba(28,24,28,0.35);">' +
                                 _dcEsc(JSON.stringify(obj)) +
                                 '</div>'
                             );
                         }
-                        const pts = obj.points != null ? '<span style="color:#fbbf24;">扣 ' + escapeHtml(String(obj.points)) + ' 分</span>' : '';
+                        const pts = obj.points != null ? '<span style="color:#DDB66A;">扣 ' + escapeHtml(String(obj.points)) + ' 分</span>' : '';
                         const cat = escapeHtml(dcDeductionCategoryZh(obj.category));
                         const rule = escapeHtml(dcDeductionAnomalyKeyZh(obj.anomaly_key));
                         const sev = escapeHtml(dcDeductionSeverityZh(obj.severity));
                         const extra = dcDeductionExtraZh(obj);
                         const note = obj.detail_note ? _dcEsc(String(obj.detail_note).slice(0, 280)) : '';
                         return (
-                            '<div style="margin-top:6px;padding:8px;border-radius:8px;background:rgba(30,41,59,0.45);border-left:3px solid rgba(96,165,250,0.45);">' +
+                            '<div style="margin-top:6px;padding:8px;border-radius:8px;background:rgba(28,24,28,0.45);border-left:3px solid rgba(224,166,180,0.45);">' +
                             '<div>' +
                             pts +
                             (pts ? ' · ' : '') +
-                            '<span style="color:#e2e8f0;">' +
+                            '<span style="color:#F2EAEE;">' +
                             cat +
-                            '</span> · <span style="color:#64748b;">规则 ' +
+                            '</span> · <span style="color:#7A6B72;">规则 ' +
                             rule +
-                            '</span> · <span style="color:#64748b;">严重度 ' +
+                            '</span> · <span style="color:#7A6B72;">严重度 ' +
                             sev +
                             '</span></div>' +
                             (extra
-                                ? '<div style="margin-top:4px;font-size:9px;color:#64748b;">' + escapeHtml(extra) + '</div>'
+                                ? '<div style="margin-top:4px;font-size:9px;color:#7A6B72;">' + escapeHtml(extra) + '</div>'
                                 : '') +
-                            (note ? '<div style="margin-top:4px;font-size:9px;color:#94a3b8;">' + note + '</div>' : '') +
+                            (note ? '<div style="margin-top:4px;font-size:9px;color:#97848E;">' + note + '</div>' : '') +
                             '</div>'
                         );
                     })
@@ -4866,10 +4866,10 @@
             const u = String(inp.value || '').trim();
             if (!u) {
                 __dcProvWatchUser = null;
-                out.innerHTML = '<span style="color:#fbbf24;">请输入姓名或飞书账号</span>';
+                out.innerHTML = '<span style="color:#DDB66A;">请输入姓名或飞书账号</span>';
                 return;
             }
-            out.innerHTML = '<span style="color:#64748b;">查询中…</span>';
+            out.innerHTML = '<span style="color:#7A6B72;">查询中…</span>';
             try {
                 const r = await fetch('/api/agents/score-provenance?q=' + encodeURIComponent(u) + '&limit=35', { headers: hdr });
                 const j = await r.json();
@@ -4879,11 +4879,11 @@
                             const uj = escapeHtml(String(c.username || ''));
                             return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(
                                 String(c.name || '')
-                            )} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
+                            )} <span style="color:#7A6B72;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
                         .join('');
                     out.innerHTML =
-                        '<div style="color:#fbbf24;margin-bottom:8px;">' +
+                        '<div style="color:#DDB66A;margin-bottom:8px;">' +
                         escapeHtml(String(j.message || '多名匹配，请点选账号')) +
                         '</div>' +
                         btns;
@@ -4893,55 +4893,55 @@
                 if (j.error) {
                     __dcProvWatchUser = null;
                     out.innerHTML =
-                        '<span style="color:#ef4444;">' +
+                        '<span style="color:#E58B98;">' +
                         escapeHtml(String(j.message || j.error)) +
                         '</span>';
                     return;
                 }
                 const head =
                     j.resolvedName || j.username
-                        ? `<div style="color:#94a3b8;margin-bottom:8px;">已解析：<strong style="color:#e2e8f0;">${escapeHtml(
+                        ? `<div style="color:#97848E;margin-bottom:8px;">已解析：<strong style="color:#F2EAEE;">${escapeHtml(
                               String(j.resolvedName || j.username || '')
-                          )}</strong> <span style="color:#64748b;">(${escapeHtml(String(j.username || ''))})</span></div>`
+                          )}</strong> <span style="color:#7A6B72;">(${escapeHtml(String(j.username || ''))})</span></div>`
                         : '';
                 const scores = (j.scores || [])
                     .map((s) => {
                         const modelZh = escapeHtml(dcScoreModelLabelZh(s.score_model));
-                        return `<div style="margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(2,6,23,0.35);border:1px solid rgba(148,163,184,0.1);">
-                        <div style="color:#cbd5e1;font-weight:600;">${modelZh} · ${escapeHtml(s.period || '')}</div>
-                        <div style="color:#60a5fa;margin-top:2px;">总分 <strong>${escapeHtml(String(s.total_score != null ? s.total_score : '—'))}</strong>${s.store ? ' · ' + escapeHtml(s.store) : ''}</div>
-                        ${s.summary ? `<div style="margin-top:4px;color:#94a3b8;">${_dcEsc(s.summary)}</div>` : ''}
+                        return `<div style="margin-bottom:10px;padding:8px;border-radius:8px;background:rgba(18,16,18,0.35);border:1px solid rgba(151,132,142,0.1);">
+                        <div style="color:#B8AAB1;font-weight:600;">${modelZh} · ${escapeHtml(s.period || '')}</div>
+                        <div style="color:#E0A6B4;margin-top:2px;">总分 <strong>${escapeHtml(String(s.total_score != null ? s.total_score : '—'))}</strong>${s.store ? ' · ' + escapeHtml(s.store) : ''}</div>
+                        ${s.summary ? `<div style="margin-top:4px;color:#97848E;">${_dcEsc(s.summary)}</div>` : ''}
                         ${s.deductions_preview ? formatDcDeductionsPreview(s.deductions_preview) : ''}
-                        <div style="font-size:9px;color:#475569;margin-top:2px;">${_dcEsc(String(s.updated_at || ''))}</div>
+                        <div style="font-size:9px;color:#6E5F67;margin-top:2px;">${_dcEsc(String(s.updated_at || ''))}</div>
                     </div>`;
                     })
                     .join('');
                 const notes = (j.notifications || [])
                     .map(
                         (n) =>
-                            `<div style="margin-bottom:6px;padding:6px;border-radius:6px;background:rgba(30,41,59,0.4);">
-                    <span style="color:#a78bfa;">${escapeHtml(n.type || '')}</span> <span style="color:#e2e8f0;">${_dcEsc(n.title || '')}</span>
-                    <div style="color:#64748b;font-size:10px;margin-top:2px;">${_dcEsc(n.message_preview || '')}</div>
+                            `<div style="margin-bottom:6px;padding:6px;border-radius:6px;background:rgba(28,24,28,0.4);">
+                    <span style="color:#D18FA0;">${escapeHtml(n.type || '')}</span> <span style="color:#F2EAEE;">${_dcEsc(n.title || '')}</span>
+                    <div style="color:#7A6B72;font-size:10px;margin-top:2px;">${_dcEsc(n.message_preview || '')}</div>
                 </div>`
                     )
                     .join('');
                 out.innerHTML =
                     head +
-                    '<div style="color:#94a3b8;font-weight:600;margin-bottom:6px;">绩效分记录（绩效分表 <code style="font-size:10px;">agent_scores</code>）</div>' +
-                    (scores || '<div style="color:#475569;">无记录</div>') +
-                    '<div style="color:#94a3b8;font-weight:600;margin:14px 0 6px;">公司通知 / 备案（库表 <code style="font-size:10px;">hrms_user_notifications</code>）</div>' +
-                    (notes || '<div style="color:#475569;">无记录</div>');
+                    '<div style="color:#97848E;font-weight:600;margin-bottom:6px;">绩效分记录（绩效分表 <code style="font-size:10px;">agent_scores</code>）</div>' +
+                    (scores || '<div style="color:#6E5F67;">无记录</div>') +
+                    '<div style="color:#97848E;font-weight:600;margin:14px 0 6px;">公司通知 / 备案（库表 <code style="font-size:10px;">hrms_user_notifications</code>）</div>' +
+                    (notes || '<div style="color:#6E5F67;">无记录</div>');
                 __dcProvWatchUser = String(j.username || '').trim() || null;
                 try { loadDcEmployeeLiveDashboard(__dcProvWatchUser); } catch (e2) {}
             } catch (e) {
                 __dcProvWatchUser = null;
-                out.innerHTML = '<span style="color:#ef4444;">加载失败</span>';
+                out.innerHTML = '<span style="color:#E58B98;">加载失败</span>';
             }
         }
 
         function renderDcLiveDashboardError(msg) {
             const out = document.getElementById('dc-live-dashboard-body');
-            if (out) out.innerHTML = '<div style="font-size:12px;color:#f87171;">' + escapeHtml(String(msg || '加载失败')) + '</div>';
+            if (out) out.innerHTML = '<div style="font-size:12px;color:#EDA1AC;">' + escapeHtml(String(msg || '加载失败')) + '</div>';
         }
 
         function renderDcLiveDashboardFromJson(j) {
@@ -4961,15 +4961,15 @@
             const empRows = Array.isArray(j.employee_scores_rows) ? j.employee_scores_rows : [];
             const empLine = empRows.length
                 ? empRows.map((r) => `月度表 ${escapeHtml(r.store || '')}·${escapeHtml(r.role || '')}：<strong>${escapeHtml(String(r.total_score != null ? r.total_score : '—'))}</strong>（执行力 ${escapeHtml(String(r.execution_rating || '—'))}）`).join('<br>')
-                : '<span style="color:#64748b;">月度 employee_scores 尚无该月行（可能未到关账）</span>';
+                : '<span style="color:#7A6B72;">月度 employee_scores 尚无该月行（可能未到关账）</span>';
             const lw = j.latest_weekly_anomaly_row;
             const lwLine = lw
                 ? `最新周汇总行 total_score：<strong>${escapeHtml(String(lw.total_score != null ? Number(lw.total_score).toFixed(1) : '—'))}</strong> · ${escapeHtml(String(lw.period || ''))}`
                 : '暂无周汇总行';
-            const who = `${escapeHtml(String(j.resolvedName || j.username || ''))} <span style="color:#64748b;">(${escapeHtml(String(j.username || ''))})</span>`;
+            const who = `${escapeHtml(String(j.resolvedName || j.username || ''))} <span style="color:#7A6B72;">(${escapeHtml(String(j.username || ''))})</span>`;
             const dedSub = srcP ? `数据取自该月内最近更新的周行 <code style="font-size:9px;">${srcP}</code> 的 breakdown。` : '该统计月内暂无有效 BI 周汇总行，已扣分数按 0。';
             out.innerHTML =
-                '<div class="dc-live-who">' + who + ' · 统计月 <strong style="color:#e2e8f0;">' + escapeHtml(String(j.period || '')) + '</strong></div>' +
+                '<div class="dc-live-who">' + who + ' · 统计月 <strong style="color:#F2EAEE;">' + escapeHtml(String(j.period || '')) + '</strong></div>' +
                 '<div class="dc-live-hero">' +
                 '<div class="dc-live-hero-card dc-live-hero-card--ded">' +
                 '<div class="dc-live-hero-k">本月已扣分数</div>' +
@@ -4987,7 +4987,7 @@
                 '<div class="dc-kpi dc-kpi--d"><div class="dc-kpi-label">态度备案数</div><div class="dc-kpi-val">' + escapeHtml(String(j.attitude_filing_count ?? 0)) + '</div><div class="dc-kpi-s">master_tasks · hr_performance_record</div></div>' +
                 '<div class="dc-kpi dc-kpi--a"><div class="dc-kpi-label">能力备案数</div><div class="dc-kpi-val">' + escapeHtml(String(j.ability_filing_count ?? 0)) + '</div><div class="dc-kpi-s">' + escapeHtml(String(j.ability_filing_note || '')) + '</div></div>' +
                 '</div>' +
-                '<div class="dc-live-foot">' + empLine + '<div style="margin-top:10px;color:#94a3b8;">' + lwLine + '</div></div>';
+                '<div class="dc-live-foot">' + empLine + '<div style="margin-top:10px;color:#97848E;">' + lwLine + '</div></div>';
         }
 
         async function loadDcEmployeeLiveDashboard(pickUsername) {
@@ -4998,7 +4998,7 @@
             if (!inp || !out) return;
             const u = String(pickUsername || inp.value || '').trim();
             if (!u) {
-                out.innerHTML = '<div style="font-size:12px;color:#fbbf24;">请先在下方「个人绩效分由来」输入姓名或飞书账号。</div>';
+                out.innerHTML = '<div style="font-size:12px;color:#DDB66A;">请先在下方「个人绩效分由来」输入姓名或飞书账号。</div>';
                 const asof = document.getElementById('dc-live-asof');
                 if (asof) asof.textContent = '';
                 return;
@@ -5008,7 +5008,7 @@
                 period = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 7);
                 if (per) per.value = period;
             }
-            out.innerHTML = '<div style="color:#64748b;">看板加载中…</div>';
+            out.innerHTML = '<div style="color:#7A6B72;">看板加载中…</div>';
             try {
                 const qs = new URLSearchParams({ q: u, period });
                 const r = await fetch('/api/agents/employee-live-dashboard?' + qs.toString(), { headers: hdr });
@@ -5017,11 +5017,11 @@
                     const btns = j.candidates
                         .map((c) => {
                             const uj = escapeHtml(String(c.username || ''));
-                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(String(c.name || ''))} <span style="color:#64748b;">(${escapeHtml(String(c.username || ''))})</span></button>`;
+                            return `<button type="button" class="btn btn-secondary" style="margin:4px 6px 0 0;padding:4px 10px;font-size:11px;" data-click="loadDcScoreProvenance" data-arg="${uj}">${escapeHtml(String(c.name || ''))} <span style="color:#7A6B72;">(${escapeHtml(String(c.username || ''))})</span></button>`;
                         })
                         .join('');
                     out.innerHTML =
-                        '<div style="color:#fbbf24;margin-bottom:8px;">' + escapeHtml(String(j.message || '多名匹配')) + '</div>' + btns;
+                        '<div style="color:#DDB66A;margin-bottom:8px;">' + escapeHtml(String(j.message || '多名匹配')) + '</div>' + btns;
                     return;
                 }
                 if (!r.ok || j.error) {
@@ -5432,11 +5432,11 @@
                 const count = Number(it?.count || 0);
                 const types = Array.isArray(it?.typeFilter) ? it.typeFilter.join('/') : '-';
                 return `
-                    <div style="padding:8px 10px; border:1px solid rgba(255,255,255,0.08); border-radius:10px; margin-bottom:8px; background:rgba(255,255,255,0.02);">
-                        <div style="font-weight:800; color:rgba(241,245,249,0.95);">${title}</div>
-                        <div style="margin-top:4px; color:rgba(200,215,230,0.72);">${createdAt}</div>
-                        <div style="margin-top:4px; color:rgba(200,215,230,0.85);">题量 ${count} · 答题 ${answered} · 正确 ${correct} · 正确率 ${accuracy}%</div>
-                        <div style="margin-top:4px; color:rgba(200,215,230,0.65);">题型：${escapeHtml(types)}</div>
+                    <div style="padding:8px 10px; border:1px solid rgba(242,234,238,0.08); border-radius:10px; margin-bottom:8px; background:rgba(242,234,238,0.02);">
+                        <div style="font-weight:800; color:rgba(242,234,238,0.95);">${title}</div>
+                        <div style="margin-top:4px; color:rgba(151,132,142,0.72);">${createdAt}</div>
+                        <div style="margin-top:4px; color:rgba(151,132,142,0.85);">题量 ${count} · 答题 ${answered} · 正确 ${correct} · 正确率 ${accuracy}%</div>
+                        <div style="margin-top:4px; color:rgba(151,132,142,0.65);">题型：${escapeHtml(types)}</div>
                     </div>
                 `;
             }).join('');

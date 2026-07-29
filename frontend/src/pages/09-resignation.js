@@ -851,35 +851,35 @@
                     const ratingText = storeRating ? `${storeRating}级` : '待评估';
                     ratingEl.textContent = ratingText;
                     const colors = {
-                        A: 'rgba(52,211,153,0.98)',
-                        B: 'rgba(96,165,250,0.98)',
-                        C: 'rgba(251,191,36,0.98)',
-                        D: 'rgba(248,113,113,0.98)',
-                        null: 'rgba(203,213,225,0.92)'
+                        A: 'rgba(134,201,162,0.98)',
+                        B: 'rgba(224,166,180,0.98)',
+                        C: 'rgba(207,161,74,0.98)',
+                        D: 'rgba(237,161,172,0.98)',
+                        null: 'rgba(184,170,177,0.92)'
                     };
                     const tint = {
-                        A: 'rgba(34,197,94,0.12)',
-                        B: 'rgba(59,130,246,0.12)',
-                        C: 'rgba(245,158,11,0.12)',
-                        D: 'rgba(239,68,68,0.12)',
-                        null: 'rgba(148,163,184,0.08)'
+                        A: 'rgba(134,201,162,0.12)',
+                        B: 'rgba(224,166,180,0.12)',
+                        C: 'rgba(207,161,74,0.12)',
+                        D: 'rgba(229,139,152,0.12)',
+                        null: 'rgba(151,132,142,0.08)'
                     };
                     const borderTint = {
-                        A: 'rgba(52,211,153,0.35)',
-                        B: 'rgba(96,165,250,0.35)',
-                        C: 'rgba(251,191,36,0.35)',
-                        D: 'rgba(248,113,113,0.35)',
-                        null: 'rgba(255,255,255,0.16)'
+                        A: 'rgba(134,201,162,0.35)',
+                        B: 'rgba(224,166,180,0.35)',
+                        C: 'rgba(207,161,74,0.35)',
+                        D: 'rgba(237,161,172,0.35)',
+                        null: 'rgba(242,234,238,0.16)'
                     };
                     const ratingKey = storeRating || 'null';
                     ratingEl.style.color = colors[ratingKey] || colors.null;
                     const ti = tint[ratingKey] || tint.null;
                     const bd = borderTint[ratingKey] || borderTint.null;
-                    badge.style.background = `linear-gradient(165deg, rgba(255,255,255,0.1), ${ti})`;
+                    badge.style.background = `linear-gradient(165deg, rgba(242,234,238,0.1), ${ti})`;
                     badge.style.backdropFilter = 'blur(18px) saturate(1.45)';
                     badge.style.webkitBackdropFilter = 'blur(18px) saturate(1.45)';
                     badge.style.border = `1px solid ${bd}`;
-                    badge.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 28px rgba(0,0,0,0.22)';
+                    badge.style.boxShadow = 'inset 0 1px 0 rgba(242,234,238,0.14), 0 8px 28px rgba(0,0,0,0.22)';
                     badge.style.display = 'block';
                 }
             } catch (e) {
@@ -1288,20 +1288,20 @@
                 const unread = Array.isArray(data.unread) ? data.unread : [];
                 const pct = total ? Math.round((readCount / total) * 100) : 0;
                 let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
-                    + '<div style="font-size:28px;font-weight:800;color:' + (pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444') + ';">' + pct + '%</div>'
+                    + '<div style="font-size:28px;font-weight:800;color:' + (pct >= 80 ? '#86C9A2' : pct >= 50 ? '#CFA14A' : '#E58B98') + ';">' + pct + '%</div>'
                     + '<div style="color:#666;font-size:12px;">已读 ' + readCount + ' / 共 ' + total + ' 人</div>'
                     + '</div>';
                 if (unread.length) {
                     html += '<div style="font-weight:700;margin-bottom:6px;">未读名单（' + unread.length + '人）</div>';
                     html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + unread.map(u =>
-                        '<span style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 10px;border-radius:8px;font-size:12px;">' + escapeHtml(u.name || u.username) + (u.store ? '（' + escapeHtml(u.store) + '）' : '') + '</span>'
+                        '<span style="background:rgba(229,139,152,0.1);color:#E58B98;padding:4px 10px;border-radius:8px;font-size:12px;">' + escapeHtml(u.name || u.username) + (u.store ? '（' + escapeHtml(u.store) + '）' : '') + '</span>'
                     ).join('') + '</div>';
                 } else {
-                    html += '<div style="color:#10b981;">🎉 全员已读</div>';
+                    html += '<div style="color:#86C9A2;">🎉 全员已读</div>';
                 }
                 body.innerHTML = html;
             } catch (e) {
-                body.innerHTML = '<span style="color:#ef4444;">加载失败：' + escapeHtml(e.message || '') + '</span>';
+                body.innerHTML = '<span style="color:#E58B98;">加载失败：' + escapeHtml(e.message || '') + '</span>';
             }
         }
         function closeAnnouncementReceiptsModal() {
@@ -1481,7 +1481,7 @@
             mine.sort((a, b) => String(b?.createdAt || '').localeCompare(String(a?.createdAt || '')));
             const top = mine.slice(0, 5);
             if (!top.length) {
-                box.innerHTML = '<div style="color: rgba(200,215,230,0.72); font-size: 12px; padding: 10px 2px;">暂无休假记录</div>';
+                box.innerHTML = '<div style="color: rgba(151,132,142,0.72); font-size: 12px; padding: 10px 2px;">暂无休假记录</div>';
                 return;
             }
             box.innerHTML = `
@@ -1493,10 +1493,10 @@
                     const days = String(r?.days || '').trim();
                     const meta = [days ? (days + '天') : '', String(r?.createdAt || '').slice(0, 10)].filter(Boolean).join(' · ');
                     return `
-                        <div style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); margin-bottom: 10px;">
+                        <div style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(242,234,238,0.08); background: rgba(242,234,238,0.03); margin-bottom: 10px;">
                             <div style="font-weight: 900;">${start} 至 ${end}</div>
-                            ${reason ? `<div style="margin-top: 6px; color: rgba(226,232,240,0.92); font-size: 13px;">${reason}</div>` : ''}
-                            <div style="margin-top: 6px; color: rgba(200,215,230,0.72); font-size: 12px;">${escapeHtml(meta || '-') }</div>
+                            ${reason ? `<div style="margin-top: 6px; color: rgba(242,234,238,0.92); font-size: 13px;">${reason}</div>` : ''}
+                            <div style="margin-top: 6px; color: rgba(151,132,142,0.72); font-size: 12px;">${escapeHtml(meta || '-') }</div>
                         </div>
                     `;
                 }).join('')}
@@ -2098,8 +2098,8 @@
                             <div class="dr-staff-meta">${escapeHtml(meta || '')}</div>
                         </div>
                         <div class="dr-staff-actions">
-                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
-                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #ef4444;">删除</button>
+                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #CFA14A;">${escapeHtml(dayText)}</button>
+                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #E58B98;">删除</button>
                         </div>
                     </div>
                 `;
@@ -2564,7 +2564,7 @@
                 const srcDisp = drResolveDailyReportPhotoSrc(srcRaw);
                 const src = escapeHtml(srcDisp);
                 return `
-                    <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);">
+                    <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(242,234,238,0.10); background: rgba(242,234,238,0.03);">
                         <img alt="日结单" src="${src}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="width: 100%; height: 100%; object-fit: cover;" />
                         <button class="btn btn-secondary" type="button" data-click="removeDailyReportPhoto" data-arg="${idx}" data-arg-type="number" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
                     </div>
@@ -2684,7 +2684,7 @@
             const listEl = document.getElementById('dr-list');
             const emptyEl = document.getElementById('dr-empty');
             const banner = document.getElementById('dr-missing-banner');
-            if (listEl) listEl.innerHTML = '<div style="color:#777; font-size: 12px; padding: 10px 2px;">加载中...</div>';
+            if (listEl) listEl.innerHTML = '<div style="color:#97848E; font-size: 12px; padding: 10px 2px;">加载中...</div>';
             if (emptyEl) emptyEl.style.display = 'none';
             if (banner) banner.style.display = 'none';
 
