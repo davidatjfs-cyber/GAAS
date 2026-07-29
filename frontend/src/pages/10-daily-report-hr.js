@@ -563,7 +563,7 @@
                                 <span style="color:#EABBC5; font-weight:800;">🏬 ${store}</span>
                                 ${submitterName ? `<span style="color:rgba(151,132,142,0.7);">·</span><span style="color:rgba(151,132,142,0.7);">👤 ${submitterName}</span>` : ''}
                                 ${weather ? `<span style="color:rgba(151,132,142,0.7);">·</span><span style="color:rgba(151,132,142,0.7);">${weather}</span>` : ''}
-                                ${holidayMark ? `<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(207,161,74,0.18); color:#DDB66A; font-weight:800;">休</span>` : ''}
+                                ${holidayMark ? `<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(207,161,74,0.18); color:#CFA14A; font-weight:800;">休</span>` : ''}
                             </div>
                             <div class="dr-report-kpis">
                                 <div class="dr-kpi">
@@ -582,7 +582,7 @@
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">堂食</span><span class="dm-val" style="color:#86C9A2;">${fmtMoney(dineRev)}</span></div>
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">人效</span><span class="dm-val" style="color:#E0A6B4;">¥${escapeHtml(Number.isFinite(eff) ? fmtInt(eff) : '0')}</span></div>
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">饿了么</span><span class="dm-val" style="color:#EABBC5;">${fmtMoney(elemeRev)}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">美团</span><span class="dm-val" style="color:#DDB66A;">${fmtMoney(meituanRev)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">美团</span><span class="dm-val" style="color:#CFA14A;">${fmtMoney(meituanRev)}</span></div>
                         </div>
                     </div>
                 `;
@@ -963,19 +963,19 @@
             const bgMap = {
                 green: 'rgba(134,201,162,0.14)',
                 red: 'rgba(237,161,172,0.16)',
-                amber: 'rgba(221,182,106,0.16)',
+                amber: 'rgba(207,161,74,0.16)',
                 blue: 'rgba(224,166,180,0.14)'
             };
             const borderMap = {
                 green: 'rgba(158,217,180,0.28)',
                 red: 'rgba(237,161,172,0.28)',
-                amber: 'rgba(221,182,106,0.28)',
+                amber: 'rgba(207,161,74,0.28)',
                 blue: 'rgba(224,166,180,0.24)'
             };
             const textMap = {
                 green: '#CFE9DA',
                 red: '#F1C5CC',
-                amber: '#EAD2A0',
+                amber: '#CFA14A',
                 blue: '#F2D3DA'
             };
             const bg = bgMap[tone] || bgMap.blue;
@@ -1099,11 +1099,11 @@
                         ${heroMetric('员工人数', (totals.people || digestRows.length) + ' 人', '本周期进入汇总的员工', '#F2EAEE')}
                         ${heroMetric('实际出勤', Number(totals.actualAttendanceDays || 0) + ' 天', '按日报核对 + 打卡回退', '#86C9A2')}
                         ${heroMetric('缺勤', Number(totals.absenceDays || 0) + ' 天', '无打卡且未命中休息/休假', '#EDA1AC')}
-                        ${heroMetric('迟到', Number(totals.lateDays || 0) + ' 天', '以上班首次打卡判断', '#EAD2A0')}
+                        ${heroMetric('迟到', Number(totals.lateDays || 0) + ' 天', '以上班首次打卡判断', '#CFA14A')}
                         ${heroMetric('休息', Number(totals.restDays || 0) + ' 天', '营业日报排休 + 已批休假', '#EABBC5')}
                         ${heroMetric('打卡轨迹', checkinDetails.length + ' 条', '默认不再直接铺满原始流水', '#EABBC5')}
                     </div>
-                    ${!hasRegisterData ? '<div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(221,182,106,0.14); border:1px solid rgba(221,182,106,0.22); color:#EAD2A0; font-size:12px;">当前区间缺少营业日报核对台账，缺勤/休息统计已尽量按打卡回退，但仍建议结合日报补录后再复核。</div>' : ''}
+                    ${!hasRegisterData ? '<div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(207,161,74,0.14); border:1px solid rgba(207,161,74,0.22); color:#CFA14A; font-size:12px;">当前区间缺少营业日报核对台账，缺勤/休息统计已尽量按打卡回退，但仍建议结合日报补录后再复核。</div>' : ''}
                 </div>
 
                 ${(function() {
@@ -1135,17 +1135,17 @@
                     });
                     if (!sdRows.length) return '';
                     const anomTotal = sdRows.reduce(function(s, sd) { return s + sd.people.filter(function(p) { return p.isAnomalous; }).length; }, 0);
-                    const parts = [`<details open style="margin-top:14px;border-radius:14px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);overflow:hidden;"><summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(151,132,142,0.78);font-weight:800;flex:1;">打卡全局视图（按门店/日期）</span>${anomTotal > 0 ? `<span style="padding:2px 8px;border-radius:999px;background:rgba(207,161,74,0.18);color:#DDB66A;font-size:11px;font-weight:800;">⚠ ${anomTotal} 人异常</span>` : '<span style="padding:2px 8px;border-radius:999px;background:rgba(134,201,162,0.12);color:#86C9A2;font-size:11px;font-weight:800;">✓ 全部正常</span>'}<span style="font-size:11px;color:rgba(151,132,142,0.5);">▾</span></summary>`, '<div style="display:flex;flex-direction:column;gap:8px;padding:0 10px 12px;">'];
+                    const parts = [`<details open style="margin-top:14px;border-radius:14px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);overflow:hidden;"><summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(151,132,142,0.78);font-weight:800;flex:1;">打卡全局视图（按门店/日期）</span>${anomTotal > 0 ? `<span style="padding:2px 8px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ ${anomTotal} 人异常</span>` : '<span style="padding:2px 8px;border-radius:999px;background:rgba(134,201,162,0.12);color:#86C9A2;font-size:11px;font-weight:800;">✓ 全部正常</span>'}<span style="font-size:11px;color:rgba(151,132,142,0.5);">▾</span></summary>`, '<div style="display:flex;flex-direction:column;gap:8px;padding:0 10px 12px;">'];
                     sdRows.forEach(function(sd) {
                         const anomPeople = sd.people.filter(function(p) { return p.isAnomalous; });
                         const hasAnom = anomPeople.length > 0;
                         parts.push(`<details style="border-radius:14px;background:${hasAnom ? 'rgba(30,15,5,0.45)' : 'rgba(28,24,28,0.28)'};border:1px solid ${hasAnom ? 'rgba(207,161,74,0.25)' : 'rgba(134,201,162,0.15)'};overflow:hidden;">`);
-                        parts.push(`<summary style="list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;"><span style="display:inline-block;transition:transform .15s;color:rgba(151,132,142,0.8);font-size:12px;">▸</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#F2EAEE;">${escapeHtml(sd.store || '未知门店')}</div><div style="font-size:11px;color:rgba(151,132,142,0.8);margin-top:2px;">${escapeHtml(sd.date)} · ${escapeHtml(String(sd.people.length))} 人打卡</div></div>${hasAnom ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#DDB66A;font-size:11px;font-weight:800;">⚠ ${escapeHtml(String(anomPeople.length))} 人异常</span>` : '<span style="padding:3px 10px;border-radius:999px;background:rgba(134,201,162,0.15);color:#86C9A2;font-size:11px;font-weight:800;">✓ 正常</span>'}</summary>`);
+                        parts.push(`<summary style="list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;"><span style="display:inline-block;transition:transform .15s;color:rgba(151,132,142,0.8);font-size:12px;">▸</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#F2EAEE;">${escapeHtml(sd.store || '未知门店')}</div><div style="font-size:11px;color:rgba(151,132,142,0.8);margin-top:2px;">${escapeHtml(sd.date)} · ${escapeHtml(String(sd.people.length))} 人打卡</div></div>${hasAnom ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ ${escapeHtml(String(anomPeople.length))} 人异常</span>` : '<span style="padding:3px 10px;border-radius:999px;background:rgba(134,201,162,0.15);color:#86C9A2;font-size:11px;font-weight:800;">✓ 正常</span>'}</summary>`);
                         if (hasAnom) {
                             parts.push(`<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);">`);
                             anomPeople.forEach(function(p) {
                                 const label = p.isAbsent ? '未打卡' : (p.isLate ? '迟到' + (p.firstIn ? ' ' + p.firstIn : '') : '异常打卡');
-                                parts.push(`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(242,234,238,0.04);"><div style="width:6px;height:6px;border-radius:50%;background:${p.isAbsent ? '#EDA1AC' : '#DDB66A'};flex-shrink:0;"></div><div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#F2EAEE;">${escapeHtml(p.name || p.username || '—')}</div></div><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${p.isAbsent ? 'rgba(237,161,172,0.15)' : 'rgba(221,182,106,0.15)'};color:${p.isAbsent ? '#EDA1AC' : '#EAD2A0'};">${escapeHtml(label)}</span></div>`);
+                                parts.push(`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(242,234,238,0.04);"><div style="width:6px;height:6px;border-radius:50%;background:${p.isAbsent ? '#EDA1AC' : '#CFA14A'};flex-shrink:0;"></div><div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#F2EAEE;">${escapeHtml(p.name || p.username || '—')}</div></div><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${p.isAbsent ? 'rgba(237,161,172,0.15)' : 'rgba(207,161,74,0.15)'};color:${p.isAbsent ? '#EDA1AC' : '#CFA14A'};">${escapeHtml(label)}</span></div>`);
                             });
                             parts.push(`</div>`);
                         } else {
@@ -1175,7 +1175,7 @@
                                 <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;">
                                     ${statCell('实际出勤', row.actualAttendanceDays || 0, '#86C9A2')}
                                     ${statCell('缺勤', row.absenceDays || 0, '#EDA1AC')}
-                                    ${statCell('迟到', row.lateDays || 0, '#EAD2A0')}
+                                    ${statCell('迟到', row.lateDays || 0, '#CFA14A')}
                                     ${statCell('休息', row.restDays || 0, '#EABBC5')}
                                 </div>
                                 <div style="margin-top:14px; display:grid; grid-template-columns:1fr; gap:12px;">
@@ -1256,13 +1256,13 @@
             try {
                 const base = String(HRMS_API.baseUrl() || '').replace(/\/$/, '');
                 const token = String(HRMS_API.token() || '').trim();
-                if (!token) { box.innerHTML = '<div style="color:#8A6229;">请先登录</div>'; return; }
+                if (!token) { box.innerHTML = '<div style="color:#97848E;">请先登录</div>'; return; }
 
                 const resp = await fetch(base + '/api/attention-scores/summary', {
                     headers: { 'Authorization': 'Bearer ' + token }
                 });
                 if (!resp.ok) {
-                    if (resp.status === 403) { box.innerHTML = '<div style="color:#8A6229;">无权限查看专注度报告</div>'; return; }
+                    if (resp.status === 403) { box.innerHTML = '<div style="color:#97848E;">无权限查看专注度报告</div>'; return; }
                     throw new Error('HTTP ' + resp.status);
                 }
                 const data = await resp.json();
@@ -1311,7 +1311,7 @@
 
                 box.innerHTML = html;
             } catch (e) {
-                box.innerHTML = '<div style="color:#8A6229; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
+                box.innerHTML = '<div style="color:#97848E; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
             }
         }
 
@@ -1363,7 +1363,7 @@
                 html += '</tbody></table></div>';
                 box.innerHTML = html;
             } catch (e) {
-                box.innerHTML = '<div style="color:#8A6229; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
+                box.innerHTML = '<div style="color:#97848E; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
             }
         }
 
@@ -1787,7 +1787,7 @@
                         <div class="rep-metric"><div class="k">堂食预计营收</div><div class="v">¥${fmt(state.expectedRevenueDinein ?? state.expectedRevenue ?? 0)}</div></div>
                         <div class="rep-metric"><div class="k">历史样本</div><div class="v">${historyRows.length} 条</div></div>
                         <div class="rep-metric"><div class="k">折前毛利率</div><div class="v">${fmt(grossMarginRate * 100)}%</div></div>
-                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#CFA14A;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#E0A6B4;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
                     </div>
                 </div>
 
@@ -1811,12 +1811,12 @@
                     <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
                         <div class="rep-metric"><div class="k">样本天数</div><div class="v">${Number(grossMarginEstimate?.sampleCount || 0)}</div></div>
                         <div class="rep-metric"><div class="k">折前营收</div><div class="v">¥${fmt(grossRevenue)}</div></div>
-                        <div class="rep-metric"><div class="k">实收营收</div><div class="v" style="color:#CFA14A;">¥${grossActualRevenue > 0 ? fmt(grossActualRevenue) : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收营收</div><div class="v" style="color:#E0A6B4;">¥${grossActualRevenue > 0 ? fmt(grossActualRevenue) : '--'}</div></div>
                     </div>
                     <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px;">
                         <div class="rep-metric"><div class="k">毛利额</div><div class="v">¥${fmt(grossProfit)}</div></div>
                         <div class="rep-metric"><div class="k">折前毛利率</div><div class="v">${fmt(grossMarginRate * 100)}%</div></div>
-                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#CFA14A;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#E0A6B4;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
                     </div>
                     <div style="margin-top:8px; font-size:11px; color:rgba(151,132,142,0.66);">
                         未配置毛利产品：${uncoveredProducts.length ? escapeHtml(uncoveredProducts.slice(0, 8).map(x => x.product).join('、')) : '无'}
@@ -1995,7 +1995,7 @@
                                     <td>${escapeHtml(String(r?.date || ''))}</td>
                                     <td>${bizLabel(String(r?.bizType || ''))} · ${slotLabel(String(r?.slot || ''))}</td>
                                     <td style="text-align:right; color:#86C9A2; font-weight:800;">${fmt(Number(r?.totalAccuracy || 0) * 100)}%</td>
-                                    <td style="text-align:right; color:#CFA14A;">${fmt(Number(r?.mape || 0) * 100)}%</td>
+                                    <td style="text-align:right; color:#E0A6B4;">${fmt(Number(r?.mape || 0) * 100)}%</td>
                                     <td style="text-align:right;">${fmt(Number(r?.hitRate20 || 0) * 100)}%</td>
                                     <td style="text-align:right;">${fmt(r?.totalPredQty || 0)}</td>
                                     <td style="text-align:right;">${fmt(r?.totalActualQty || 0)}</td>
@@ -2052,7 +2052,7 @@
             const pct = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? (v * 100).toFixed(1) + '%' : '0.0%'; };
             const pctRaw = (a, b) => b > 0 ? pct(a / b) : '0.0%';
 
-            const blue = '#D18FA0'; const green = '#6FAF89'; const red = '#C97686'; const orange = '#A67D34'; const purple = '#B87B8C'; const cyan = '#4C7E60';
+            const blue = '#D18FA0'; const green = '#6FAF89'; const red = '#C97686'; const orange = '#CFA14A'; const purple = '#B87B8C'; const cyan = '#4C7E60';
 
             const yoyBadge = (cur, prev) => {
                 if (!hasLm || prev == null) return '';
@@ -2493,7 +2493,7 @@
                         const blue = '#D18FA0';
                         const red = '#C97686';
                         const green = '#6FAF89';
-                        const orange = '#A67D34';
+                        const orange = '#CFA14A';
                         const purple = '#B87B8C';
 
                         const section = (title, content) => `
@@ -2753,7 +2753,7 @@
                 const box = document.getElementById('rep-promotions-box');
                 if (box) box.innerHTML = '加载中...';
                 if (!repRoleCanViewPromotionRecords()) {
-                    if (box) box.innerHTML = '<div style="color:#8A6229; padding:12px 0;">仅总部人事/总部运营/管理员可查看</div>';
+                    if (box) box.innerHTML = '<div style="color:#97848E; padding:12px 0;">仅总部人事/总部运营/管理员可查看</div>';
                     return;
                 }
                 HRMS_API.getPromotionRecordsReport({ store, month, limit: 500 })
@@ -2860,7 +2860,7 @@
                             <div class="rep-hero" style="background: radial-gradient(800px 280px at 0% 0%, rgba(224,166,180,0.16), transparent 55%), linear-gradient(155deg, rgba(28,24,28,0.95), rgba(24,20,24,0.98)); border: 1px solid rgba(224,166,180,0.2);">
                                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                                     <div style="font-weight: 900; font-size: 16px;flex:1;">出勤表（营业日报核对）</div>
-                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(221,182,106,0.2);border:1px solid rgba(221,182,106,0.4);color:#DDB66A;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
+                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(207,161,74,0.2);border:1px solid rgba(207,161,74,0.4);color:#CFA14A;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
                                 </div>
                                 <div class="meta" style="margin-top: 8px;">数据来源：<strong>正式提交</strong>营业日报。在职人员与打卡、已通过休假比对；<strong>休息</strong>以日报为准（本休/调休不要求休假流程）。门店名册中未列入出勤/休息且无已通过休假者标为<strong>缺勤</strong>。</div>
                                 <div class="meta" style="margin-top: 6px;">统计周期：${escapeHtml(start)} - ${escapeHtml(end)} · 每日默认折叠，点击标题展开明细</div>`;
@@ -2870,7 +2870,7 @@
                                     <div style="font-weight:900;font-size:14px;color:#F2D3DA;">员工筛选「${escapeHtml(es.employee_query || darEmp)}」· 区间内汇总</div>
                                     <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px 22px;font-size:13px;color:rgba(242,234,238,0.95);">
                                         <span><strong style="color:#BEE6CE;">出勤天数</strong>（有在职记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.attendance_days ?? 0))}</strong></span>
-                                        <span><strong style="color:#DDB66A;">休息天数</strong>（有休息记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.rest_days ?? 0))}</strong></span>
+                                        <span><strong style="color:#CFA14A;">休息天数</strong>（有休息记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.rest_days ?? 0))}</strong></span>
                                         <span>出勤人日累计　<strong>${escapeHtml(String(es.attendance_person_days ?? 0))}</strong></span>
                                         <span>休息人日累计　<strong>${escapeHtml(String(es.rest_person_days ?? 0))}</strong></span>
                                     </div>
@@ -2902,7 +2902,7 @@
 </div>
 ${ok
     ? '<span style="padding:3px 10px;border-radius:999px;background:rgba(134,201,162,0.15);color:#BEE6CE;font-size:11px;font-weight:800;">✓ 全部核实</span>'
-    : `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#DDB66A;font-size:11px;font-weight:800;">⚠ 异常 ${escapeHtml(String(anomCount))} 人</span>`}
+    : `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ 异常 ${escapeHtml(String(anomCount))} 人</span>`}
 </summary>`;
                             if (!ok) {
                                 html += `<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);margin-top:0;">`;
@@ -2912,9 +2912,9 @@ ${ok
 <div style="width:6px;height:6px;border-radius:50%;background:#CFA14A;flex-shrink:0;"></div>
 <div style="flex:1;min-width:0;">
   <div style="font-size:12px;font-weight:700;color:#F2EAEE;">${escapeHtml(String(ln.display_name || ln.username || '—'))}</div>
-  <div style="font-size:11px;color:rgba(221,182,106,0.8);margin-top:2px;">${escapeHtml(rs)}</div>
+  <div style="font-size:11px;color:rgba(207,161,74,0.8);margin-top:2px;">${escapeHtml(rs)}</div>
 </div>
-<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(221,182,106,0.12);color:#DDB66A;">${escapeHtml(ln.has_clock_in ? '有打卡' : '无打卡')}</span>
+<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(207,161,74,0.12);color:#CFA14A;">${escapeHtml(ln.has_clock_in ? '有打卡' : '无打卡')}</span>
 </div>`;
                                 }
                                 html += `</div>`;
@@ -3135,7 +3135,7 @@ ${ok
                 const invState = repCollectInventoryForecastState();
                 const storeVal = String(store || '').trim();
                 if (!storeVal && !brandId) {
-                    if (box) box.innerHTML = '<div style="color:#8A6229; padding:12px 0;">请先选择品牌（可选门店）后再进行预测</div>';
+                    if (box) box.innerHTML = '<div style="color:#97848E; padding:12px 0;">请先选择品牌（可选门店）后再进行预测</div>';
                     return;
                 }
                 const combos = [
@@ -3460,7 +3460,7 @@ ${ok
                                 </div>
                                 <div style="text-align:right; flex-shrink:0;">
                                     <div style="font-size:11px; color:var(--rep-muted); font-weight:700;">累计假期</div>
-                                    <div style="font-size:16px; font-weight:900; color:#DDB66A; font-family:var(--rep-mono);">${fmt(r?.cumulativeLeaveDays || 0, 2)}</div>
+                                    <div style="font-size:16px; font-weight:900; color:#CFA14A; font-family:var(--rep-mono);">${fmt(r?.cumulativeLeaveDays || 0, 2)}</div>
                                 </div>
                                 <span class="rep-row-details__chev" aria-hidden="true">▼</span>
                             </summary>
@@ -3516,7 +3516,7 @@ ${ok
             const pct = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? (v * 100).toFixed(1) + '%' : '0.0%'; };
             const fmtInt = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? v.toLocaleString('zh-CN') : '0'; };
 
-            const blue = '#D18FA0', green = '#6FAF89', red = '#C97686', orange = '#A67D34', purple = '#B87B8C', cyan = '#4C7E60';
+            const blue = '#D18FA0', green = '#6FAF89', red = '#C97686', orange = '#CFA14A', purple = '#B87B8C', cyan = '#4C7E60';
 
             const titleStore = data.store || '全部门店';
             const ct = data.criticalTalent || {};

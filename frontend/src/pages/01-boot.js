@@ -2422,7 +2422,7 @@
                     listEl.innerHTML = urls.length
                         ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">${urls.map((u, i) => {
                             const abs = toAbs(u);
-                            return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="打开证据${i + 1}" style="position:relative; display:block; width:72px; height:72px; border-radius:10px; overflow:hidden; border:1px solid rgba(201,169,106,0.35); background:rgba(242,234,238,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"><span style="position:absolute; right:4px; bottom:4px; font-size:10px; color:#EAD2A0; background:rgba(18,16,18,0.65); border-radius:6px; padding:1px 5px;">${i + 1}</span></a>`;
+                            return `<a href="${escapeHtml(abs)}" target="_blank" rel="noopener" title="打开证据${i + 1}" style="position:relative; display:block; width:72px; height:72px; border-radius:10px; overflow:hidden; border:1px solid rgba(224,166,180,0.35); background:rgba(242,234,238,0.04);"><img src="${escapeHtml(abs)}" alt="证据${i + 1}" style="width:100%; height:100%; object-fit:cover;"><span style="position:absolute; right:4px; bottom:4px; font-size:10px; color:#F2C6D1; background:rgba(18,16,18,0.65); border-radius:6px; padding:1px 5px;">${i + 1}</span></a>`;
                         }).join('')}</div>`
                         : '未上传成功';
                 }
@@ -2526,7 +2526,7 @@
                 if (hit) selectPointsReturnedRule(hit, idx);
                 else {
                     const warn = document.createElement('div');
-                    warn.style.cssText = 'font-size:11px;color:#DDB66A;margin:0 0 8px;line-height:1.45;';
+                    warn.style.cssText = 'font-size:11px;color:#CFA14A;margin:0 0 8px;line-height:1.45;';
                     const nm = String(pf.itemName || '').trim() || '原事项';
                     warn.textContent = '「' + nm + '」已不在可选列表，请从下方重新选择一项。';
                     const wrap = itemDiv.querySelector(`#pts-ret-picker-${idx}`);
@@ -2865,14 +2865,14 @@
                     else if (rankNum === 3) medal = '🥉';
                     const bgStyle = isMe ? 'background:rgba(201,169,106,0.12); border:1px solid rgba(201,169,106,0.3);' : 'background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.06);';
                     const nameColor = isMe ? 'color:rgba(254,240,138,0.95); font-weight:800;' : 'color:rgba(242,234,238,0.92);';
-                    const rankColor = rankNum <= 3 ? 'color:#CFA14A; font-weight:900;' : 'color:rgba(151,132,142,0.7); font-weight:700;';
+                    const rankColor = rankNum <= 3 ? 'color:#E0A6B4; font-weight:900;' : 'color:rgba(151,132,142,0.7); font-weight:700;';
                     return `<div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; margin-bottom:4px; ${bgStyle}">
                         <div style="min-width:28px; text-align:center; font-size:${rankNum <= 3 ? '18px' : '14px'}; ${rankColor}">${medal || rankNum}</div>
                         <div style="flex:1; min-width:0;">
                             <div style="font-size:13px; ${nameColor} white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.name || item.username)}${isMe ? ' <span style="font-size:10px; opacity:0.7;">(我)</span>' : ''}</div>
                             ${(item.position || item.store) ? '<div style="font-size:10px; color:rgba(151,132,142,0.5); margin-top:1px;">' + escapeHtml([item.position, item.store].filter(Boolean).join(' · ')) + '</div>' : ''}
                         </div>
-                        <div style="font-size:15px; font-weight:900; color:${rankNum <= 3 ? '#CFA14A' : 'rgba(207,161,74,0.9)'}; text-shadow:0 1px 4px rgba(201,169,106,0.2);">${item.totalPoints}<span style="font-size:10px; font-weight:500; opacity:0.7;">分</span></div>
+                        <div style="font-size:15px; font-weight:900; color:${rankNum <= 3 ? '#E0A6B4' : 'rgba(224,166,180,0.9)'}; text-shadow:0 1px 4px rgba(224,166,180,0.2);">${item.totalPoints}<span style="font-size:10px; font-weight:500; opacity:0.7;">分</span></div>
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -2985,7 +2985,7 @@ const role = String(currentUser?.role || '').trim();
                                         <span class="rep-row-details__sum-meta">门店：${escapeHtml(rowStore)} · 状态：${escapeHtml(st)}${dt ? ' · ' + escapeHtml(dt) : ''}</span>
                                     </span>
                                     <span style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
-                                        <span class="rep-row-details__sum-badge" style="color:#CFA14A;">¥${amount.toFixed(2)}</span>
+                                        <span class="rep-row-details__sum-badge" style="color:#E0A6B4;">¥${amount.toFixed(2)}</span>
                                         <span class="rep-row-details__chev" aria-hidden="true">▼</span>
                                     </span>
                                 </summary>
@@ -3001,8 +3001,8 @@ const role = String(currentUser?.role || '').trim();
                                 <div style="margin-top:4px; font-size:12px; color:rgba(151,132,142,0.7);">门店：${escapeHtml(gStoreLabel)} · ${group.items.length}条记录</div>
                             </div>
                             <div style="text-align:right;">
-                                <div style="font-size:13px; color:#CFA14A; font-weight:900;">${Number(group.totalPoints || 0)}分</div>
-                                <div style="margin-top:4px; font-size:12px; color:#CFA14A; font-weight:800;">¥${Number(group.totalAmount || 0).toFixed(2)}</div>
+                                <div style="font-size:13px; color:#E0A6B4; font-weight:900;">${Number(group.totalPoints || 0)}分</div>
+                                <div style="margin-top:4px; font-size:12px; color:#E0A6B4; font-weight:800;">¥${Number(group.totalAmount || 0).toFixed(2)}</div>
                             </div>
                         </div>
                         <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">${rows}</div>
@@ -3126,7 +3126,7 @@ const role = String(currentUser?.role || '').trim();
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _obRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    const _obRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
                     const _obRolesOpts = (_edRoles||[]).map(r => '<option value="' + escapeHtml(r.c) + '"' + (r.c === (emp?.role||'') ? ' selected' : '') + '>' + escapeHtml(r.l) + '</option>').join('');
                     payloadHtml += '<div id="onboarding-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(134,201,162,0.35);background:rgba(134,201,162,0.06);">'
                         + '<div style="font-weight:800;color:#86C9A2;margin-bottom:6px;">修改入职信息</div>'
@@ -3203,7 +3203,7 @@ const role = String(currentUser?.role || '').trim();
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _promoRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    const _promoRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
                     payloadHtml += `<div id="promotion-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(209,143,160,0.35);background:rgba(209,143,160,0.06);">
                         <div style="font-weight:800;color:#EABBC5;margin-bottom:6px;">修改晋升申请</div>
                         ${_promoRnHtml}
@@ -3248,7 +3248,7 @@ const role = String(currentUser?.role || '').trim();
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _offbRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    const _offbRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
                     payloadHtml += `<div id="offboarding-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(229,139,152,0.35);background:rgba(229,139,152,0.06);">
                         <div style="font-weight:800;color:#EDA1AC;margin-bottom:6px;">修改离职申请</div>
                         ${_offbRnHtml}
@@ -3288,7 +3288,7 @@ const role = String(currentUser?.role || '').trim();
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _leaveRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    const _leaveRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
                     payloadHtml += `<div id="leave-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(224,166,180,0.35);background:rgba(224,166,180,0.06);">
                         <div style="font-weight:800;color:#EABBC5;margin-bottom:6px;">修改休假申请</div>
                         ${_leaveRnHtml}
@@ -3327,9 +3327,9 @@ const role = String(currentUser?.role || '').trim();
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _rpRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
-                    payloadHtml += `<div id="rp-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(207,161,74,0.35);background:rgba(207,161,74,0.06);">
-                        <div style="font-weight:800;color:#EAD2A0;margin-bottom:6px;">修改奖惩申请</div>
+                    const _rpRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    payloadHtml += `<div id="rp-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(224,166,180,0.35);background:rgba(224,166,180,0.06);">
+                        <div style="font-weight:800;color:#F2C6D1;margin-bottom:6px;">修改奖惩申请</div>
                         ${_rpRnHtml}
                         <div style="margin-top:8px;"><div style="font-size:12px;color:rgba(151,132,142,0.72);margin-bottom:4px;">事由</div><textarea data-field="reason" class="form-input rp-ret-field" rows="2" style="resize:vertical;">${escapeHtml(payload?.reason||'')}</textarea></div>
                         <div style="margin-top:10px;"><div style="font-size:12px;color:rgba(151,132,142,0.72);margin-bottom:4px;">结果</div><textarea data-field="result" class="form-input rp-ret-field" rows="2" style="resize:vertical;">${escapeHtml(payload?.result||'')}</textarea></div>
@@ -3360,7 +3360,7 @@ const role = String(currentUser?.role || '').trim();
                         <div style="margin-top:${idx === 0 ? '10' : '8'}px; padding:10px 12px; border-radius:10px; background:rgba(201,169,106,0.04); border:1px solid rgba(201,169,106,0.12);">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span style="font-size:12px; font-weight:700; color:rgba(201,169,106,0.85);">第${idx + 1}条</span>
-                                <span style="color:#CFA14A; font-weight:900; font-size:13px;">${Number(it?.points || 0)}分</span>
+                                <span style="color:#E0A6B4; font-weight:900; font-size:13px;">${Number(it?.points || 0)}分</span>
                             </div>
                             <div style="margin-top:6px; color:rgba(151,132,142,0.85); font-size:13px;">事项：<span style="color:rgba(242,234,238,0.95); font-weight:700;">${escapeHtml(it?.itemName || '-')}</span></div>
                             <div style="margin-top:4px; color:rgba(151,132,142,0.85); font-size:13px;">理由：<span style="color:rgba(242,234,238,0.95);">${escapeHtml(it?.reason || '-')}</span></div>
@@ -3387,8 +3387,8 @@ const role = String(currentUser?.role || '').trim();
                         ${pointsApplicantStore ? `<div style="margin-top: 8px; color: rgba(151,132,142,0.85);">门店：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(pointsApplicantStore)}</span></div>` : ''}
                         <div style="margin-top: 10px; border-top: 1px solid rgba(242,234,238,0.06); padding-top: 10px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color: rgba(151,132,142,0.85);">总积分：<span style="color: #CFA14A; font-weight: 900;">${pts}分</span></span>
-                                <span style="color: rgba(151,132,142,0.85);">折算金额：<span style="color: #CFA14A; font-weight: 900;">¥${amount.toFixed(2)}</span></span>
+                                <span style="color: rgba(151,132,142,0.85);">总积分：<span style="color: #E0A6B4; font-weight: 900;">${pts}分</span></span>
+                                <span style="color: rgba(151,132,142,0.85);">折算金额：<span style="color: #E0A6B4; font-weight: 900;">¥${amount.toFixed(2)}</span></span>
                             </div>
                         </div>
                         ${itemsDetailHtml}
@@ -3421,14 +3421,14 @@ const role = String(currentUser?.role || '').trim();
                         <div style="margin-top: 8px; color: rgba(151,132,142,0.85);">门店：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(payload?.store || '-')}</span></div>
                         <div style="margin-top: 8px; color: rgba(151,132,142,0.85);">项目：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(payload?.category || '-')}</span></div>
                         <div style="margin-top: 8px; color: rgba(151,132,142,0.85);">付款对象：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(payload?.payee || payload?.payeeName || '无')}</span></div>
-                        ${(payload?.payeeAccount) ? `<div style="margin-top: 8px; color: rgba(151,132,142,0.85);">收款账号：<span style="color: #CFA14A; font-weight: 900;">${escapeHtml(payload?.payeeAccount || '-')}</span></div>` : ''}
+                        ${(payload?.payeeAccount) ? `<div style="margin-top: 8px; color: rgba(151,132,142,0.85);">收款账号：<span style="color: #E0A6B4; font-weight: 900;">${escapeHtml(payload?.payeeAccount || '-')}</span></div>` : ''}
                         ${(payload?.payeeBank) ? `<div style="margin-top: 8px; color: rgba(151,132,142,0.85);">开户行：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(payload?.payeeBank || '-')}</span></div>` : ''}
                         <div style="margin-top: 8px; color: rgba(151,132,142,0.85);">紧急程度：<span style="color: rgba(242,234,238,0.95); font-weight: 800;">${escapeHtml(payload?.urgency || '-')}</span></div>
                         <div style="margin-top: 8px; color: rgba(151,132,142,0.85);">说明：<div style="margin-top: 6px; color: rgba(242,234,238,0.95);">${escapeHtml(payload?.note || '')}</div></div>
                     </div>
                 `;
                 if (String(item?.status || '') === 'returned' && String(currentUser?.username || '').toLowerCase() === String(item?.applicant_username || '').toLowerCase()) {
-                    const _payRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(253,186,116,0.9);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
+                    const _payRnHtml = String(payload?.returnNote||'').trim() ? '<div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:rgba(207,161,74,0.08);border-left:3px solid #CFA14A;font-size:12px;color:rgba(207,161,74,0.95);">退回原因：' + escapeHtml(String(payload.returnNote).trim()) + '</div>' : '';
                     payloadHtml += `<div id="payment-ret-edit" style="margin-top:14px;padding:12px;border-radius:12px;border:1px solid rgba(224,166,180,0.35);background:rgba(224,166,180,0.06);">
                         <div style="font-weight:800;color:#EABBC5;margin-bottom:6px;">修改请款单</div>
                         ${_payRnHtml}
@@ -4638,7 +4638,7 @@ th { background: #F2EAEE; font-weight: 700; }
             box.innerHTML = candidates.map(m => {
                 const idx = __pgBottomNavSelection.indexOf(m.p);
                 const picked = idx >= 0;
-                const bg = picked ? 'background:#CFA14A;color:#1C181C;border-color:#CFA14A;' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.85);border-color:rgba(242,234,238,0.15);';
+                const bg = picked ? 'background:#E0A6B4;color:#241319;border-color:#E0A6B4;' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.85);border-color:rgba(242,234,238,0.15);';
                 const tag = picked ? ('(' + (idx + 1) + ') ') : '';
                 return '<button type="button" data-click="pgToggleBottomNavItem" data-arg="' + escapeHtml(m.p) + '" ' +
                     'style="padding:4px 10px;font-size:12px;border-radius:14px;border:1px solid;cursor:pointer;' + bg + '">' +
