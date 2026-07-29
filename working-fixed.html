@@ -70269,7 +70269,31 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
                 : '<div class="ws-empty">暂无待批事项</div>';
             return;
         }
-        pane.innerHTML = '<div class="ws-empty">通知详情请去"我的档案"查看，这里暂时只显示未读数</div>';
+        // 2026-07-29：用户明确要求admin/hq_manager/store_manager/出品经理今后不再用"我的档案"
+        // 模块，通知必须在工作台里就能看全——接现成的 GET /api/notifications 真实列表接口
+        // （之前只有未读数，没有列表），点开即标记已读。
+        pane.innerHTML = '<div class="ws-loading">加载中...</div>';
+        wsFetchJson('/api/notifications?limit=30').then((data) => {
+            const items = Array.isArray(data?.items) ? data.items : [];
+            if (!items.length) { pane.innerHTML = '<div class="ws-empty">暂无通知</div>'; return; }
+            pane.innerHTML = items.map((n) => (
+                '<div class="ws-card" data-notif-id="' + wsEsc(n.id) + '" style="' + (n.read_at ? 'opacity:.6;' : '') + '">' +
+                '<div class="ws-card__title">' + (n.read_at ? '' : '<span class="ws-tag ws-tag--red" style="margin-right:6px;">未读</span>') + wsEsc(n.title || '') + '</div>' +
+                '<div class="ws-card__desc">' + wsEsc(n.message || '') + '</div>' +
+                '<div class="ws-card__desc" style="font-size:11px;opacity:.6;">' + wsEsc(String(n.created_at || '').slice(0, 16).replace('T', ' ')) + '</div>' +
+                '</div>'
+            )).join('');
+            pane.querySelectorAll('[data-notif-id]').forEach((card) => {
+                card.addEventListener('click', () => {
+                    if (card.style.opacity === '0.6') return;
+                    const id = card.getAttribute('data-notif-id');
+                    fetch('/api/notifications/' + encodeURIComponent(id) + '/read', { method: 'POST', headers: wsAuthHeaders() }).catch(() => {});
+                    card.style.opacity = '.6';
+                    const tag = card.querySelector('.ws-tag--red');
+                    if (tag) tag.remove();
+                });
+            });
+        });
     };
     root.querySelectorAll('[data-ws-todo-tab]').forEach((btn) => {
         btn.addEventListener('click', () => {
