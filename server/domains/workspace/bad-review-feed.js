@@ -1,43 +1,67 @@
 /**
- * 差评展示（首页第9项，用户中途加的）：合并两个数据源——
- * - bad_reviews：平台差评（大众点评等），有 date/store/content/platform/rating，没有具体时间
- * - table_visit_records：桌访记录，有 date/store/feedback/dissatisfaction_dish/reservation_time
- *   （已用 8.153.95.62 demo 库真实表结构核实过这些列存在）
- * 两个表字段不对齐，这里统一成 { store, date, time, content, source } 的时间线格式。
- * 支持按门店/日期区间检索。
+ * 差评展示（首页第9项，用户中途加的）。
+ *
+ * 2026-07-29 重做：之前查的是 bad_reviews / table_visit_records 两张表，实测发现
+ * bad_reviews 表本身是空的（0行，可能是早期设计后从未接上真实写入路径的遗留表），
+ * table_visit_records 最新一条卡在 2026-06-24（核查发现原因：server/domains/feishu-bitable/
+ * process-bitable-data-helpers.js 的 processTableVisitData 写 table_visit_records 前先写
+ * agent_messages，那条写入语句在6月因 agent_messages 表短暂开启过 RLS 而报错(`new row
+ * violates row-level security policy`)，同一个 try 块里后面"写入结构化表"的语句因此从未
+ * 执行到；而且 GAAS 自己这条轮询链路(start-bitable-polling*.js)的配置列表里根本没有
+ * 'table_visit' 这个 configKey，说明这条链路早就没有真正在跑，table_visit_records 事实上
+ * 已经是孤儿表——真正持续在同步的是 agents-service-v2 那边的 Feishu 轮询，数据落在
+ * agent_messages(content_type='bad_review'/'table_visit')，这两张实测都是分钟级新鲜。
+ * 这里改成直接读 agent_messages，不再依赖两张事实上没有实时写入的表。
  */
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'bad-review-feed' });
+
+/** agent_data.fields.date 存的是飞书原始时间戳（epoch毫秒的字符串），转成 YYYY-MM-DD 供比较/展示。 */
+const DATE_EXPR = `to_char(to_timestamp((agent_data->'fields'->>'date')::bigint / 1000), 'YYYY-MM-DD')`;
+const DATE_GUARD = `(agent_data->'fields'->>'date') ~ '^[0-9]+$'`;
 
 export async function getBadReviewFeed(pool, tenantId, { store = '', startDate = '', endDate = '', limit = 30 } = {}) {
   const lim = Math.min(100, Math.max(1, Number(limit) || 30));
   try {
     const platformParams = [tenantId];
     let platformWhere = '';
-    if (store) { platformParams.push(store); platformWhere += ` AND store = $${platformParams.length}`; }
-    if (startDate) { platformParams.push(startDate); platformWhere += ` AND date >= $${platformParams.length}`; }
-    if (endDate) { platformParams.push(endDate); platformWhere += ` AND date <= $${platformParams.length}`; }
+    if (store) { platformParams.push(store); platformWhere += ` AND agent_data->'fields'->>'store' = $${platformParams.length}`; }
+    if (startDate) { platformParams.push(startDate); platformWhere += ` AND ${DATE_EXPR} >= $${platformParams.length}`; }
+    if (endDate) { platformParams.push(endDate); platformWhere += ` AND ${DATE_EXPR} <= $${platformParams.length}`; }
 
     const visitParams = [tenantId];
     let visitWhere = '';
-    if (store) { visitParams.push(store); visitWhere += ` AND store = $${visitParams.length}`; }
-    if (startDate) { visitParams.push(startDate); visitWhere += ` AND date >= $${visitParams.length}`; }
-    if (endDate) { visitParams.push(endDate); visitWhere += ` AND date <= $${visitParams.length}`; }
+    if (store) { visitParams.push(store); visitWhere += ` AND agent_data->'fields'->>'store' = $${visitParams.length}`; }
+    if (startDate) { visitParams.push(startDate); visitWhere += ` AND ${DATE_EXPR} >= $${visitParams.length}`; }
+    if (endDate) { visitParams.push(endDate); visitWhere += ` AND ${DATE_EXPR} <= $${visitParams.length}`; }
 
     const [platformR, visitR] = await Promise.all([
       pool.query(
-        `SELECT store, date, content, platform, rating
-           FROM bad_reviews
-          WHERE tenant_id = $1${platformWhere}
-          ORDER BY date DESC LIMIT ${lim}`,
+        `SELECT agent_data->'fields'->>'store' AS store, ${DATE_EXPR} AS date,
+                agent_data->'fields'->>'content' AS content,
+                agent_data->'fields'->>'platform' AS platform,
+                agent_data->'fields'->>'rating' AS rating
+           FROM agent_messages
+          WHERE tenant_id = $1 AND content_type = 'bad_review' AND ${DATE_GUARD}${platformWhere}
+          ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
         platformParams
       ),
       pool.query(
-        `SELECT store, date, reservation_time, feedback, dissatisfaction_dish, service_rating, food_rating, environment_rating
-           FROM table_visit_records
-          WHERE tenant_id = $1 AND (COALESCE(feedback,'') <> '' OR COALESCE(dissatisfaction_dish,'') <> '')${visitWhere}
-          ORDER BY date DESC LIMIT ${lim}`,
+        `SELECT agent_data->'fields'->>'store' AS store, ${DATE_EXPR} AS date,
+                agent_data->'fields'->>'product_issue' AS product_issue,
+                agent_data->'fields'->>'service_issue' AS service_issue,
+                agent_data->'fields'->>'unsat_reason' AS unsat_reason,
+                agent_data->'fields'->>'satisfaction' AS satisfaction
+           FROM agent_messages
+          WHERE tenant_id = $1 AND content_type = 'table_visit' AND ${DATE_GUARD}
+            AND (
+              COALESCE(agent_data->'fields'->>'product_issue','') <> ''
+              OR COALESCE(agent_data->'fields'->>'service_issue','') <> ''
+              OR COALESCE(agent_data->'fields'->>'unsat_reason','') <> ''
+              OR (agent_data->'fields'->>'satisfaction') NOT IN ('满意', '')
+            )${visitWhere}
+          ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
         visitParams
       ),
     ]);
@@ -53,8 +77,8 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
     const visitItems = (visitR.rows || []).map((row) => ({
       store: row.store,
       date: row.date,
-      time: row.reservation_time,
-      content: row.feedback || row.dissatisfaction_dish,
+      time: null,
+      content: [row.product_issue, row.service_issue, row.unsat_reason].filter(Boolean).join('；') || row.satisfaction,
       source: '桌访记录',
       rating: null,
     }));
