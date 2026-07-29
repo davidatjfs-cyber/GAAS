@@ -69187,7 +69187,9 @@ function wsInjectStyles() {
         '.ws-header h2{margin:0 0 4px;font-size:22px;font-weight:600;font-family:"Songti SC","STSong",serif;letter-spacing:.01em;}' +
         '.ws-sub{color:var(--ws-ink2);font-size:13px;margin-bottom:18px;}' +
         '.ws-section{margin-bottom:22px;}' +
-        '.ws-section__title{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--ws-ink);letter-spacing:-.01em;}' +
+        // 2026-07-29：用户反馈标题字号跟正文(.ws-card__desc 13px)几乎一样大，层级不清——
+        // 改成17px/700，加顶部间距，跟正文(13px)/卡片标题(14px)拉开明显差距。
+        '.ws-section__title{font-size:17px;font-weight:700;margin:4px 0 12px;padding-top:4px;color:var(--ws-ink);letter-spacing:-.01em;}' +
         '.ws-lights{display:flex;gap:8px;flex-wrap:wrap;}' +
         '.ws-light{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;' +
         'border:1px solid var(--ws-line);color:var(--ws-ink2);font-family:"Songti SC","STSong",serif;position:relative;}' +
@@ -70221,6 +70223,7 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">餐饮总监</div>' + wsRenderCustomDirectorSection(allStores) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
+    html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
@@ -70329,6 +70332,7 @@ async function wsRenderStore(root) {
     html += '<div class="ws-section"><div class="ws-section__title">员工绩效</div>' + wsRenderEmployeePerformanceList(overview?.team) + '</div>';
     html += '<div class="ws-section"><div class="ws-section__title">员工培训看板</div><div id="ws-training-board"><div class="ws-loading">加载中...</div></div></div>';
     html += '<div class="ws-section"><div class="ws-section__title">厨房打点看板</div><div id="ws-kitchen-board"><div class="ws-loading">加载中...</div></div></div>';
+    html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
@@ -70355,7 +70359,8 @@ async function wsRenderEmployee(root) {
         '<button type="button" class="ws-btn" data-ws-nav="training">培训</button>' +
         '<button type="button" class="ws-btn" data-ws-nav="points">积分</button>' +
         '<button type="button" class="ws-btn" data-ws-nav="profile">我的档案</button>' +
-        '</div></div>';
+        '</div></div>' +
+        '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.querySelectorAll('[data-ws-nav]').forEach((b) => b.addEventListener('click', () => { try { showPage(b.getAttribute('data-ws-nav')); } catch (e) {} }));
 }
 
@@ -70364,7 +70369,8 @@ async function wsRenderHqHr(root) {
     const canView = (typeof hrmsHasPermission === 'function') && (hrmsHasPermission('reports.payroll.view') || hrmsHasPermission('reports.payroll.ledger'));
     if (!canView) {
         root.innerHTML = '<div class="ws-header"><h2>总部HR工作台</h2></div>' +
-            '<div class="ws-empty">你尚未获得薪酬报表访问权限，请联系系统管理员在权限组中授予 reports.payroll.view。</div>';
+            '<div class="ws-empty">你尚未获得薪酬报表访问权限，请联系系统管理员在权限组中授予 reports.payroll.view。</div>' +
+            '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
         return;
     }
     const canMonthRun = hrmsHasPermission('reports.payroll.month_run');
@@ -70376,7 +70382,8 @@ async function wsRenderHqHr(root) {
         (canMonthRun
             ? '<div class="ws-card__acts"><button type="button" class="ws-action-btn ws-btn ws-btn--primary" id="ws-hr-monthrun-btn">一键生成本月薪资</button></div><div class="ws-action-result" id="ws-hr-monthrun-result"></div>'
             : '<div class="ws-empty">你没有「reports.payroll.month_run」权限，无法执行月结</div>') +
-        '</div></div>';
+        '</div></div>' +
+        '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
 
     if (canMonthRun) {
         document.getElementById('ws-hr-monthrun-btn')?.addEventListener('click', wsRunMonthlyPayrollForAllStores);
@@ -70407,6 +70414,27 @@ async function wsRunMonthlyPayrollForAllStores() {
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = '一键生成本月薪资'; }
     }
+}
+
+// 2026-07-29：用户要求所有角色的工作台底部都加"快捷操作"折叠区块，样式/功能对齐"我的档案"
+// 页原有的那个（休假申请/升职申请/总经理信箱/修改密码/离职申请）——直接复用同一套HTML结构
+// (pf2-fold/pf2-qk/pfi 这些 class 和 svg 图标 sprite 都是页面里已经有的，不用新写样式)和
+// 同一批全局 data-click 处理函数(openLeaveApplyModal/showPage/openGmMailboxModal/
+// openChangePasswordModal/openResignationModal 在 01-boot.js 里已经定义好，任何页面都能调)，
+// 不重新实现一遍这些弹窗逻辑。
+function wsRenderQuickActions() {
+    return (
+        '<details class="pf2-fold">' +
+        '<summary><svg class="pfi"><use href="#pfi-star"/></svg>快捷操作' +
+        '<svg class="pfi pfi--sm pf2-cv"><use href="#pfi-chev"/></svg></summary>' +
+        '<div class="pf2-fb"><div class="pf2-qk">' +
+        '<div data-click="openLeaveApplyModal"><svg class="pfi"><use href="#pfi-leaf"/></svg><span>休假申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>' +
+        '<div data-click="showPage" data-arg="promotion"><svg class="pfi"><use href="#pfi-trend"/></svg><span>升职申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>' +
+        '<div data-click="openGmMailboxModal"><svg class="pfi"><use href="#pfi-mail"/></svg><span>总经理信箱</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>' +
+        '<div data-click="openChangePasswordModal"><svg class="pfi"><use href="#pfi-lock"/></svg><span>修改密码</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>' +
+        '<div data-click="openResignationModal"><svg class="pfi"><use href="#pfi-exit"/></svg><span>离职申请</span><svg class="pfi pfi--sm" style="margin-left:auto;color:var(--pf-faint);"><use href="#pfi-chev"/></svg></div>' +
+        '</div></div></details>'
+    );
 }
 
 // ── 桌面侧栏「工作台」入口（JS 注入，working-fixed.html 行数棘轮零余量，不能加静态 HTML）──

@@ -95,8 +95,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 通知责任人重新提交)，新增"待确认的任务反馈"板块给发起人用；growth_solution 来源任务不受
  * 影响，继续用它自己的 /complete 接口。证据文件上传复用现成的 /api/uploads/ops-task-evidence，
  * 没有新建上传接口。
+ * 2026-07-29 第十七次上调（70490→70518）：① 所有角色工作台底部加"快捷操作"折叠区块
+ * (休假申请/升职申请/总经理信箱/修改密码/离职申请)，直接复用"我的档案"页已有的
+ * pf2-fold/pf2-qk 样式和全局 data-click 处理函数，没有新写弹窗逻辑；② 用户反馈
+ * .ws-section__title 跟正文(.ws-card__desc 13px)几乎一样大、层级不清，改成17px/700。
  */
-const MAX_LINES = 70490;
+const MAX_LINES = 70518;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
