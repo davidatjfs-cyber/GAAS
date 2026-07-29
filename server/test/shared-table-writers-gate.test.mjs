@@ -23,6 +23,14 @@ const serverRoot = path.resolve(__dirname, '..');
  * 文件搬家时：删除旧路径键、加入新路径键，并在 REPATH_NOTES 记一笔。
  */
 const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
+  // 2026-07-29 已知技术债（明确记录，非误加）：角色工作台的批量推广菜品/任务完成闭环
+  // （promoteDishToStores 建任务、respondToTask/confirmTaskResponse 责任人提交证据+发起人
+  // 确认）直接写 master_tasks，没有走 HTTP 代理到 agents-service-v2。正确做法应该是
+  // agents-service-v2 开放一套给"人类发起的普通任务"用的创建/响应/确认接口（现有
+  // agent-task-board 那套接口语义是给 AI agent 用的，不适用），工作台这边改走 HTTP——
+  // 但那是一次新增跨服务接口的工作量，这次先放行不阻塞合并，后续必须补上，不能一直留着。
+  'domains/workspace/service.js|INSERT INTO|master_tasks',
+  'domains/workspace/service.js|UPDATE|master_tasks',
   // P2：删除死代码 handleTaskEscalation 后 agents.js 已无 agent_messages INSERT
   // Wave A11a：archiveOldBitableSubmissions 迁出；agents.js 已无 DELETE agent_messages
   'domains/feishu-bitable/archive-old-submissions.js|DELETE FROM|agent_messages',

@@ -1002,7 +1002,7 @@
         <div id="tenantCardList" class="tenant-card-list mobile-only"></div>
         <div class="table-scroll desktop-only">
           <table>
-            <thead><tr><th>租户</th><th>状态</th><th>许可证</th><th>到期</th><th>飞书</th><th>外观</th><th>操作</th></tr></thead>
+            <thead><tr><th>租户</th><th>状态</th><th>许可证</th><th>到期</th><th>飞书</th><th>外观</th><th>登录网址</th><th>操作</th></tr></thead>
             <tbody id="tenantTableBody"></tbody>
           </table>
         </div>
@@ -1013,7 +1013,7 @@
     <section id="panel-create" class="panel stack">
       <div class="card stack">
         <div class="section-title"><strong>新租户开通</strong><span class="small">创建后请立即保存登录信息</span></div>
-        <div class="hint-box">创建成功后会自动跳转到「日志」页展示 HRMS 登录网址、用户名和密码（密码仅展示一次）。</div>
+        <div class="hint-box">创建成功后会自动跳转到「日志」页展示 HRMS 登录网址、用户名和密码（密码仅展示一次）。之后可随时在租户列表「查询登录网址」；忘记密码请用「重置管理员密码」。</div>
         <label>租户名称<input id="tenantName" placeholder="示例品牌 A"></label>
         <label>租户 ID
           <div style="display:flex;gap:8px;align-items:center">
@@ -1071,8 +1071,8 @@
             <div class="field"><div class="k">到期倒计时</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="switchCountdown" type="checkbox" checked> 开启</label></div>
           </div>
           <div class="detail-grid">
-            <div class="field"><div class="k">HRMS</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplHrms" type="checkbox" checked> 开启</label></div>
-            <div class="field"><div class="k">Agent V2</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">门店管理系统</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplHrms" type="checkbox" checked> 开启</label></div>
+            <div class="field"><div class="k">智能体服务</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplAgentV2" type="checkbox" checked> 开启</label></div>
             <div class="field"><div class="k">小程序</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplMiniProgram" type="checkbox" checked> 开启</label></div>
             <div class="field"><div class="k">飞书</div><label style="display:flex;align-items:center;gap:8px;margin:4px 0 0;"><input id="tplFeishu" type="checkbox" checked> 开启</label></div>
           </div>
@@ -1100,7 +1100,11 @@
           <div class="hint-box">绑定该租户自己的飞书多维表格。不填则飞书同步相关功能不工作，其它功能不受影响。</div>
           <label>飞书应用 ID<input id="cfgAppId"></label>
           <label>飞书应用密钥<input id="cfgAppSecret" type="password"></label>
-          <label>各业务表 JSON<textarea id="cfgTables">{
+  <label>各业务表 JSON（键名保持英文供系统识别；含义见下方中文对照）</label>
+  <div class="hint-box" style="margin-bottom:8px">
+    ops_checklist=营运检查表 · table_visit=桌访记录 · bad_review=差评记录 · closing_reports=收档报告 · opening_reports=开档报告 · meeting_reports=会议记录 · material_majixian=马己仙物料 · material_hongchao=洪潮物料 · dish_library=菜品库 · dish_library_majixian_takeaway=马己仙外卖菜品库 · loss_report=损耗报告 · task_responses=任务回复 · actual_gross_margin=实际毛利 · sop_steps=SOP步骤
+  </div>
+  <textarea id="cfgTables">{
   "ops_checklist": { "app_token": "", "table_id": "", "view_id": "" },
   "table_visit": { "app_token": "", "table_id": "", "view_id": "" },
   "bad_review": { "app_token": "", "table_id": "", "view_id": "" },
@@ -1449,8 +1453,11 @@
               <div><div class="k">飞书</div>${feishu.configured ? '已配置' : '未配置'}</div>
               <div><div class="k">外观</div>${profile.logo_url ? '已配置' : '未配置'}</div>
             </div>
+            <div class="small mono" style="margin:6px 0;word-break:break-all">${item.login_url || buildClientLoginUrl(item.tenant_id)}</div>
             <div class="list-card-actions">
               <button type="button" class="secondary" data-action="select">选中</button>
+              <button type="button" class="secondary" data-action="login">登录网址</button>
+              <button type="button" class="warn" data-action="reset-pwd">重置密码</button>
               <button type="button" class="secondary" data-action="config">配置</button>
               <button type="button" class="secondary" data-action="feishu">飞书</button>
               <button type="button" class="ghost" data-action="agent">Agent</button>
@@ -1466,6 +1473,8 @@
           if (!id) return;
           const action = btn.dataset.action;
           if (action === 'select') window.selectTenant(id);
+          else if (action === 'login') window.showTenantLoginAccessById(id);
+          else if (action === 'reset-pwd') window.resetTenantAdminPassword(id);
           else if (action === 'config') window.loadProfile(id);
           else if (action === 'feishu') window.prefillTenant(id);
           else if (action === 'agent') window.openAgentConsoleForTenant(id);
@@ -1600,7 +1609,7 @@ function legacyCopyFallback(value) {
       const loginUrl = info.login_url || info.loginUrl || buildClientLoginUrl(tenantId);
       const username = info.username || '—';
       const password = info.password || getCachedTenantCredentials(tenantId)?.password || '';
-      const passwordHint = info.password_hint || info.passwordHint || '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看';
+      const passwordHint = info.password_hint || info.passwordHint || '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看；可使用「重置管理员密码」生成新临时密码';
       const passwordCell = password
         ? `<span class="mono">${password}</span>`
         : `<span class="small">${passwordHint}</span>`;
@@ -1629,7 +1638,7 @@ function legacyCopyFallback(value) {
         host.classList.remove('hidden');
         host.innerHTML = `
           <div class="title">${highlight ? '租户已就绪 — 请保存以下登录信息' : 'HRMS 租户登录信息'}</div>
-          <div class="small">${password ? '密码仅在此展示一次，请立即复制或发给客户。' : '密码无法从系统再次读取；若本浏览器刚创建过该租户，可能仍显示缓存密码。'}</div>
+          <div class="small">${password ? '密码仅在此展示一次，请立即复制或发给客户。' : '登录网址与用户名可随时查询；密码明文无法回读，请使用「重置管理员密码」生成新临时密码。'}</div>
           <div class="login-access-grid">${renderLoginAccessRows(info, { compact: false })}</div>
         `;
         host.querySelectorAll('[data-copy-value]').forEach((btn) => {
@@ -2013,6 +2022,64 @@ function legacyCopyFallback(value) {
         await loadTenants();
       } catch (e) {
         log(`发放许可证失败：${e.message}`);
+      }
+    };
+
+    window.copyTenantLoginUrl = async (tenantId) => {
+      const id = String(tenantId || '').trim();
+      if (!id) return;
+      const url = buildClientLoginUrl(id);
+      await copyText('登录网址', url);
+    };
+
+    window.showTenantLoginAccessById = async (tenantId) => {
+      const id = String(tenantId || '').trim();
+      if (!id) return;
+      try {
+        const data = await api(`/api/admin/tenants/${id}/login-access`);
+        const loginAccess = data.login_access || {
+          tenant_id: id,
+          login_url: data.login_url || buildClientLoginUrl(id),
+          username: '',
+          password_hint: '密码无法回读；如需新密码请点「重置管理员密码」',
+        };
+        showTenantLoginAccess(loginAccess, { highlight: true });
+        if (state.detail?.tenant?.tenant_id === id || state.selectedTenantId === id) {
+          state.detail = { ...(state.detail || {}), login_access: loginAccess };
+          renderDetail(state.detail);
+        }
+        log(`已查询 ${id} 登录入口（可随时再次查询；密码明文仅重置时显示一次）`);
+      } catch (e) {
+        log(`查询登录网址失败：${e.message}`);
+      }
+    };
+
+    window.resetTenantAdminPassword = async (tenantId) => {
+      const id = String(tenantId || '').trim();
+      if (!id) return;
+      if (!window.confirm(`确认重置租户 ${id} 的管理员密码？\n旧密码将立即失效，新临时密码仅本次显示一次。`)) return;
+      try {
+        const data = await api(`/api/admin/tenants/${id}/reset-admin-password`, {
+          method: 'POST',
+          body: '{}',
+        });
+        const loginAccess = data.login_access || {
+          tenant_id: data.tenant_id || id,
+          login_url: buildClientLoginUrl(id),
+          username: data.username || '',
+          password: data.temp_password || '',
+        };
+        cacheTenantCredentials(id, loginAccess.username, loginAccess.password);
+        showTenantLoginAccess(loginAccess, { highlight: true });
+        if (state.detail?.tenant?.tenant_id === id || state.selectedTenantId === id) {
+          state.detail = { ...(state.detail || {}), login_access: loginAccess };
+          renderDetail(state.detail);
+        }
+        alert(`管理员密码已重置\n租户：${id}\n用户名：${loginAccess.username}\n临时密码：${loginAccess.password}\n\n请立即复制发给客户；关闭后无法再次查看明文。`);
+        log(`已重置 ${id} 管理员密码（临时密码仅本次可见）`);
+      } catch (e) {
+        log(`重置管理员密码失败：${e.message}`);
+        alert(`重置失败：${e.message}`);
       }
     };
 
@@ -2403,6 +2470,84 @@ function legacyCopyFallback(value) {
       return v ? '开启' : '关闭';
     }
 
+    const TEMPLATE_SWITCH_LABELS = {
+      hrms: '门店管理系统',
+      agent_v2: '智能体服务',
+      mini_program: '小程序',
+      feishu: '飞书',
+    };
+    const FEATURE_SWITCH_LABELS = {
+      unified_template: '统一模板',
+      auto_acceptance: '自动验收',
+      failure_repair: '失败修复',
+      tenant_alerts: '租户告警',
+      billing: '账单模块',
+      countdown: '到期倒计时',
+    };
+    const FEISHU_TABLE_LABELS = {
+      ops_checklist: '营运检查表',
+      table_visit: '桌访记录',
+      bad_review: '差评记录',
+      closing_reports: '收档报告',
+      opening_reports: '开档报告',
+      meeting_reports: '会议记录',
+      material_majixian: '马己仙物料',
+      material_hongchao: '洪潮物料',
+      dish_library: '菜品库',
+      dish_library_majixian_takeaway: '马己仙外卖菜品库',
+      loss_report: '损耗报告',
+      task_responses: '任务回复',
+      actual_gross_margin: '实际毛利',
+      sop_steps: 'SOP步骤',
+    };
+    function labelTemplateSwitch(key) {
+      return TEMPLATE_SWITCH_LABELS[key] || key;
+    }
+    function labelFeatureSwitch(key) {
+      return FEATURE_SWITCH_LABELS[key] || key;
+    }
+    function labelFeishuTable(key) {
+      return FEISHU_TABLE_LABELS[key] || key;
+    }
+    function formatSwitchMap(map, labelFn) {
+      const entries = Object.entries(map || {});
+      if (!entries.length) return '—';
+      return entries.map(([k, v]) => `${labelFn(k)}：${formatBool(v)}`).join(' · ');
+    }
+    function formatFeishuTables(tables) {
+      const list = Array.isArray(tables) ? tables : [];
+      if (!list.length) return '—';
+      return list.map(labelFeishuTable).join(' · ');
+    }
+    function formatCheckDetail(detail) {
+      const raw = String(detail || '').trim();
+      if (!raw) return '-';
+      const dict = {
+        ok: '正常',
+        tenant_not_found: '租户不存在',
+        missing_hrms_state: '缺少初始状态数据',
+        missing_license: '尚未发放许可证',
+        missing_feishu_bitable: '未绑定飞书多维表格',
+        no_expiry: '未设置到期时间',
+      };
+      if (dict[raw]) return dict[raw];
+      let s = raw;
+      s = s.replace(/^active_admins=(\d+)$/i, '可用管理员 $1 个');
+      s = s.replace(/^status=(.+)$/i, (_, v) => {
+        const zh = { active: '有效', trial: '试用', expired: '已过期', suspended: '已暂停', unknown: '未知' };
+        return `许可证状态：${zh[String(v).toLowerCase()] || v}`;
+      });
+      s = s.replace(/^tables=(.*)$/i, (_, v) => {
+        const names = String(v || '').split(',').filter(Boolean).map(labelFeishuTable);
+        return `已配置表：${names.join('、') || '无'}`;
+      });
+      s = s.replace(/^missing=(.*)$/i, (_, v) => {
+        const names = String(v || '').split(',').filter(Boolean).map(labelFeishuTable);
+        return `缺少表：${names.join('、') || '无'}`;
+      });
+      return s;
+    }
+
     function formatMode(v) {
       return String(v || '').trim() === 'self_hosted' ? '自部署' : '托管租赁';
     }
@@ -2515,7 +2660,7 @@ function legacyCopyFallback(value) {
           ${checks.length ? checks.map((item) => `
             <div class="field">
               <div class="k">${checkLabel(item.key)}</div>
-              <div class="v">${item.ok ? '✅' : '❌'} ${item.detail || ''}</div>
+              <div class="v">${item.ok ? '✅' : '❌'} ${formatCheckDetail(item.detail)}</div>
             </div>
           `).join('') : '<div class="field" style="grid-column:1 / -1"><div class="v">无检查项</div></div>'}
         </div>
@@ -2543,6 +2688,8 @@ function legacyCopyFallback(value) {
       admin_ready: '管理员账号就绪',
       license_present: '已发放许可证',
       license_not_expired: '许可证未过期',
+      feishu_configured: '飞书已配置',
+      feishu_required_tables: '飞书必填表齐全',
     };
     const ACCEPTANCE_ACTION_LABELS = {
       acceptance: '验收',
@@ -3033,7 +3180,7 @@ function legacyCopyFallback(value) {
         login_url: detail.login_access?.login_url || buildClientLoginUrl(tenant.tenant_id),
         username: detail.login_access?.username || cachedCreds?.username || '',
         password: detail.login_access?.password || cachedCreds?.password || '',
-        password_hint: detail.login_access?.password_hint || '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看',
+        password_hint: detail.login_access?.password_hint || '密码为创建租户时设置的值，系统仅存储哈希，无法再次查看；可使用「重置管理员密码」生成新临时密码',
       };
 
       $('tenantDetail').innerHTML = `
@@ -3059,10 +3206,10 @@ function legacyCopyFallback(value) {
           <div class="field"><div class="k">飞书应用 ID</div><div class="v mono">${feishu.app_id || '-'}</div></div>
           <div class="field"><div class="k">品牌主色</div><div class="v mono">${profile.brand_color || '-'}</div></div>
           <div class="field"><div class="k">页面标题</div><div class="v">${profile.page_title || '-'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">模板开关</div><div class="v">${Object.entries(templateSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">功能开关</div><div class="v">${Object.entries(featureSwitches).map(([k, v]) => `${k}:${formatBool(v)}`).join(' · ') || '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">模板开关</div><div class="v">${formatSwitchMap(templateSwitches, labelTemplateSwitch)}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">功能开关</div><div class="v">${formatSwitchMap(featureSwitches, labelFeatureSwitch)}</div></div>
           <div class="field" style="grid-column:1 / -1"><div class="k">账单信息</div><div class="v">${profile.billing?.plan_name || '未配置'} · ${profile.billing?.billing_cycle || '未配置'} · ${profile.billing?.billing_contact || '未配置'}</div></div>
-          <div class="field" style="grid-column:1 / -1"><div class="k">表清单</div><div class="v">${tables.length ? tables.join(' · ') : '—'}</div></div>
+          <div class="field" style="grid-column:1 / -1"><div class="k">飞书业务表</div><div class="v">${formatFeishuTables(tables)}</div></div>
         </div>
         <div class="stack" style="margin-top:12px">
           <strong>系统告警</strong>
@@ -3097,6 +3244,8 @@ function legacyCopyFallback(value) {
           <button class="secondary" onclick="window.prefillTenant('${tenant.tenant_id}')">加载飞书配置</button>
           <button class="secondary" onclick="window.loadProfile('${tenant.tenant_id}')">载入平台配置</button>
           <button class="secondary" onclick="window.openAgentConsoleForTenant('${tenant.tenant_id}')">打开 Agent 控制台</button>
+          <button class="secondary" onclick="window.showTenantLoginAccessById('${tenant.tenant_id}')">查询登录网址</button>
+          <button class="warn" onclick="window.resetTenantAdminPassword('${tenant.tenant_id}')">重置管理员密码</button>
           <button onclick="window.acceptTenant('${tenant.tenant_id}')">运行验收</button>
           <button class="warn" onclick="window.bootstrapTenant('${tenant.tenant_id}')">一键初始化</button>
           <button class="warn" onclick="window.repairTenant('${tenant.tenant_id}')">失败修复</button>
@@ -3219,8 +3368,16 @@ function legacyCopyFallback(value) {
               <div class="mono">${profile.brand_color || ''}</div>
             </td>
             <td>
+              <div class="mono" style="font-size:11px;word-break:break-all;max-width:220px">${item.login_url || buildClientLoginUrl(item.tenant_id)}</div>
+              <div class="tenant-actions compact" style="margin-top:4px">
+                <button class="secondary" onclick="window.copyTenantLoginUrl('${item.tenant_id}')">复制网址</button>
+                <button class="secondary" onclick="window.showTenantLoginAccessById('${item.tenant_id}')">查看入口</button>
+              </div>
+            </td>
+            <td>
               <div class="tenant-actions compact">
                 <button class="secondary" onclick="window.selectTenant('${item.tenant_id}')">查看详情</button>
+                <button class="warn" onclick="window.resetTenantAdminPassword('${item.tenant_id}')">重置密码</button>
                 <button class="secondary" onclick="window.prefillTenant('${item.tenant_id}')">配置飞书</button>
                 <button class="secondary" onclick="window.loadProfile('${item.tenant_id}')">平台配置</button>
                 <button class="secondary" onclick="window.openAgentConsoleForTenant('${item.tenant_id}')">Agent 控制台</button>

@@ -152,28 +152,35 @@ export function registerTrainingSessionsRoutes(app, authMiddleware, uploadMiddle
     }
   });
 
-  // POST /api/training/sessions/:id/upload-practice - 上传实操视频/图片（图谱评分版）
-  app.post('/api/training/sessions/:id/upload-practice', authMiddleware, uploadMiddleware.single('file'), async (req, res) => {
-    try {
-      const result = await uploadPracticeMedia({
-        sessionId: req.params.id,
-        username: req.user?.username,
-        tenantId: req.tenantId || req.user?.tenant_id,
-        file: req.file,
-        uploadsDir,
-        pathModule: path,
-        fsModule: fs,
-        execFileSync,
-        callVisionLLM,
-        callVisionLLMVideo,
-        parseScoringJson,
-        randomUUID,
-        serverBaseUrl: process.env.SERVER_BASE_URL,
-      });
-      res.json(result);
-    } catch (e) {
-      log.error({ msg: 'training_upload_practice_failed', err: e?.message || String(e) });
-      res.json({ success: false, error: e?.message });
+  // POST /api/training/sessions/:id/upload-practice - 上传实操视频/图片（图谱评分版，支持多图）
+  app.post(
+    '/api/training/sessions/:id/upload-practice',
+    authMiddleware,
+    uploadMiddleware.array('files', 6),
+    async (req, res) => {
+      try {
+        const files = Array.isArray(req.files) ? req.files : [];
+        const result = await uploadPracticeMedia({
+          sessionId: req.params.id,
+          username: req.user?.username,
+          tenantId: req.tenantId || req.user?.tenant_id,
+          file: files[0] || req.file || null,
+          files,
+          uploadsDir,
+          pathModule: path,
+          fsModule: fs,
+          execFileSync,
+          callVisionLLM,
+          callVisionLLMVideo,
+          parseScoringJson,
+          randomUUID,
+          serverBaseUrl: process.env.SERVER_BASE_URL,
+        });
+        res.json(result);
+      } catch (e) {
+        log.error({ msg: 'training_upload_practice_failed', err: e?.message || String(e) });
+        res.json({ success: false, error: e?.message });
+      }
     }
-  });
+  );
 }

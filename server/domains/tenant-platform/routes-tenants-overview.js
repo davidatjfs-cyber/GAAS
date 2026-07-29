@@ -4,6 +4,7 @@ import { tenantContext } from '../../utils/database.js';
 import { getTenantIntegrationSummary } from '../../tenant-integrations.js';
 import {
   buildTenantAlerts,
+  buildTenantLoginUrl,
   computeLicenseCountdown,
   mergePlatformProfile,
 } from './helpers.js';
@@ -91,6 +92,7 @@ export function registerTenantPlatformTenantsOverviewRoutes(app, deps) {
           alert_levels: alertLevels,
           billing,
           license_countdown_days: computeLicenseCountdown(row.license_expires_at),
+          login_url: buildTenantLoginUrl(req, row.tenant_id),
         };
       });
 

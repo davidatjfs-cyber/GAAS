@@ -75,7 +75,13 @@ export function registerTenantSettingsRoutes(app, authRequired, deps) {
   // 必须注册在 /api/tenant-settings/:key 之前，否则会被 :key 抢先匹配成 unknown_settings_key → HTTP 400。
   // 复用agents-service-v2既有的/api/kpi/targets CRUD（kpi_targets表已tenant_id隔离）。
   app.get('/api/tenant-settings/kpi-targets', authRequired, async (req, res) => {
-    if (!canManageTenantSettings(req.user)) return res.status(403).json({ error: 'forbidden' });
+    // 店长/厨师长等门店角色允许只读查询"自己门店"的目标配置(工作台"当月目标追踪"要用)，
+    // 不允许查别的门店、不允许改(PUT/DELETE 仍然只有 canManageTenantSettings 能过)。
+    const storeLevelRoles = ['store_manager', 'store_production_manager', 'front_manager', 'front_supervisor'];
+    const role = String(req.user?.role || '').trim();
+    const ownStore = String(req.user?.current_store || req.user?.store || '').trim();
+    const isOwnStoreReadOnly = storeLevelRoles.includes(role) && ownStore && String(req.query?.store || '').trim() === ownStore;
+    if (!canManageTenantSettings(req.user) && !isOwnStoreReadOnly) return res.status(403).json({ error: 'forbidden' });
     try {
       const qs = new URLSearchParams();
       ['store', 'brand', 'metric_key'].forEach(k => { if (req.query?.[k]) qs.set(k, String(req.query[k])); });

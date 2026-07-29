@@ -13,9 +13,20 @@ export function registerTrainingDashboardRoutes(app, authMiddleware, _uploadMidd
         return res.status(403).json({ error: '无权限访问' });
       }
 
-      // admin / hq_manager 看所有人派发的任务；其他管理者只看自己派发的
+      // admin / hq_manager 看所有人派发的任务；其他管理者只看自己派发的——
+      // 但门店级角色(店长/厨师长等)传了 ?store= 时，改成看"本店全员培训情况"（不管谁派发的），
+      // 这才是店长工作台真正需要的视角，不是"我自己派过的任务"。
       const isHQ = ['admin', 'hr_manager', 'hq_manager'].includes(role);
-      const assignedByFilter = isHQ ? '' : `AND a.assigned_by = '${username.replace(/'/g, "''")}'`;
+      const storeLevelRoles = ['store_manager', 'store_production_manager', 'front_manager', 'front_supervisor'];
+      const storeParam = storeLevelRoles.includes(role) ? String(req.query?.store || '').trim() : '';
+      const queryParams = [];
+      let assignedByFilter = isHQ ? '' : `AND a.assigned_by = '${username.replace(/'/g, "''")}'`;
+      let storeFilterSql = '';
+      if (storeParam) {
+        assignedByFilter = '';
+        queryParams.push(storeParam);
+        storeFilterSql = `AND e.store = $${queryParams.length}`;
+      }
 
       // 是否在结果中显示派发人（HQ 看全量需要知道是谁派的）
       const assignerField = isHQ
@@ -74,10 +85,10 @@ export function registerTrainingDashboardRoutes(app, authMiddleware, _uploadMidd
         LEFT JOIN training_sessions s ON s.topic_id = t.id AND s.employee_username = a.employee_username
         LEFT JOIN employees e ON e.username = a.employee_username
         ${assignerJoin}
-        WHERE t.is_active = true
+        WHERE t.is_active = true ${storeFilterSql}
         GROUP BY t.id, t.title, t.position ${groupExtra}
         ORDER BY t.sort_order, t.id
-      `);
+      `, queryParams);
       res.json({ success: true, dashboard: result.rows });
     } catch (e) {
       res.json({ success: false, error: e?.message });

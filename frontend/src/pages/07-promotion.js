@@ -130,8 +130,8 @@
             if (__PROMO_TIER === 'skill_bump') {
                 // 技能提升：展示该岗位所有可选技能（checkbox 多选），不自动计算级别
                 if (levelEl) levelEl.value = profile.level || '';
-                if (!targetPosition) { if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.6)">请先选择岗位</span>'; return; }
-                if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.5)">加载中…</span>';
+                if (!targetPosition) { if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(151,132,142,0.6)">请先选择岗位</span>'; return; }
+                if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(151,132,142,0.5)">加载中…</span>';
                 try {
                     const resp = await fetch('/api/training/topics?position=' + encodeURIComponent(targetPosition), {
                         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
@@ -143,21 +143,21 @@
                     });
                     __PROMO_TARGET_TOPICS = allTopics;
                     if (!allTopics.length) {
-                        if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(200,215,230,0.6)">该岗位暂无知识点，请先在「培训认证 → 知识点管理」中创建。</span>';
+                        if (abilityEl) abilityEl.innerHTML = '<span style="color:rgba(151,132,142,0.6)">该岗位暂无知识点，请先在「培训认证 → 知识点管理」中创建。</span>';
                         return;
                     }
                     if (abilityEl) {
                         abilityEl.innerHTML = allTopics.map(t => {
-                            const badge = t.promotion_required ? '<span style="font-size:10px;background:rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:1px 5px;margin-left:4px;">晋升必须</span>' : '';
+                            const badge = t.promotion_required ? '<span style="font-size:10px;background:rgba(209,143,160,0.25);color:#EABBC5;border-radius:4px;padding:1px 5px;margin-left:4px;">晋升必须</span>' : '';
                             return `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer;border-radius:6px;"
-                                onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''">
-                                <input type="checkbox" data-id="${t.id}" style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;">
+                                onmouseover="this.style.background='rgba(242,234,238,0.05)'" onmouseout="this.style.background=''">
+                                <input type="checkbox" data-id="${t.id}" style="width:15px;height:15px;accent-color:#D18FA0;flex-shrink:0;">
                                 <span style="flex:1;">${escapeHtml(String(t.title || ''))}${badge}</span>
                             </label>`;
                         }).join('');
                     }
                 } catch (e) {
-                    if (abilityEl) abilityEl.innerHTML = '<span style="color:#f87171;">加载失败：' + escapeHtml(e.message) + '</span>';
+                    if (abilityEl) abilityEl.innerHTML = '<span style="color:#EDA1AC;">加载失败：' + escapeHtml(e.message) + '</span>';
                 }
                 return;
             }
@@ -176,8 +176,8 @@
                 __PROMO_TARGET_TOPICS = [];
                 if (abilityEl) {
                     abilityEl.innerHTML = type === 'same'
-                        ? '<span style="color:rgba(200,215,230,0.7)">当前岗位已是该线最高级，暂无更高级别可挑战，请选择「跨岗位晋升」。</span>'
-                        : '<span style="color:rgba(200,215,230,0.7)">该岗位暂未配置晋升级别，请联系管理员配置。</span>';
+                        ? '<span style="color:rgba(151,132,142,0.7)">当前岗位已是该线最高级，暂无更高级别可挑战，请选择「跨岗位晋升」。</span>'
+                        : '<span style="color:rgba(151,132,142,0.7)">该岗位暂未配置晋升级别，请联系管理员配置。</span>';
                 }
                 return;
             }
@@ -185,7 +185,7 @@
             if (abilityEl) {
                 abilityEl.innerHTML = __PROMO_TARGET_TOPICS.length
                     ? `<ul style="margin:0; padding-left:18px;">${__PROMO_TARGET_TOPICS.map(t => `<li>${escapeHtml(String(t?.title || ''))}</li>`).join('')}</ul>`
-                    : '<span style="color:rgba(200,215,230,0.7)">暂无配置，请联系管理员在「培训认证 → 知识点管理」中为该岗位配置晋升能力要求。</span>';
+                    : '<span style="color:rgba(151,132,142,0.7)">暂无配置，请联系管理员在「培训认证 → 知识点管理」中为该岗位配置晋升能力要求。</span>';
             }
         }
 
@@ -341,7 +341,7 @@
             if (!box) return;
             const tracks = Array.isArray(__PROMOTION_TRACKS) ? __PROMOTION_TRACKS : [];
             if (!tracks.length) {
-                box.innerHTML = '<div style="text-align:center;color:rgba(200,215,230,0.7);padding:18px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;">暂无培训考核记录</div>';
+                box.innerHTML = '<div style="text-align:center;color:rgba(151,132,142,0.7);padding:18px;border:1px dashed rgba(242,234,238,0.12);border-radius:12px;">暂无培训考核记录</div>';
                 return;
             }
             box.innerHTML = tracks.map(t => {
@@ -354,17 +354,17 @@
                 const progressRows = items.length ? items.map(it => {
                     const ok = !!it?.certified;
                     const validTxt = ok && it?.validUntil ? `（有效期至 ${escapeHtml(String(it.validUntil))}）` : '';
-                    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed rgba(255,255,255,0.08);font-size:12px;">
-                        <div style="color:rgba(226,232,240,0.92);">${escapeHtml(String(it?.title || '-'))}</div>
-                        <div style="color:${ok ? '#34d399' : 'rgba(200,215,230,0.6)'};">${ok ? '✅ 已认证' : '⏳ 待认证'}${validTxt}</div>
+                    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed rgba(242,234,238,0.08);font-size:12px;">
+                        <div style="color:rgba(242,234,238,0.92);">${escapeHtml(String(it?.title || '-'))}</div>
+                        <div style="color:${ok ? '#86C9A2' : 'rgba(151,132,142,0.6)'};">${ok ? '✅ 已认证' : '⏳ 待认证'}${validTxt}</div>
                     </div>`;
-                }).join('') : '<div style="font-size:12px;color:rgba(200,215,230,0.72);">该岗位暂无配置晋升能力要求，可直接发起正式晋升申请</div>';
-                return `<div style="margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);">
+                }).join('') : '<div style="font-size:12px;color:rgba(151,132,142,0.72);">该岗位暂无配置晋升能力要求，可直接发起正式晋升申请</div>';
+                return `<div style="margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(242,234,238,0.08);background:rgba(242,234,238,0.03);">
                     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
                         <div style="font-weight:800;">${escapeHtml(applicant)} · ${escapeHtml(String(t?.targetPosition || '-'))}/${escapeHtml(String(t?.targetLevel || '-'))}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.85);">状态：${escapeHtml(status)} · 培训考核：${escapeHtml(assessText)}${progress ? `（${progress.certifiedCount}/${progress.total}）` : ''}</div>
+                        <div style="font-size:12px;color:rgba(242,234,238,0.85);">状态：${escapeHtml(status)} · 培训考核：${escapeHtml(assessText)}${progress ? `（${progress.certifiedCount}/${progress.total}）` : ''}</div>
                     </div>
-                    <div style="margin-top:8px;font-size:12px;color:rgba(200,215,230,0.85);">带教人：${escapeHtml(String(t?.mentorName || t?.mentorUsername || '待指定'))}${t?.trainingDueDate ? ` · 培训截止：${escapeHtml(String(t.trainingDueDate))}` : ''}</div>
+                    <div style="margin-top:8px;font-size:12px;color:rgba(151,132,142,0.85);">带教人：${escapeHtml(String(t?.mentorName || t?.mentorUsername || '待指定'))}${t?.trainingDueDate ? ` · 培训截止：${escapeHtml(String(t.trainingDueDate))}` : ''}</div>
                     <div style="margin-top:8px;">${progressRows}</div>
                 </div>`;
             }).join('');
@@ -432,15 +432,15 @@
             const statusText = (s) => s === 'pending' ? '待审批' : (s === 'approved' ? '已通过' : (s === 'rejected' ? '已拒绝' : s || '-'));
 
             if (!filtered.length) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;padding:40px;">暂无申请记录</td></tr>';
-                if (cardsEl) cardsEl.innerHTML = '<div style="text-align:center;color:rgba(200,215,230,0.72);padding:28px 12px;">暂无申请记录</div>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#97848E;padding:40px;">暂无申请记录</td></tr>';
+                if (cardsEl) cardsEl.innerHTML = '<div style="text-align:center;color:rgba(151,132,142,0.72);padding:28px 12px;">暂无申请记录</div>';
                 return;
             }
 
             tbody.innerHTML = filtered.map(req => {
                 const p = req?.payload && typeof req.payload === 'object' ? req.payload : {};
                 const created = String(req?.created_at || req?.createdAt || '').slice(0, 10);
-                const badgeColor = req?.status === 'approved' ? '#22c55e' : (req?.status === 'rejected' ? '#ef4444' : '#f59e0b');
+                const badgeColor = req?.status === 'approved' ? '#86C9A2' : (req?.status === 'rejected' ? '#E58B98' : '#CFA14A');
                 return `<tr>
                     <td>${escapeHtml(String(req?.id || ''))}</td>
                     <td>${escapeHtml(hrmsDisplayName(req?.applicant_username))}</td>
@@ -937,13 +937,13 @@
                 const correctA = normPicked(a?.correctAnswer ?? q?.answer);
                 const ok = !!a?.isCorrect;
                 const okText = ok ? '正确' : '错误';
-                const okColor = ok ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)';
+                const okColor = ok ? 'rgba(134,201,162,0.92)' : 'rgba(229,139,152,0.92)';
                 const qText = cleanExamText(String(q?.question || ''));
                 return `
-                    <div style="padding: 12px 0; border-bottom: 1px solid rgba(200,215,230,0.18);">
-                        <div style="font-weight: 900; line-height: 1.55; color: rgba(226,232,240,0.96);">${escapeHtml(String(idx + 1) + '. ' + qText)}</div>
-                        <div style="margin-top: 6px; font-size: 13px; color: rgba(200,215,230,0.82);">你的答案：${escapeHtml(picked || '（未作答）')}</div>
-                        <div style="margin-top: 4px; font-size: 13px; color: rgba(200,215,230,0.82);">正确答案：${escapeHtml(correctA || '--')}</div>
+                    <div style="padding: 12px 0; border-bottom: 1px solid rgba(151,132,142,0.18);">
+                        <div style="font-weight: 900; line-height: 1.55; color: rgba(242,234,238,0.96);">${escapeHtml(String(idx + 1) + '. ' + qText)}</div>
+                        <div style="margin-top: 6px; font-size: 13px; color: rgba(151,132,142,0.82);">你的答案：${escapeHtml(picked || '（未作答）')}</div>
+                        <div style="margin-top: 4px; font-size: 13px; color: rgba(151,132,142,0.82);">正确答案：${escapeHtml(correctA || '--')}</div>
                         <div style="margin-top: 6px; font-weight: 900; color: ${okColor};">${okText}</div>
                     </div>
                 `;
@@ -951,10 +951,10 @@
 
             container.innerHTML = `
                 <div style="display:flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items:center; margin-bottom: 12px;">
-                    <div style="font-weight: 900; color: rgba(226,232,240,0.96);">交卷解析</div>
-                    <div style="font-weight: 900; color: rgba(245,158,11,0.92);">得分：${escapeHtml(String(score ?? '--'))}（${escapeHtml(String(correct ?? '--'))}/${escapeHtml(String(qs.length || '--'))}）</div>
+                    <div style="font-weight: 900; color: rgba(242,234,238,0.96);">交卷解析</div>
+                    <div style="font-weight: 900; color: rgba(207,161,74,0.92);">得分：${escapeHtml(String(score ?? '--'))}（${escapeHtml(String(correct ?? '--'))}/${escapeHtml(String(qs.length || '--'))}）</div>
                 </div>
-                <div style="border-top: 1px solid rgba(200,215,230,0.18);"></div>
+                <div style="border-top: 1px solid rgba(151,132,142,0.18);"></div>
                 <div style="margin-top: 4px; max-height: 70vh; overflow:auto; padding-right: 4px;">${rows}</div>
             `;
         }
@@ -1138,9 +1138,9 @@
                 const when = formatWhen(r?.submittedAt || r?.createdAt || '');
                 const line1 = [who, when].filter(Boolean).join(' · ');
                 const line2 = score ? (`得分 ${score}${(correct && total) ? `（${correct}/${total}）` : ''}`) : '已提交';
-                return `<div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
-                    <div style="font-weight: 800; color: rgba(226,232,240,0.95);">${escapeHtml(line2)}</div>
-                    <div style="margin-top: 4px; font-size: 12px; color: rgba(200,215,230,0.78);">${escapeHtml(line1 || '')}</div>
+                return `<div style="padding: 10px 0; border-bottom: 1px solid rgba(242,234,238,0.06);">
+                    <div style="font-weight: 800; color: rgba(242,234,238,0.95);">${escapeHtml(line2)}</div>
+                    <div style="margin-top: 4px; font-size: 12px; color: rgba(151,132,142,0.78);">${escapeHtml(line1 || '')}</div>
                 </div>`;
             }).join('');
         }
@@ -1192,10 +1192,10 @@
                 const whenText = dt && Number.isFinite(dt.getTime()) ? dt.toLocaleString('zh-CN', { hour12: false }) : '';
                 const dur = a?.durationMinutes ? (`时长 ${a.durationMinutes} 分钟`) : '';
                 const meta = [whenText, dur].filter(Boolean).join(' · ');
-                return `<div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); display:flex; justify-content: space-between; gap: 10px; align-items: center;">
+                return `<div style="padding: 10px 0; border-bottom: 1px solid rgba(242,234,238,0.06); display:flex; justify-content: space-between; gap: 10px; align-items: center;">
                     <div style="min-width:0;">
-                        <div style="font-weight: 900; color: rgba(226,232,240,0.95);">${escapeHtml(title)}</div>
-                        <div style="margin-top:4px; font-size:12px; color: rgba(200,215,230,0.78);">${escapeHtml(meta)}</div>
+                        <div style="font-weight: 900; color: rgba(242,234,238,0.95);">${escapeHtml(title)}</div>
+                        <div style="margin-top:4px; font-size:12px; color: rgba(151,132,142,0.78);">${escapeHtml(meta)}</div>
                     </div>
                     <button class="btn btn-secondary" type="button" data-click="startAssignedExam" data-arg="${escapeHtml(id)}">开始</button>
                 </div>`;
@@ -1701,7 +1701,7 @@
             const fileIcon = document.getElementById('kb-upload-file-icon');
             const fileLabel = document.getElementById('kb-upload-file-label');
             if (fileIcon) fileIcon.textContent = '📎';
-            if (fileLabel) { fileLabel.textContent = '点击选择文件'; fileLabel.style.color = '#a5b4fc'; }
+            if (fileLabel) { fileLabel.textContent = '点击选择文件'; fileLabel.style.color = '#EABBC5'; }
 
             // Load existing SOP groups into selector
             (async () => {
@@ -2010,9 +2010,9 @@
             const label = String(text || `上传中... ${p}%`);
             statusEl.innerHTML = `
                 <div style="display:flex;flex-direction:column;gap:6px;">
-                    <div style="font-size:12px;color:#c7d2e5;">${escapeHtml(label)}</div>
-                    <div style="height:8px;border-radius:999px;background:rgba(255,255,255,0.14);overflow:hidden;">
-                        <div style="height:100%;width:${p}%;background:linear-gradient(90deg,#4f8cff,#f59e0b);transition:width .2s ease;"></div>
+                    <div style="font-size:12px;color:#97848E;">${escapeHtml(label)}</div>
+                    <div style="height:8px;border-radius:999px;background:rgba(242,234,238,0.14);overflow:hidden;">
+                        <div style="height:100%;width:${p}%;background:linear-gradient(90deg,#E0A6B4,#CFA14A);transition:width .2s ease;"></div>
                     </div>
                 </div>
             `;
@@ -2090,7 +2090,7 @@
             const titleLabel = document.querySelector('#kb-single-title-wrap label');
             if (titleInput && titleLabel) {
                 if (type === 'img') {
-                    titleLabel.innerHTML = '菜品名称 <span class="req">*</span> <span style="font-size:10px;color:#fde68a;font-weight:400;">（自动来自文件名，可修改）</span>';
+                    titleLabel.innerHTML = '菜品名称 <span class="req">*</span> <span style="font-size:10px;color:#EAD2A0;font-weight:400;">（自动来自文件名，可修改）</span>';
                     titleInput.placeholder = '例：宫保鸡丁（选文件后自动填入）';
                 } else {
                     titleLabel.innerHTML = '标题 <span class="req">*</span>';
@@ -2128,7 +2128,7 @@
             }
             if (groupNoteEl) {
                 if (type === 'img' && !groupId) {
-                    groupNoteEl.innerHTML = '<span style=”color:#fde68a;”>💡 菜品图建议共用同一文件夹：上方先选「已有项目组」，或填写文件夹名后多次上传到同组。</span>';
+                    groupNoteEl.innerHTML = '<span style=”color:#EAD2A0;”>💡 菜品图建议共用同一文件夹：上方先选「已有项目组」，或填写文件夹名后多次上传到同组。</span>';
                 } else {
                     groupNoteEl.textContent = groupId
                         ? '已选择已有项目组，上传后会直接进入该组。要换名字请在”整理/转组”里修改。'
@@ -2273,7 +2273,7 @@
             const fileIcon = document.getElementById('kb-upload-file-icon');
             const fileLabel = document.getElementById('kb-upload-file-label');
             if (fileIcon) fileIcon.textContent = '✅';
-            if (fileLabel) { fileLabel.textContent = file.name; fileLabel.style.color = '#6ee7b7'; }
+            if (fileLabel) { fileLabel.textContent = file.name; fileLabel.style.color = '#9ED9B4'; }
             if (statusEl) statusEl.textContent = formatFileSize(size);
         }
 
@@ -2834,15 +2834,15 @@
             let html = '';
             Object.keys(BUILTIN_ROLE_VIEWS).forEach(code => {
                 const role = BUILTIN_ROLE_VIEWS[code];
-                const viewsHtml = role.views.map(v => `<div style="padding:3px 0; font-size:12px; color:rgba(255,255,255,0.7);">• ${escapeHtml(v)}</div>`).join('');
+                const viewsHtml = role.views.map(v => `<div style="padding:3px 0; font-size:12px; color:rgba(242,234,238,0.7);">• ${escapeHtml(v)}</div>`).join('');
                 html += `<div class="card" style="padding:18px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                         <span style="font-size:15px; font-weight:700;">${escapeHtml(role.name)}</span>
-                        <span style="font-size:10px; padding:2px 8px; border-radius:6px; background:rgba(59,130,246,0.15); color:#60a5fa;">内置</span>
+                        <span style="font-size:10px; padding:2px 8px; border-radius:6px; background:rgba(224,166,180,0.15); color:#E0A6B4;">内置</span>
                     </div>
-                    <div style="font-size:12px; color:rgba(255,255,255,0.45); margin-bottom:8px;">角色代码：${escapeHtml(code)}</div>
-                    <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:8px;">
-                        <div style="font-size:11px; font-weight:600; color:rgba(255,255,255,0.5); margin-bottom:4px;">可见视图：</div>
+                    <div style="font-size:12px; color:rgba(242,234,238,0.45); margin-bottom:8px;">角色代码：${escapeHtml(code)}</div>
+                    <div style="border-top:1px solid rgba(242,234,238,0.08); padding-top:8px;">
+                        <div style="font-size:11px; font-weight:600; color:rgba(242,234,238,0.5); margin-bottom:4px;">可见视图：</div>
                         ${viewsHtml}
                     </div>
                 </div>`;
@@ -2973,7 +2973,7 @@
             const box = document.getElementById('tp-kpi-target-list');
             if (!box) return;
             if (!_tpKpiTargets.length) {
-                box.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:8px 0;">暂无自定义KPI目标</div>';
+                box.innerHTML = '<div style="color:rgba(242,234,238,0.5); padding:8px 0;">暂无自定义KPI目标</div>';
                 return;
             }
             box.innerHTML = _tpKpiTargets.map((t) => `
@@ -2984,7 +2984,7 @@
                         <label class="tp-field">目标值<input type="number" step="0.01" class="tp-input" value="${t.target_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="target_value" data-pass-value></label>
                         <label class="tp-field">预警值<input type="number" step="0.01" class="tp-input" value="${t.warning_value ?? ''}" data-change="updateTpKpiTargetField" data-arg="${t.id}" data-arg2="warning_value" data-pass-value></label>
                     </div>
-                    <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
+                    <div style="font-size:11px; color:rgba(242,234,238,0.4); margin-top:6px;">单位:${escapeHtml(t.unit||'-')} · ${t.direction==='lower_better'?'越低越好':'越高越好'} · ${({daily:'每日',weekly:'每周',monthly:'每月'})[t.period]||t.period}</div>
                     <div class="tp-row-actions"><button type="button" class="btn btn-danger" data-click="deleteTpKpiTarget" data-arg="${t.id}">删除</button></div>
                 </div>`).join('');
         }
@@ -3076,7 +3076,7 @@
             const list = _tpPerfConfig?.[key] || [];
             const fields = tpRefFieldsFor(key);
             if (!list.length) {
-                box.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:6px 0; font-size:12px;">暂无记录</div>';
+                box.innerHTML = '<div style="color:rgba(242,234,238,0.5); padding:6px 0; font-size:12px;">暂无记录</div>';
                 return;
             }
             box.innerHTML = list.map((item, idx) => `
@@ -3157,7 +3157,7 @@
             const box = document.getElementById('tp-inspection-list');
             if (!box) return;
             if (!_tpInspections.length) {
-                box.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:8px 0;">暂无巡检任务，点击下方"新增"添加</div>';
+                box.innerHTML = '<div style="color:rgba(242,234,238,0.5); padding:8px 0;">暂无巡检任务，点击下方"新增"添加</div>';
                 return;
             }
             box.innerHTML = _tpInspections.map((item, idx) => `
@@ -3223,7 +3223,7 @@
             const box = document.getElementById('tp-random-list');
             if (!box) return;
             if (!_tpRandomItems.length) {
-                box.innerHTML = '<div style="color:rgba(255,255,255,0.5); padding:8px 0;">暂无随机抽检项，点击下方"新增"添加</div>';
+                box.innerHTML = '<div style="color:rgba(242,234,238,0.5); padding:8px 0;">暂无随机抽检项，点击下方"新增"添加</div>';
                 return;
             }
             box.innerHTML = _tpRandomItems.map((item, idx) => `
@@ -3474,7 +3474,7 @@
             const stores = Array.isArray(storesAll) ? storesAll.slice() : [];
             stores.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-Hans-CN'));
             if (!stores.length) {
-                box.innerHTML = '<div style="grid-column:1/-1; font-size:12px; color:rgba(200,215,230,0.7);">暂无门店，请先创建门店</div>';
+                box.innerHTML = '<div style="grid-column:1/-1; font-size:12px; color:rgba(151,132,142,0.7);">暂无门店，请先创建门店</div>';
                 return;
             }
             box.innerHTML = stores.map((s) => {
@@ -3483,9 +3483,9 @@
                 const sbid = normalizeBrandIdInput(s?.brandId || s?.brand || s?.brandName);
                 const checked = bid && sbid === bid;
                 return `
-                    <label style="display:flex; gap:8px; align-items:center; padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.03); cursor:pointer;">
+                    <label style="display:flex; gap:8px; align-items:center; padding:8px 10px; border-radius:10px; border:1px solid rgba(242,234,238,0.10); background:rgba(242,234,238,0.03); cursor:pointer;">
                         <input type="checkbox" data-store-id="${escapeHtml(sid)}" ${checked ? 'checked' : ''} />
-                        <span style="font-size:12px; font-weight:700; color:rgba(226,232,240,0.92);">${escapeHtml(name || '-')}</span>
+                        <span style="font-size:12px; font-weight:700; color:rgba(242,234,238,0.92);">${escapeHtml(name || '-')}</span>
                     </label>
                 `;
             }).join('');
@@ -3510,16 +3510,16 @@
             if (!box) return;
             const list = Array.isArray(__BRANDS_CACHE) ? __BRANDS_CACHE : [];
             if (!list.length) {
-                box.innerHTML = '<div style="color:rgba(200,215,230,0.7); font-size:12px;">暂无品牌，请新建。</div>';
+                box.innerHTML = '<div style="color:rgba(151,132,142,0.7); font-size:12px;">暂无品牌，请新建。</div>';
                 return;
             }
             box.innerHTML = list.map((b) => {
                 const bid = normalizeBrandIdInput(b?.id);
                 const active = bid === __BRAND_FORM_EDITING_ID;
                 return `
-                    <button type="button" data-click="selectBrandForEdit" data-arg="${escapeHtml(bid)}" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(34,197,94,0.45)' : 'rgba(255,255,255,0.10)'}; background:${active ? 'rgba(34,197,94,0.10)' : 'rgba(255,255,255,0.04)'}; color:#fff; cursor:pointer;">
+                    <button type="button" data-click="selectBrandForEdit" data-arg="${escapeHtml(bid)}" style="text-align:left; padding:10px; border-radius:10px; border:1px solid ${active ? 'rgba(134,201,162,0.45)' : 'rgba(242,234,238,0.10)'}; background:${active ? 'rgba(134,201,162,0.10)' : 'rgba(242,234,238,0.04)'}; color:#fff; cursor:pointer;">
                         <div style="font-weight:800;">${escapeHtml(String(b?.name || '-'))}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.7); margin-top:2px;">${escapeHtml(String(b?.id || '-'))}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.7); margin-top:2px;">${escapeHtml(String(b?.id || '-'))}</div>
                     </button>
                 `;
             }).join('');
@@ -3629,7 +3629,7 @@
                 const names = Array.from(new Set(stores.map(s => String(s?.name || '').trim()).filter(Boolean)));
                 if (!names.length) {
                     sel.innerHTML = '<option value="">暂无门店</option>';
-                    list.innerHTML = '<div style="color:rgba(200,215,230,0.75);">请先创建门店</div>';
+                    list.innerHTML = '<div style="color:rgba(151,132,142,0.75);">请先创建门店</div>';
                     return;
                 }
                 const oldVal = String(sel.value || '').trim();
@@ -3640,22 +3640,22 @@
                 const resp = await HRMS_API.getPointRules({ store });
                 const items = Array.isArray(resp?.items) ? resp.items : [];
                 if (!items.length) {
-                    list.innerHTML = '<div style="color:rgba(200,215,230,0.75);">该门店暂未配置积分事项</div>';
+                    list.innerHTML = '<div style="color:rgba(151,132,142,0.75);">该门店暂未配置积分事项</div>';
                     return;
                 }
                 list.innerHTML = items.map(r => {
                     const id = String(r?.id || '').trim();
                     const enabled = r?.enabled !== false;
-                    return `<div style="padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                    return `<div style="padding:8px 10px; border-radius:10px; border:1px solid rgba(242,234,238,0.08); margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
                         <div>
-                            <div style="font-weight:800; color:rgba(226,232,240,0.95);">${escapeHtml(String(r?.itemName || '-'))} · ${Number(r?.points || 0)}分</div>
-                            <div style="font-size:12px; color:rgba(200,215,230,0.75);">${escapeHtml(store)}</div>
+                            <div style="font-weight:800; color:rgba(242,234,238,0.95);">${escapeHtml(String(r?.itemName || '-'))} · ${Number(r?.points || 0)}分</div>
+                            <div style="font-size:12px; color:rgba(151,132,142,0.75);">${escapeHtml(store)}</div>
                         </div>
                         <button class="btn btn-secondary" type="button" style="padding:6px 10px; font-size:12px;" data-click="togglePointRuleEnabled" data-arg="${escapeHtml(id)}" data-arg2="${enabled ? 'false' : 'true'}">${enabled ? '禁用' : '启用'}</button>
                     </div>`;
                 }).join('');
             } catch (e) {
-                list.innerHTML = '<div style="color:#ef4444;">加载失败：' + escapeHtml(String(e?.message || e)) + '</div>';
+                list.innerHTML = '<div style="color:#E58B98;">加载失败：' + escapeHtml(String(e?.message || e)) + '</div>';
             }
         }
 
@@ -3746,13 +3746,13 @@
             const body = document.getElementById('salary-change-history-body');
             if (!modal || !body) return;
             if (title) title.textContent = `薪资变更记录 · ${displayName || username || ''}`;
-            body.innerHTML = '<div style="color:rgba(200,215,230,0.72);">加载中...</div>';
+            body.innerHTML = '<div style="color:rgba(151,132,142,0.72);">加载中...</div>';
             modal.classList.add('show');
             try {
                 const resp = await HRMS_API.getSalaryChangesReport({ username, limit: 200 });
                 const rows = Array.isArray(resp?.items) ? resp.items : [];
                 if (!rows.length) {
-                    body.innerHTML = '<div style="color:rgba(200,215,230,0.72);">暂无薪资变更记录</div>';
+                    body.innerHTML = '<div style="color:rgba(151,132,142,0.72);">暂无薪资变更记录</div>';
                     return;
                 }
                 const fmtMoney = (n) => {
@@ -3767,18 +3767,18 @@
                     const deltaText = Number.isFinite(delta)
                         ? ((delta >= 0 ? '+' : '') + '¥' + Math.abs(delta).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
                         : '-';
-                    return `<div style="padding:10px 0;border-bottom:1px dashed rgba(255,255,255,0.1);">
+                    return `<div style="padding:10px 0;border-bottom:1px dashed rgba(242,234,238,0.1);">
                         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
                             <div style="font-weight:800;">${escapeHtml(String(r?.targetName || r?.targetUsername || username || '-'))}</div>
-                            <div style="font-size:12px;color:rgba(200,215,230,0.72);">${escapeHtml(t || '-')}</div>
+                            <div style="font-size:12px;color:rgba(151,132,142,0.72);">${escapeHtml(t || '-')}</div>
                         </div>
-                        <div style="margin-top:6px;font-size:12px;color:rgba(226,232,240,0.92);">原薪资：<span style="font-weight:800;">${escapeHtml(fmtMoney(r?.oldSalary))}</span> → 新薪资：<span style="font-weight:900;color:#22c55e;">${escapeHtml(fmtMoney(r?.newSalary))}</span></div>
-                        <div style="margin-top:4px;font-size:12px;color:${delta >= 0 ? '#22c55e' : '#ef4444'};">变动：${escapeHtml(deltaText)}</div>
-                        <div style="margin-top:4px;font-size:12px;color:rgba(200,215,230,0.75);">审批人：${escapeHtml(approver || '-')} · 门店：${escapeHtml(String(r?.store || '-'))}</div>
+                        <div style="margin-top:6px;font-size:12px;color:rgba(242,234,238,0.92);">原薪资：<span style="font-weight:800;">${escapeHtml(fmtMoney(r?.oldSalary))}</span> → 新薪资：<span style="font-weight:900;color:#86C9A2;">${escapeHtml(fmtMoney(r?.newSalary))}</span></div>
+                        <div style="margin-top:4px;font-size:12px;color:${delta >= 0 ? '#86C9A2' : '#E58B98'};">变动：${escapeHtml(deltaText)}</div>
+                        <div style="margin-top:4px;font-size:12px;color:rgba(151,132,142,0.75);">审批人：${escapeHtml(approver || '-')} · 门店：${escapeHtml(String(r?.store || '-'))}</div>
                     </div>`;
                 }).join('');
             } catch (e) {
-                body.innerHTML = `<div style="color:#ef4444;">加载失败：${escapeHtml(String(e?.message || e))}</div>`;
+                body.innerHTML = `<div style="color:#E58B98;">加载失败：${escapeHtml(String(e?.message || e))}</div>`;
             }
         }
 
@@ -3805,8 +3805,8 @@
                     if (!Array.isArray(steps) || !steps.length) return;
                     const labels = steps.map(s => afStepLabel(s)).join(' → ');
                     const cfgStores = Array.isArray(cfg?.stores) ? cfg.stores.filter(Boolean) : [];
-                    const storeTag = cfgStores.length ? ' <span style="color:rgba(59,130,246,0.85); font-size:11px;">(' + cfgStores.map(s => escapeHtml(s)).join('、') + ')</span>' : '';
-                    lines.push('<div style="margin-bottom:6px;"><span style="font-weight:800; color:rgba(226,232,240,0.95);">' + typeLabels[type] + storeTag + '：</span>' + labels + '</div>');
+                    const storeTag = cfgStores.length ? ' <span style="color:rgba(224,166,180,0.85); font-size:11px;">(' + cfgStores.map(s => escapeHtml(s)).join('、') + ')</span>' : '';
+                    lines.push('<div style="margin-bottom:6px;"><span style="font-weight:800; color:rgba(242,234,238,0.95);">' + typeLabels[type] + storeTag + '：</span>' + labels + '</div>');
                 });
                 const storeKeys = Object.keys(pfbs);
                 if (storeKeys.length) {
@@ -3824,14 +3824,14 @@
                             parts.push('付款人: ' + escapeHtml(cname));
                         }
                         if (parts.length) {
-                            lines.push('<div style="margin-bottom:6px;"><span style="font-weight:800; color:rgba(226,232,240,0.95);">请款(' + escapeHtml(store) + ')：</span>' + parts.join(' → ') + '</div>');
+                            lines.push('<div style="margin-bottom:6px;"><span style="font-weight:800; color:rgba(242,234,238,0.95);">请款(' + escapeHtml(store) + ')：</span>' + parts.join(' → ') + '</div>');
                         }
                     });
                 }
                 if (lines.length) {
-                    el.innerHTML = '<div style="padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03);">' + lines.join('') + '</div>';
+                    el.innerHTML = '<div style="padding:10px 12px; border-radius:10px; border:1px solid rgba(242,234,238,0.08); background:rgba(242,234,238,0.03);">' + lines.join('') + '</div>';
                 } else {
-                    el.innerHTML = '<div style="color:rgba(200,215,230,0.5);">暂未配置审批流程</div>';
+                    el.innerHTML = '<div style="color:rgba(151,132,142,0.5);">暂未配置审批流程</div>';
                 }
             } catch (e) {
                 el.innerHTML = '';
@@ -4032,15 +4032,15 @@
             if (!container) return;
             const steps = _afStepsData[type] || [];
             if (!steps.length) {
-                container.innerHTML = '<span style="color:rgba(200,215,230,0.5); font-size:12px; padding:4px;">暂无审批步骤（使用系统默认）</span>';
+                container.innerHTML = '<span style="color:rgba(151,132,142,0.5); font-size:12px; padding:4px;">暂无审批步骤（使用系统默认）</span>';
                 return;
             }
             container.innerHTML = steps.map((token, idx) => {
                 const label = afStepLabel(token);
-                return '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(59,130,246,0.2); color:#93c5fd; border:1px solid rgba(59,130,246,0.3); border-radius:6px; padding:4px 8px; font-size:12px; white-space:nowrap;">'
-                    + '<span style="color:rgba(200,215,230,0.6); font-size:10px; margin-right:2px;">' + (idx + 1) + '.</span>'
+                return '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(224,166,180,0.2); color:#EABBC5; border:1px solid rgba(224,166,180,0.3); border-radius:6px; padding:4px 8px; font-size:12px; white-space:nowrap;">'
+                    + '<span style="color:rgba(151,132,142,0.6); font-size:10px; margin-right:2px;">' + (idx + 1) + '.</span>'
                     + label
-                    + '<button type="button" data-click="afRemoveStep" data-arg="' + type + '" data-arg2="' + idx + '" data-arg2-type="number" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
+                    + '<button type="button" data-click="afRemoveStep" data-arg="' + type + '" data-arg2="' + idx + '" data-arg2-type="number" style="background:none; border:none; color:#EDA1AC; cursor:pointer; font-size:14px; padding:0 2px; line-height:1;">×</button>'
                     + '</span>';
             }).join('');
         }
@@ -4124,25 +4124,25 @@
             const container = document.getElementById('af-flow-cards');
             if (!container) return;
             container.innerHTML = afTypeMeta.map(m => `
-                <div style="border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); overflow: hidden;" data-af-type="${m.type}">
+                <div style="border-radius: 14px; border: 1px solid rgba(242,234,238,0.08); background: rgba(242,234,238,0.03); overflow: hidden;" data-af-type="${m.type}">
                     <div style="padding: 14px 16px; display:flex; align-items:center; gap: 10px; cursor:pointer; user-select:none;" data-click="afToggleCard" data-arg-self="1">
                         <span style="font-size: 18px; width: 28px; text-align:center;">${m.icon}</span>
                         <div style="flex:1; min-width:0;">
                             <div style="font-weight: 700; font-size: 14px;">${m.label}</div>
-                            <div style="font-size: 11px; color: rgba(200,215,230,0.55); margin-top: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.desc}</div>
+                            <div style="font-size: 11px; color: rgba(151,132,142,0.55); margin-top: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.desc}</div>
                         </div>
-                        <span class="af-card-arrow" style="font-size: 12px; color: rgba(200,215,230,0.4); transition: transform 0.2s;">▼</span>
+                        <span class="af-card-arrow" style="font-size: 12px; color: rgba(151,132,142,0.4); transition: transform 0.2s;">▼</span>
                     </div>
-                    <div class="af-card-body" style="display:none; padding: 0 16px 14px; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <div class="af-card-body" style="display:none; padding: 0 16px 14px; border-top: 1px solid rgba(242,234,238,0.05);">
                         <div style="padding-top: 12px;">
-                            <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">适用门店</div>
-                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:6px 8px;" data-change="afOnStoreChange" data-arg="${m.type}">${storeOptsHtml}</select>
+                            <div style="font-size: 11px; color: rgba(151,132,142,0.6); font-weight: 600; margin-bottom: 6px;">适用门店</div>
+                            <select id="af-store-${m.type}" class="settings-input" multiple style="width:100%; min-height:34px; font-size:13px; border-radius:10px; background:rgba(242,234,238,0.06); border:1px solid rgba(242,234,238,0.12); color:rgba(242,234,238,0.9); padding:6px 8px;" data-change="afOnStoreChange" data-arg="${m.type}">${storeOptsHtml}</select>
                         </div>
                         <div style="margin-top: 10px;">
-                            <div style="font-size: 11px; color: rgba(200,215,230,0.6); font-weight: 600; margin-bottom: 6px;">审批链路</div>
-                            <div class="af-tags" id="af-tags-${m.type}" style="display:flex; flex-wrap:wrap; gap:6px; min-height:34px; padding:8px 10px; background:rgba(255,255,255,0.04); border-radius:10px; border:1px solid rgba(255,255,255,0.08); margin-bottom:8px;"></div>
+                            <div style="font-size: 11px; color: rgba(151,132,142,0.6); font-weight: 600; margin-bottom: 6px;">审批链路</div>
+                            <div class="af-tags" id="af-tags-${m.type}" style="display:flex; flex-wrap:wrap; gap:6px; min-height:34px; padding:8px 10px; background:rgba(242,234,238,0.04); border-radius:10px; border:1px solid rgba(242,234,238,0.08); margin-bottom:8px;"></div>
                             <div style="display:flex; gap:6px;">
-                                <select id="af-select-${m.type}" class="settings-input" style="flex:1; font-size:13px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:rgba(226,232,240,0.9); padding:8px 10px;">${approverOptsHtml}</select>
+                                <select id="af-select-${m.type}" class="settings-input" style="flex:1; font-size:13px; border-radius:10px; background:rgba(242,234,238,0.06); border:1px solid rgba(242,234,238,0.12); color:rgba(242,234,238,0.9); padding:8px 10px;">${approverOptsHtml}</select>
                                 <button class="btn btn-secondary" type="button" data-click="afAddStep" data-arg="${m.type}" style="padding:8px 14px; font-size:13px; border-radius:10px; white-space:nowrap; font-weight:600;">+ 添加</button>
                             </div>
                         </div>
