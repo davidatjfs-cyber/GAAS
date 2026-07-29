@@ -107,8 +107,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 壳和"移除入口"的临时规避（问题本身已经在本分支修好了，不需要再规避）。working-fixed.html
  * 冲突不手工合并生成文件，直接用合并后的 frontend/src/pages/*.js 重新跑 bundle-frontend
  * 生成。
+ * 2026-07-29 第十九次上调（70661→70663）：修复合并遗留——01-boot.js 里"01-boot.js" 有个
+ * hunk 跟本分支没有文本冲突所以git静默按对方那边合并，保留了 c6e2716 那次"移除侧栏工作台
+ * 入口"的临时改动（调用 wsRemoveNavItem + 从 hrmsIsAlwaysAllowedPage 白名单删掉
+ * 'workspace'）——但 wsRemoveNavItem 这个函数在合并 15-workspace.js 时已经被删掉了（连着
+ * 那份未完成的壳一起丢弃），导致调用点在调用一个不存在的函数、什么都不做，侧栏"工作台"
+ * 入口消失。改回调用 wsInjectNavItem()，'workspace' 加回白名单。
  */
-const MAX_LINES = 70661;
+const MAX_LINES = 70663;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
