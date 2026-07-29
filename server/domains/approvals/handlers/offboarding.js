@@ -101,7 +101,7 @@ export async function afterDecide(ctx) {
     if (String(updated.status || '') === 'pending' && nextAssignee && tp === 'offboarding') {
       const msg = `${applicantName} 提交了离职申请，需要您审批。`;
       const notif = makeNotif(nextAssignee, '离职申请待审批', msg, { type: 'offboarding_request', approvalId: updated.id });
-      await mergeSharedStateFields({ notifications: [notif] }, { notifications: 'id' });
+      await appendNotifications([notif]);
     }
   } catch (e) { /* ignore */ }
 }

@@ -5,10 +5,10 @@
 /**
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
- * @param {{ pool: import('pg').Pool }} deps
+ * @param {{ pool: import('pg').Pool, invalidateSharedStateCache?: (tenantId?: string)=>void }} deps
  */
 export function registerExamResultsRoutes(app, authRequired, deps) {
-  const { pool } = deps;
+  const { pool, invalidateSharedStateCache } = deps;
 
   app.get('/api/exam-results', authRequired, async (req, res) => {
     const role = String(req.user?.role || '').trim();
@@ -80,6 +80,8 @@ export function registerExamResultsRoutes(app, authRequired, deps) {
           req.tenantId || req.user?.tenant_id || 'default'
         ]
       );
+      const tid = req.tenantId || req.user?.tenant_id || 'default';
+      if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
       return res.json({ item: r.rows?.[0] || null });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });

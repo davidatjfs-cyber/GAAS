@@ -37,6 +37,7 @@ export async function afterDecide(ctx) {
     randomUUID,
     calcDateSpanDaysInclusive,
     notifyAdminsDualWriteFailure,
+    invalidateSharedStateCache,
   } = deps;
 
   try {
@@ -95,6 +96,9 @@ export async function afterDecide(ctx) {
       } catch (e) {
         log.error({ msg: 'leave_records_dual_write_failed', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_leave_records（休假审批双写）', e);
+      }
+      if (typeof invalidateSharedStateCache === 'function') {
+        invalidateSharedStateCache(req.tenantId || req.user?.tenant_id || 'default');
       }
 
       const sd = fmtLeaveDate(startDate);

@@ -18,7 +18,6 @@ export async function afterDecide(ctx) {
     makeNotif,
     appendNotifications,
     getSharedState,
-    mergeSharedStateFields,
     stateFindUserRecord,
     uniqUsernames,
     safeNumber,
@@ -27,6 +26,7 @@ export async function afterDecide(ctx) {
     upsertPayrollLedgerEntry,
     resolveAttendancePayrollRules,
     notifyAdminsDualWriteFailure,
+    invalidateSharedStateCache,
   } = deps;
 
   try {
@@ -59,7 +59,18 @@ export async function afterDecide(ctx) {
     } catch (_) { /* ignore */ }
 
     if (finalApproved) {
-      const alreadyApplied = !!(state0?.pointsAppliedApprovals?.[approvalId]);
+      const tidPts = req.tenantId || req.user?.tenant_id || 'default';
+      let alreadyApplied = false;
+      try {
+        const dup = await pool.query(
+          `SELECT 1 FROM point_records WHERE approval_id = $1 AND tenant_id = $2 LIMIT 1`,
+          [approvalId, tidPts]
+        );
+        alreadyApplied = (dup.rows?.length || 0) > 0;
+      } catch (_) { /* fallback below */ }
+      if (!alreadyApplied) {
+        alreadyApplied = !!(state0?.pointsAppliedApprovals?.[approvalId]);
+      }
       if (!alreadyApplied) {
         let newRecords, _totalSubsidy;
         if (rawItems && rawItems.length > 0) {
@@ -123,11 +134,6 @@ export async function afterDecide(ctx) {
           log.error({ msg: 'points_payroll_ledger_failed', err: ledPtsErr?.message });
         }
 
-        await mergeSharedStateFields({
-          pointRecords: newRecords,
-          pointsAppliedApprovals: { [approvalId]: true }
-        }, { pointRecords: 'id' });
-
         try {
           for (const rec of newRecords) {
             const approvedAtVal = (rec.approvedAt && rec.approvedAt !== '') ? rec.approvedAt : null;
@@ -142,8 +148,11 @@ export async function afterDecide(ctx) {
               [rec.id, rec.approvalId || null, rec.username || '', rec.name || '', rec.store || '',
                rec.itemName || '积分事项', rec.reason || '', Number(rec.points) || 0,
                Number(rec.amount) || 0, approvedAtVal, rec.approvedBy || '',
-               req.tenantId || req.user?.tenant_id || 'default']
+               tidPts]
             );
+          }
+          if (typeof invalidateSharedStateCache === 'function') {
+            invalidateSharedStateCache(tidPts);
           }
         } catch (e2) {
           log.error({ msg: 'point_records_dual_write_failed', err: e2?.message });

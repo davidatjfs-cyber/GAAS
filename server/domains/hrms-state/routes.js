@@ -17,11 +17,7 @@ export function registerStateRoutes(app, authRequired, deps) {
     getSharedState,
     resolveTenantIdDefault,
     deepRepairGarbledStrings,
-    hydrateStateFromAuthoritativeTables,
-    hydrateEmployeesFromTable,
-    hydrateFlowConfigFromTable,
-    hydrateNotificationsFromTable,
-    hydrateExamResultsFromTable,
+    invalidateSharedStateCache,
     stripPasswordFieldsFromStateForClient,
     applyStatePeopleVisibilityForRole,
     applyStatePutWhitelist,
@@ -48,16 +44,15 @@ export function registerStateRoutes(app, authRequired, deps) {
             `update hrms_state set data = $1::jsonb, updated_at = now() where key = $2`,
             [JSON.stringify(repaired), tenantIdQ]
           );
+          if (typeof invalidateSharedStateCache === 'function') {
+            invalidateSharedStateCache(tenantIdQ);
+          }
         } catch (saveErr) {
           log.error({ msg: 'state_utf8_repair_persist_failed', err: String(saveErr?.message || saveErr) });
         }
       }
-      // 积分/薪资/员工/流程配置/通知/考试成绩以表为权威，覆盖 state 镜像
-      let hydrated = await hydrateStateFromAuthoritativeTables(pool, repaired, tenantIdQ);
-      hydrated = await hydrateEmployeesFromTable(pool, hydrated, tenantIdQ);
-      hydrated = await hydrateFlowConfigFromTable(pool, hydrated, tenantIdQ);
-      hydrated = await hydrateNotificationsFromTable(pool, hydrated, tenantIdQ);
-      hydrated = await hydrateExamResultsFromTable(pool, hydrated, tenantIdQ);
+      // 权威字段 hydrate 已收口到 getSharedState()；此处不再单独调 5 个 hydrate*
+      const hydrated = (await getSharedState(tenantIdQ)) || repaired;
       const role = String(req.user?.role || '').trim();
       const uname = String(req.user?.username || '').trim();
       let payload = stripPasswordFieldsFromStateForClient(hydrated, role);

@@ -1,23 +1,20 @@
 /**
  * appendNotifications / insertHrmsUserNotifications
  * (behavior-preserving extract from index.js)
+ *
+ * appendNotifications 只写 hrms_user_notifications 表（权威），不再 merge blob。
  */
 
 export function createAppendHelpers({
   pool,
-  mergeSharedStateFields,
   resolveTenantIdDefault,
   hrmsNowISO,
+  invalidateSharedStateCache,
 }) {
-  async function appendNotifications(notifs) {
-    const list = Array.isArray(notifs) ? notifs.filter(Boolean) : [];
-    if (!list.length) return;
-    await mergeSharedStateFields({ notifications: list }, { notifications: 'id' });
-  }
-
   async function insertHrmsUserNotifications(notifs) {
     const list = Array.isArray(notifs) ? notifs.filter(Boolean) : [];
     if (!list.length) return;
+    const tid = resolveTenantIdDefault();
     for (const n of list) {
       const target = String(n?.targetUser || n?.targetUsername || n?.to || '').trim();
       if (!target) continue;
@@ -31,10 +28,17 @@ export function createAppendHelpers({
           String(n?.type || 'system_notice').trim(),
           JSON.stringify(n?.meta || n?.data || {}),
           n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
-          resolveTenantIdDefault(),
+          tid,
         ]
       );
     }
+    if (typeof invalidateSharedStateCache === 'function') {
+      invalidateSharedStateCache(tid);
+    }
+  }
+
+  async function appendNotifications(notifs) {
+    await insertHrmsUserNotifications(notifs);
   }
 
   return { appendNotifications, insertHrmsUserNotifications };

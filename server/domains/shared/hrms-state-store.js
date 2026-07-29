@@ -5,6 +5,7 @@
  */
 import { childLogger } from '../../utils/logger.js';
 import { isInactiveStatus } from '../employees/account-gate.js';
+import { hydrateAuthoritativeState as defaultHydrateAuthoritativeState } from './hydrate-authoritative-state.js';
 
 const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
 
@@ -12,8 +13,10 @@ const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
  * hrms_state.data 常年是几 MB 的大 JSON（如 default 租户 ~4.3MB），getSharedState 在整个
  * 代码库里被高频调用（打卡/考勤/门店等几乎所有读路径都会经过）。没有缓存时每次调用都要重新
  * 从 pg 拉整个 blob + 反序列化，2026-07-29 实测把这台 2 核服务器的 node 进程打到 100%+ CPU，
- * 导致所有接口（含打卡）响应从毫秒级劣化到 15~36 秒。TTL 设短是为了让写后读尽量新鲜；写路径
- * 命中缓存后直接回填最新值，不走"失效再重查"，避免缓存刚失效时的并发请求继续打满 CPU。
+ * 导致所有接口（含打卡）响应从毫秒级劣化到 15~36 秒。TTL 设短是为了让写后读尽量新鲜。
+ *
+ * 缓存策略（方案 B）：缓存的是 hydrate 后的结果。blob 写路径成功后 invalidate（不回填未 hydrate
+ * 的 raw），权威表写路径也必须调用 invalidateSharedStateCache，否则最多 2s 读旧。
  */
 const STATE_CACHE_TTL_MS = 2000;
 const _stateCache = new Map(); // key -> { data, expiresAt }
@@ -28,15 +31,24 @@ function writeStateCache(key, data) {
   _stateCache.set(key, { data, expiresAt: Date.now() + STATE_CACHE_TTL_MS });
 }
 
-async function getSharedStateImpl(pool, resolveTenantIdDefault, tenantId) {
+function invalidateStateCacheKey(key) {
+  _stateCache.delete(key);
+}
+
+async function getSharedStateImpl(pool, resolveTenantIdDefault, hydrateFn, tenantId) {
   const key = resolveTenantIdDefault(tenantId);
   const cached = readStateCache(key);
   if (cached !== undefined) return cached;
   const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
   const row = r.rows?.[0] || null;
   const data = row?.data && typeof row.data === 'object' ? row.data : null;
-  writeStateCache(key, data);
-  return data;
+  if (!data) {
+    writeStateCache(key, null);
+    return null;
+  }
+  const hydrated = await hydrateFn(pool, data, key);
+  writeStateCache(key, hydrated);
+  return hydrated;
 }
 
 async function saveSharedStateImpl(deps, nextData, tenantId) {
@@ -66,7 +78,8 @@ async function saveSharedStateImpl(deps, nextData, tenantId) {
       if (result.rowCount > 0) {
         await client.query('COMMIT');
         client.release();
-        writeStateCache(key, merged);
+        // 方案 B：不缓存未 hydrate 的 raw merge，下次 getSharedState 会重新拉表覆盖权威字段
+        invalidateStateCacheKey(key);
         schedulePayrollDomainSync();
         scheduleLeaveDomainSync();
         await dualWriteStateToDB(merged);
@@ -147,7 +160,6 @@ async function mergeSharedStateFieldsImpl(deps, patches, arrayIdFields = {}, ten
       );
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
-        writeStateCache(key, next);
         if (
           Array.isArray(patches.employees) &&
           patches.employees.length &&
@@ -197,6 +209,7 @@ async function mergeSharedStateFieldsImpl(deps, patches, arrayIdFields = {}, ten
         schedulePayrollDomainSync();
         scheduleLeaveDomainSync();
         client.release();
+        invalidateStateCacheKey(key);
         return;
       }
       await client.query('ROLLBACK');
@@ -245,7 +258,7 @@ async function removeEmployeesFromSharedStateImpl(pool, resolveTenantIdDefault, 
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
         client.release();
-        writeStateCache(key, next);
+        invalidateStateCacheKey(key);
         return;
       }
       await client.query('ROLLBACK');
@@ -261,12 +274,19 @@ async function removeEmployeesFromSharedStateImpl(pool, resolveTenantIdDefault, 
 
 export function createHrmsStateStoreHelpers(deps) {
   const { pool, resolveTenantIdDefault } = deps;
+  const hydrateFn =
+    typeof deps.hydrateAuthoritativeState === 'function'
+      ? deps.hydrateAuthoritativeState
+      : defaultHydrateAuthoritativeState;
   return {
-    getSharedState: (tenantId) => getSharedStateImpl(pool, resolveTenantIdDefault, tenantId),
+    getSharedState: (tenantId) => getSharedStateImpl(pool, resolveTenantIdDefault, hydrateFn, tenantId),
     saveSharedState: (nextData, tenantId) => saveSharedStateImpl(deps, nextData, tenantId),
     mergeSharedStateFields: (patches, arrayIdFields, tenantId) =>
       mergeSharedStateFieldsImpl(deps, patches, arrayIdFields, tenantId),
     removeEmployeesFromSharedState: (usernames, tenantId) =>
       removeEmployeesFromSharedStateImpl(pool, resolveTenantIdDefault, usernames, tenantId),
+    invalidateSharedStateCache: (tenantId) => {
+      invalidateStateCacheKey(resolveTenantIdDefault(tenantId));
+    },
   };
 }

@@ -21,10 +21,8 @@ import {
 } from './domains/approvals/routes.js';
 import { applyStatePutWhitelist } from './hrms-state-put.js';
 import { registerPayrollDomainRoutes } from './domains/payroll/routes.js';
-import { hydrateStateFromAuthoritativeTables } from './domains/payroll/service.js';
 import { registerEmployeesDomainRoutes } from './domains/employees/routes.js';
 import {
-  hydrateEmployeesFromTable,
   upsertEmployeeFromStateShape,
   upsertEmployeesFromStateShape,
   loadEmployeesFromTable,
@@ -100,9 +98,6 @@ import { startSchemaMigrationDriftMonitor } from './schema-migration-drift-monit
 import { startProcessHealthMonitor } from './domains/health/process-health-monitor.js';
 import { createHttpAccessLogger, logger } from './utils/logger.js';
 import { registerFlowConfigRoutes } from './domains/flow-config/routes.js';
-import { hydrateFlowConfigFromTable } from './domains/flow-config/service.js';
-import { hydrateNotificationsFromTable } from './domains/notifications/service.js';
-import { hydrateExamResultsFromTable } from './domains/exam-results/service.js';
 import {
   registerStoresDomainRoutes,
   registerStoresCrudRoutes,
@@ -162,6 +157,7 @@ import { registerWebStaticRoutes } from './domains/health/web-static.js';
 import { createEnsureUploadsDir } from './domains/uploads/ensure-dir.js';
 import { createFeishuBitableHelpers } from './domains/feishu-bitable/create-helpers.js';
 import { createInventoryForecastHelpers } from './domains/inventory-forecast/create-helpers.js';
+import { syncInventoryForecastStateToTables } from './domains/inventory-forecast/table-service.js';
 import { createLeaveAttendanceHelpers } from './domains/leave-attendance/create-helpers.js';
 import { createAttendanceMirrorHelpers } from './domains/leave-attendance/attendance-mirror.js';
 import {
@@ -552,6 +548,7 @@ let _getSharedStateImpl = null;
 let _saveSharedStateImpl = null;
 let _mergeSharedStateFieldsImpl = null;
 let _removeEmployeesFromSharedStateImpl = null;
+let _invalidateSharedStateCacheImpl = null;
 async function getSharedState(tenantId) {
   if (!_getSharedStateImpl) throw new Error('getSharedState_not_ready');
   return _getSharedStateImpl(tenantId);
@@ -567,6 +564,9 @@ async function mergeSharedStateFields(patches, arrayIdFields, tenantId) {
 async function removeEmployeesFromSharedState(usernames, tenantId) {
   if (!_removeEmployeesFromSharedStateImpl) throw new Error('removeEmployeesFromSharedState_not_ready');
   return _removeEmployeesFromSharedStateImpl(usernames, tenantId);
+}
+function invalidateSharedStateCache(tenantId) {
+  if (_invalidateSharedStateCacheImpl) _invalidateSharedStateCacheImpl(tenantId);
 }
 
 // Wave H31: hrms_state snapshot → domains/shared/hrms-state-snapshot.js
@@ -777,11 +777,11 @@ const {
   systemAlertTitle,
 } = createNotificationsHelpers({
   pool,
-  mergeSharedStateFields,
   resolveTenantIdDefault,
   hrmsNowISO, // Wave H18: imported from domains/shared/time-number.js
   sendLarkMessage,
   lookupFeishuUserByUsername,
+  invalidateSharedStateCache,
 });
 
 // Wave H29: payroll/leave domain dual-write → domains/payroll/domain-sync.js
@@ -999,6 +999,8 @@ const leaveAttendanceHelpers = createLeaveAttendanceHelpers({
   pool,
   getSharedState,
   mergeSharedStateFields,
+  resolveTenantIdDefault,
+  invalidateSharedStateCache,
   safeDateOnly,
   safeMonthOnly,
   isLegacyTestUsername,
@@ -1014,6 +1016,7 @@ registerCheckinRoutes(app, {
   authRequired,
   getSharedState,
   mergeSharedStateFields,
+  invalidateSharedStateCache,
   safeDateOnly,
   loadActiveDutyRowsForUser,
   pickMyStoreFromState,
@@ -1083,7 +1086,8 @@ registerDailyReportsRoutes(app, {
   pool,
   authRequired,
   getSharedState,
-  mergeSharedStateFields,
+  appendNotifications,
+  invalidateSharedStateCache,
   safeDateOnly,
   stateFindUserRecord,
   expandAgentStoreLabels,
@@ -1114,6 +1118,8 @@ registerInventoryForecastRoutes(app, {
   safeNumber,
   inDateRange,
   hrmsNowISO,
+  syncInventoryForecastStateToTables: (state) =>
+    syncInventoryForecastStateToTables(pool, resolveTenantIdDefault(), state),
   ...forecastHelpers,
 });
 
@@ -1122,6 +1128,7 @@ registerReportsRoutes(app, {
   authRequired,
   getSharedState,
   mergeSharedStateFields,
+  invalidateSharedStateCache,
   safeDateOnly,
   safeMonthOnly,
   parseMonth,
@@ -1227,6 +1234,7 @@ const {
   _saveSharedStateImpl = stateStore.saveSharedState;
   _mergeSharedStateFieldsImpl = stateStore.mergeSharedStateFields;
   _removeEmployeesFromSharedStateImpl = stateStore.removeEmployeesFromSharedState;
+  _invalidateSharedStateCacheImpl = stateStore.invalidateSharedStateCache;
 }
 
 // Wave H22: state client-shaping → domains/shared/state-client-shaping.js
@@ -1241,16 +1249,13 @@ const {
 });
 
 // Wave H34: GET/PUT /api/state → domains/hrms-state/routes.js
+// 权威字段 hydrate 已收口进 getSharedState()；本路由不再注入 5 个 hydrate*
 registerStateRoutes(app, authRequired, {
   pool,
   getSharedState,
   resolveTenantIdDefault,
   deepRepairGarbledStrings,
-  hydrateStateFromAuthoritativeTables,
-  hydrateEmployeesFromTable,
-  hydrateFlowConfigFromTable,
-  hydrateNotificationsFromTable,
-  hydrateExamResultsFromTable,
+  invalidateSharedStateCache,
   stripPasswordFieldsFromStateForClient,
   applyStatePeopleVisibilityForRole,
   applyStatePutWhitelist,
@@ -1364,6 +1369,7 @@ const applicationRouteDeps = createApplicationRouteDeps({
   hrmsNowISO,
   inferBrandFromStoreName,
   insertSalaryTimeline,
+  invalidateSharedStateCache,
   isInactiveStatus,
   isKitchenByRoleOrPosition,
   isWebhookEnabled,
@@ -1532,6 +1538,7 @@ const { beatHeartbeat, startListenMonitors } = createListenMonitors({
   tenantContext,
   getSharedState,
   mergeSharedStateFields,
+  invalidateSharedStateCache,
   purgeExpiredCache,
   sendAdminSystemAlert,
   upsertLeaveDomainFromState,

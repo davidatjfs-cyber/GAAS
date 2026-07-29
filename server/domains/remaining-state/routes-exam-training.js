@@ -5,6 +5,7 @@ import {
   withMirrorWriteTx,
 } from '../shared/mirror-tx.js';
 import { requireRemainingStateAdmin } from './routes-announcements.js';
+import { loadQuestionSetsFromTable, saveQuestionSetsToTable } from './question-sets-service.js';
 
 const log = childLogger({ domain: 'remaining-state', handler: 'routes-exam-training' });
 
@@ -14,15 +15,20 @@ const log = childLogger({ domain: 'remaining-state', handler: 'routes-exam-train
  * @param {{ pool: any, getSharedState: Function, resolveTenantId: Function }} deps
  */
 export function registerRemainingStateExamTrainingRoutes(app, authRequired, deps) {
-  const { pool, getSharedState, resolveTenantId } = deps;
+  const { pool, getSharedState, resolveTenantId, invalidateSharedStateCache } = deps;
 
   app.get('/api/exam/question-bank', authRequired, async (req, res) => {
     try {
       const tid = resolveTenantId(req);
       const state = (await getSharedState(tid)) || {};
+      let questionSets = Array.isArray(state.questionSets) ? state.questionSets : [];
+      try {
+        const fromTable = await loadQuestionSetsFromTable(pool, tid);
+        if (fromTable.length) questionSets = fromTable;
+      } catch (_) { /* 表未迁移时回落 state */ }
       return res.json({
         questionBank: Array.isArray(state.questionBank) ? state.questionBank : [],
-        questionSets: Array.isArray(state.questionSets) ? state.questionSets : [],
+        questionSets,
       });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error' });
@@ -36,8 +42,10 @@ export function registerRemainingStateExamTrainingRoutes(app, authRequired, deps
       const questionBank = Array.isArray(req.body?.questionBank) ? req.body.questionBank : [];
       const questionSets = Array.isArray(req.body?.questionSets) ? req.body.questionSets : [];
       await withMirrorWriteTx(pool, async (client) => {
-        await patchHrmsStateFieldsOnClient(client, tid, { questionBank, questionSets });
+        await patchHrmsStateFieldsOnClient(client, tid, { questionBank });
+        await saveQuestionSetsToTable(client, tid, questionSets);
       });
+      if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
       return res.json({ ok: true, questionBank, questionSets });
     } catch (e) {
       log.error({ msg: 'put_api_exam_question_bank', request_id: req.requestId, err: e?.message || e });
