@@ -39,15 +39,14 @@ export function registerStateRoutes(app, authRequired, deps) {
       if (!row) return res.status(404).json({ error: 'not_found' });
       const data = row.data;
       // Auto-repair garbled UTF-8 strings and persist if changed
-      const repaired = deepRepairGarbledStrings(data);
-      const origJson = JSON.stringify(data);
-      const repairedJson = JSON.stringify(repaired);
-      if (origJson !== repairedJson) {
+      const repairStats = { changed: false };
+      const repaired = deepRepairGarbledStrings(data, repairStats);
+      if (repairStats.changed) {
         log.info({ msg: 'state_utf8_auto_repaired', tenant_id: tenantIdQ, request_id: requestId });
         try {
           await pool.query(
             `update hrms_state set data = $1::jsonb, updated_at = now() where key = $2`,
-            [repairedJson, tenantIdQ]
+            [JSON.stringify(repaired), tenantIdQ]
           );
         } catch (saveErr) {
           log.error({ msg: 'state_utf8_repair_persist_failed', err: String(saveErr?.message || saveErr) });

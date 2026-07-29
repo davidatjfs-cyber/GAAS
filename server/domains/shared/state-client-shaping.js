@@ -20,16 +20,40 @@ export function repairGarbledUtf8(str) {
   return str;
 }
 
-export function deepRepairGarbledStrings(obj) {
+/**
+ * GET /api/state 每次都会跑这个函数：hrms_state.default 的 JSON 已到几 MB，之前无论有没有
+ * 乱码都会把整棵树深拷贝一遍，调用方还要再对拷贝前后各 JSON.stringify 一次做变更检测——
+ * 三次全量遍历/序列化叠在一起是 2026-07-29 排查全站变慢时发现的另一个主因。
+ * 现在按分支做结构共享：某个节点下没有任何字符串被修复时直接返回原引用，不新建对象/数组，
+ * 调用方用可选的 stats.changed 判断是否需要持久化，不用再对整棵树做 stringify 比较。
+ * 下游 hydrate 系列/strip 系列都会先 { ...state } 浅拷贝再改，不会就地修改传入对象，返回原引用是安全的。
+ */
+export function deepRepairGarbledStrings(obj, stats) {
   if (obj === null || obj === undefined) return obj;
-  if (typeof obj === 'string') return repairGarbledUtf8(obj);
-  if (Array.isArray(obj)) return obj.map(deepRepairGarbledStrings);
+  if (typeof obj === 'string') {
+    const fixed = repairGarbledUtf8(obj);
+    if (fixed !== obj && stats) stats.changed = true;
+    return fixed;
+  }
+  if (Array.isArray(obj)) {
+    let changed = false;
+    const out = obj.map((item) => {
+      const r = deepRepairGarbledStrings(item, stats);
+      if (r !== item) changed = true;
+      return r;
+    });
+    return changed ? out : obj;
+  }
   if (typeof obj === 'object') {
+    let changed = false;
     const out = {};
     for (const k of Object.keys(obj)) {
-      out[repairGarbledUtf8(k)] = deepRepairGarbledStrings(obj[k]);
+      const rk = repairGarbledUtf8(k);
+      const rv = deepRepairGarbledStrings(obj[k], stats);
+      if (rk !== k || rv !== obj[k]) changed = true;
+      out[rk] = rv;
     }
-    return out;
+    return changed ? out : obj;
   }
   return obj;
 }

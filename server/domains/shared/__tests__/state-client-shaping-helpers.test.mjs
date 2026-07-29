@@ -37,6 +37,26 @@ test('deepRepairGarbledStrings repairs nested object/array', () => {
   assert.equal(out.ok, 'ascii');
 });
 
+test('deepRepairGarbledStrings sets stats.changed and reports it via param', () => {
+  const key = Buffer.from('店名', 'utf8').toString('latin1');
+  const val = Buffer.from('洪潮', 'utf8').toString('latin1');
+  const stats = { changed: false };
+  deepRepairGarbledStrings({ [key]: val }, stats);
+  assert.equal(stats.changed, true);
+});
+
+// GET /api/state 依赖"没有乱码时返回同一个对象引用"来跳过整棵树的 JSON.stringify 比较，
+// 这里锁定这个行为，避免以后有人改回"总是深拷贝"又引入那次排查过的全站变慢。
+test('deepRepairGarbledStrings returns the same reference when nothing needs repair', () => {
+  const input = { ok: 'ascii', nested: { a: 1, list: [1, 2, { b: 'clean' }] } };
+  const stats = { changed: false };
+  const out = deepRepairGarbledStrings(input, stats);
+  assert.strictEqual(out, input);
+  assert.strictEqual(out.nested, input.nested);
+  assert.strictEqual(out.nested.list, input.nested.list);
+  assert.equal(stats.changed, false);
+});
+
 test('hrmsNormStoreName collapses spaces', () => {
   assert.equal(hrmsNormStoreName('  洪潮  店  '), '洪潮 店');
   assert.equal(hrmsNormStoreName('A\t\tB'), 'A B');
