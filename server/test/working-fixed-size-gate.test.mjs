@@ -113,8 +113,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 'workspace'）——但 wsRemoveNavItem 这个函数在合并 15-workspace.js 时已经被删掉了（连着
  * 那份未完成的壳一起丢弃），导致调用点在调用一个不存在的函数、什么都不做，侧栏"工作台"
  * 入口消失。改回调用 wsInjectNavItem()，'workspace' 加回白名单。
+ * 2026-07-29 第二十次上调（70663→70687）：生产实测发现的多处真实bug修复——任务栏加
+ * source/category白名单过滤（去掉growth_monitor营销/data_auditor审计等噪音）、
+ * 本周本月环比改成跟上周上月"同样长度区间"对齐（之前拿本月未过完天数比上月整月）、
+ * 实收目标改成往前找最近已配置period(不再要求当月精确匹配)、人效排名取整数、门店下拉框
+ * 改用真实门店台账而不是master_tasks里的脏文本、新增GET /api/notifications真实列表接口
+ * 接入"通知"tab（之前只有未读数没有列表）。
  */
-const MAX_LINES = 70663;
+const MAX_LINES = 70687;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
