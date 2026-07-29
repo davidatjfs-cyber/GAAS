@@ -111,8 +111,10 @@ test('leave.beforeUpdate no-op for non-leave type', async () => {
 });
 
 test('leave.afterDecide approved pushes record, pool insert, leave_result notification', async () => {
+  const invalidated = [];
   const { deps, notifs, queries } = makeDeps({
     state: { leaveRecords: [{ id: 'old' }] },
+    depsExtra: { invalidateSharedStateCache: (tid) => invalidated.push(tid) },
   });
   let getStateCalls = 0;
   deps.getSharedState = async () => {
@@ -142,6 +144,7 @@ test('leave.afterDecide approved pushes record, pool insert, leave_result notifi
   assert.ok(notifs.every((n) => n.meta?.type === 'leave_result'));
   assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
   assert.match(notifs[0].msg, /已经审批通过/);
+  assert.deepEqual(invalidated, ['default']);
 });
 
 test('leave.afterDecide rejected sends 未通过 leave_result without pool insert', async () => {
