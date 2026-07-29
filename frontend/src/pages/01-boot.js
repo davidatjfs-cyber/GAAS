@@ -996,8 +996,28 @@
                 const url = (this.baseUrl() || '') + rel;
                 const headers = { ...(opts.headers || {}) };
                 if (token) headers['Authorization'] = 'Bearer ' + token;
-                const { skipAuth: _hrmsSkipAuth, ...fetchOpts } = opts;
-                const resp = await fetch(url, { ...fetchOpts, headers });
+                const { skipAuth: _hrmsSkipAuth, timeoutMs, ...fetchOpts } = opts;
+                // timeoutMs 是 opt-in：默认 fetch 无超时会导致后端卡住时前端无限等待。
+                let __hrmsTimeoutId = null;
+                if (timeoutMs > 0 && typeof AbortController !== 'undefined' && !fetchOpts.signal) {
+                    const controller = new AbortController();
+                    fetchOpts.signal = controller.signal;
+                    __hrmsTimeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                }
+                let resp;
+                try {
+                    resp = await fetch(url, { ...fetchOpts, headers });
+                } catch (e) {
+                    if (e?.name === 'AbortError') {
+                        const err = new Error('请求超时，请检查网络后重试');
+                        err.status = 0;
+                        err.timeout = true;
+                        throw err;
+                    }
+                    throw e;
+                } finally {
+                    if (__hrmsTimeoutId) clearTimeout(__hrmsTimeoutId);
+                }
                 const text = await resp.text();
                 const data = hrmsSafeParseJson(text) || { raw: text };
                 if (!resp.ok) {
@@ -1823,7 +1843,8 @@
                 return this.request('/api/checkin', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload || {})
+                    body: JSON.stringify(payload || {}),
+                    timeoutMs: 20000
                 });
             },
             async getCheckinToday() {
