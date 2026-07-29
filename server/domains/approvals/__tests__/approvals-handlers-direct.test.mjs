@@ -876,7 +876,7 @@ test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定�
   // 成功路径：users 失败不阻断飞书/定薪；有 open_id；有店长
   {
     const timeline = [];
-    const { deps, merges, queries, notifs } = makeDeps({
+    const { deps, queries, notifs } = makeDeps({
       state: {
         employees: [
           { username: 'sm1', store: '测试店', role: 'store_manager', name: '店长' },

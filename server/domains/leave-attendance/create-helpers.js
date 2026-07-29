@@ -13,7 +13,6 @@ import { createCloseSnapshotHelpers } from './close-snapshot.js';
 export function createLeaveAttendanceHelpers({
   pool,
   getSharedState,
-  mergeSharedStateFields,
   resolveTenantIdDefault,
   invalidateSharedStateCache,
   safeDateOnly,
