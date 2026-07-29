@@ -10,16 +10,43 @@ import { bindReportsRuntimeDeps } from '../helpers.js';
 const NOW = '2026-07-24T12:00:00+08:00';
 
 function makePool(handlers = {}) {
+  // upsertPayrollDomain 走 pool.connect() 的事务锁合并（SELECT ... FOR UPDATE + UPDATE），
+  // 这里给个通用的最小实现：默认表里没有行（走一次 insert-empty-then-retry），第二轮
+  // SELECT 返回空字段的行，UPDATE 直接成功——够用来验证 auditPayrollMonth/adjustPayrollRow
+  // 的返回值和 payload 内容，不需要真的落库。
+  let selectCount = 0;
   return {
     query: async (sql, params) => {
       if (handlers.query) return handlers.query(sql, params);
       return { rows: [] };
     },
+    connect: handlers.connect || (async () => ({
+      query: async (sql) => {
+        const s = String(sql);
+        if (/^\s*(BEGIN|COMMIT|ROLLBACK)/i.test(s)) return {};
+        if (/SELECT[\s\S]*FROM hrms_payroll_domain[\s\S]*FOR UPDATE/i.test(s)) {
+          selectCount += 1;
+          if (selectCount === 1) return { rows: [] };
+          return {
+            rows: [{
+              payroll_adjustments: {},
+              payroll_audits: {},
+              salary_adjustments: [],
+              monthly_confirmations: [],
+              updated_at: 'ts1',
+            }],
+          };
+        }
+        if (/INSERT INTO hrms_payroll_domain/i.test(s)) return {};
+        if (/UPDATE hrms_payroll_domain/i.test(s)) return { rowCount: 1 };
+        return { rows: [] };
+      },
+      release() {},
+    })),
   };
 }
 
 function baseCtx(overrides = {}) {
-  const merges = [];
   const pool = overrides.pool || makePool();
   bindReportsRuntimeDeps({
     pool,
@@ -34,9 +61,6 @@ function baseCtx(overrides = {}) {
   const ctx = {
     pool,
     getSharedState: async () => overrides.state || {},
-    mergeSharedStateFields: async (patch) => {
-      merges.push(patch);
-    },
     pickMyStoreFromState: () => overrides.myStore || '',
     stateFindUserRecord: () => null,
     dbListEmployeesForReports: async () => overrides.dbEmployees || [],
@@ -61,7 +85,7 @@ function baseCtx(overrides = {}) {
     upsertPayrollLedgerEntry: overrides.upsertPayrollLedgerEntry || (async () => {}),
     ...overrides.ctxExtra,
   };
-  return { ctx, merges };
+  return { ctx };
 }
 
 test('getPayrollReportPayload: closed_loop success → engine closed_loop_v1', async () => {
@@ -170,8 +194,8 @@ test('auditPayrollMonth: missing month', async () => {
   assert.equal(result.status, 400);
 });
 
-test('auditPayrollMonth: writes payrollAudits via mergeSharedStateFields', async () => {
-  const { ctx, merges } = baseCtx({
+test('auditPayrollMonth: writes payrollAudits via upsertPayrollDomain', async () => {
+  const { ctx } = baseCtx({
     state: { payrollAudits: {} },
   });
 
@@ -186,9 +210,6 @@ test('auditPayrollMonth: writes payrollAudits via mergeSharedStateFields', async
   assert.equal(result.audit.audited, true);
   assert.equal(result.audit.auditedBy, 'boss');
   assert.equal(result.audit.auditedAt, NOW);
-  assert.equal(merges.length, 1);
-  assert.ok(merges[0].payrollAudits);
-  assert.equal(merges[0].payrollAudits['2026-07||测试店'].auditedBy, 'boss');
 });
 
 test('adjustPayrollRow: missing_adjustment when neither subsidy nor baseAmount', async () => {
@@ -466,7 +487,7 @@ test('auditPayrollMonth / adjustPayrollRow：校验与成功写账本', async ()
   assert.equal((await auditPayrollMonth(c1, { month: '2026-07', username: '' })).error, 'missing_user');
 
   const ledgerCalls = [];
-  const { ctx, merges } = baseCtx({
+  const { ctx } = baseCtx({
     state: { payrollAdjustments: {} },
     upsertPayrollLedgerEntry: async (payload) => {
       ledgerCalls.push(payload);
@@ -486,7 +507,6 @@ test('auditPayrollMonth / adjustPayrollRow：校验与成功写账本', async ()
   assert.equal(adj.ok, true);
   assert.equal(adj.item.subsidy, 80);
   assert.equal(adj.item.baseAmount, 1200);
-  assert.equal(merges.length, 1);
   assert.equal(ledgerCalls.length, 1);
   assert.equal(ledgerCalls[0].entryType, 'manual_subsidy');
   assert.equal(ledgerCalls[0].amount, 80);
@@ -566,7 +586,7 @@ test('getPayrollReportPayload: closed_loop 仅 users + leave 汇总；adjust led
   assert.equal(r.ok, true);
   assert.equal(r.payload.rows[0].username, 'uOnly');
 
-  const { ctx: adjCtx, merges } = baseCtx({
+  const { ctx: adjCtx } = baseCtx({
     state: {},
     upsertPayrollLedgerEntry: async () => {
       throw new Error('ledger_boom');
@@ -580,7 +600,6 @@ test('getPayrollReportPayload: closed_loop 仅 users + leave 汇总；adjust led
     username: 'boss',
   });
   assert.equal(adj.ok, true);
-  assert.equal(merges.length, 1);
 });
 
 test('getPayrollReportPayload: legacy 空 state 走 db 员工 + users 合并', async () => {
@@ -636,7 +655,13 @@ test('getPayrollReportPayload / audit / adjust：顶层 500', async () => {
   assert.equal(r1.ok, false);
   assert.equal(r1.status, 500);
 
-  const r2 = await auditPayrollMonth(ctx, {
+  // auditPayrollMonth/adjustPayrollRow 现在直接走 pool（不再依赖 getSharedState），
+  // 用 pool.connect() 抛错来模拟它们真正会失败的路径。
+  const { ctx: dbDownCtx } = baseCtx({
+    pool: { ...makePool(), connect: async () => { throw new Error('db_boom'); } },
+  });
+
+  const r2 = await auditPayrollMonth(dbDownCtx, {
     month: '2026-07',
     store: '洪潮',
     username: 'boss',
@@ -644,7 +669,7 @@ test('getPayrollReportPayload / audit / adjust：顶层 500', async () => {
   });
   assert.equal(r2.status, 500);
 
-  const r3 = await adjustPayrollRow(ctx, {
+  const r3 = await adjustPayrollRow(dbDownCtx, {
     month: '2026-07',
     store: '洪潮',
     targetUsername: 'alice',

@@ -109,7 +109,7 @@ registerApprovalDecideRoutes(app, authRequired, {
 
 export function registerOperationsDomainRoutes(deps) {
   const {
-    registerPayrollDomainRoutes, registerEmployeesDomainRoutes, createMirrorReconcileScheduler, registerFlowConfigRoutes, registerStoresDomainRoutes, registerStoresCrudRoutes, registerBrandsRoutes, registerPaymentConfigRoutes, registerPaymentRoutes, registerPermissionGroupsRoutes, registerUploadRoutes, registerOpsTasksRoutes, registerStoreDutyBindingsRoutes, registerReadsRoutes, registerAttentionScoresRoutes, registerAnnouncementExtraRoutes, registerNotificationsWriteRoutes, app, authRequired, pool, resolveTenantIdDefault, applyHrmsUserAccountGateFromEmployee, upload, recordUploadOwnership, uploadsDir, getActiveTenantIds, notifyAdminsDualWriteFailure, reconcileEmployeesMirrorAllTenants, reconcileFlowConfigMirrorAllTenants, checkStateOnlyDomainsIntegrityAllTenants, getSharedState, saveSharedState, getCreditRisk, hrmsNowISO, normalizeBrandId, getBrandsFromState, safeMonthOnly, safeDateOnly, safeUuid, safeNumber, mergeSharedStateFields, normalizeOpsRole, buildOpsFeedback, stateFindUserRecord, dbFindEmployeeRecord, employeeAccountShouldDisable
+    registerPayrollDomainRoutes, registerEmployeesDomainRoutes, createMirrorReconcileScheduler, registerFlowConfigRoutes, registerStoresDomainRoutes, registerStoresCrudRoutes, registerBrandsRoutes, registerPaymentConfigRoutes, registerPaymentRoutes, registerPermissionGroupsRoutes, registerUploadRoutes, registerOpsTasksRoutes, registerStoreDutyBindingsRoutes, registerReadsRoutes, registerAttentionScoresRoutes, registerAnnouncementExtraRoutes, registerNotificationsWriteRoutes, app, authRequired, pool, resolveTenantIdDefault, applyHrmsUserAccountGateFromEmployee, upload, recordUploadOwnership, uploadsDir, getActiveTenantIds, notifyAdminsDualWriteFailure, reconcileEmployeesMirrorAllTenants, reconcileFlowConfigMirrorAllTenants, checkStateOnlyDomainsIntegrityAllTenants, getSharedState, saveSharedState, invalidateSharedStateCache, getCreditRisk, hrmsNowISO, normalizeBrandId, getBrandsFromState, safeMonthOnly, safeDateOnly, safeUuid, safeNumber, mergeSharedStateFields, normalizeOpsRole, buildOpsFeedback, stateFindUserRecord, dbFindEmployeeRecord, employeeAccountShouldDisable
   } = deps;
 
 registerPayrollDomainRoutes(app, authRequired, {
@@ -144,6 +144,7 @@ registerFlowConfigRoutes(app, authRequired, {
   pool,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
   getSharedState,
+  invalidateSharedStateCache,
 });
 
 registerStoresDomainRoutes(app, authRequired, {
@@ -238,7 +239,7 @@ registerNotificationsWriteRoutes(app, authRequired, {
 
 export function registerIntegrationDomainRoutes(deps) {
   const {
-    registerBirthdayRoutes, registerExamResultsRoutes, registerTenantSettingsRoutes, registerUsageWeeklyRoutes, registerWecomCallbackRoutes, registerPromotionTracksRoutes, registerBitableSyncRoutes, registerRagRoutes, registerFeishuSyncRoutes, registerBitableAdminRoutes, registerPerfAdminRoutes, registerMetricsAdminRoutes, registerDedupRoutes, registerAdminOpsRoutes, registerDiagnosisFeedbackRoutes, registerAgentDataRoutes, registerFeishuWebhookRoutes, app, authRequired, getSharedState, saveSharedState, isInactiveStatus, employeeAccountShouldDisable, addStateNotification, makeNotif, hrmsNowISO, pickAdminUsername, pickHrManagerUsername, stateFindUserRecord, pool, axios, getAgentsServiceBaseUrl, getAgentsServiceAdminToken, getPromotionTrackProgress, ragStats, ragQuery, ragMultiQuery, safeErrMessage, getFeishuAccessToken, getFeishuBitableData, findConfigKeyByTableInfo, upsertFeishuGenericRecord, mapFeishuFieldToHrms, upsertTableVisitRecordFromMapped, notifyAdminsDualWriteFailure, syncDishLibraryCosts, syncSopSteps, lookupFeishuUserByUsername, sendLarkMessage, getBitableSubmissionStats, archiveOldBitableSubmissions, getLastCompletedWeekRangeShanghai, sendWeeklyDishOptimizationReport, updateMetricVersion, canAccessDailyAttendanceRegister, safeDateOnly, safeMonthOnly, backfillDailyAttendanceRegisterMissing, leaveAttendanceHelpers, runSalesRawFolderImportOnce, normalizeRoleForJwt, loadEmployeesFromTable, sendAdminSystemAlert, recordAiFeedback, createFeishuBitableRecord, express, isWebhookEnabled, tryParseJson, verifyFeishuWebhookRequest, requireWebhookSignature, decryptFeishuEncryptPayload, resolveWebhookTenantId, tenantContext, randomUUID, onFeishuEvent, resolveTenantIdDefault, loadTenantFeishuBitableConfig, getFeishuTokenByConfig
+    registerBirthdayRoutes, registerExamResultsRoutes, registerTenantSettingsRoutes, registerUsageWeeklyRoutes, registerWecomCallbackRoutes, registerPromotionTracksRoutes, registerBitableSyncRoutes, registerRagRoutes, registerFeishuSyncRoutes, registerBitableAdminRoutes, registerPerfAdminRoutes, registerMetricsAdminRoutes, registerDedupRoutes, registerAdminOpsRoutes, registerDiagnosisFeedbackRoutes, registerAgentDataRoutes, registerFeishuWebhookRoutes, app, authRequired, getSharedState, saveSharedState, invalidateSharedStateCache, isInactiveStatus, employeeAccountShouldDisable, addStateNotification, makeNotif, hrmsNowISO, pickAdminUsername, pickHrManagerUsername, stateFindUserRecord, pool, axios, getAgentsServiceBaseUrl, getAgentsServiceAdminToken, getPromotionTrackProgress, ragStats, ragQuery, ragMultiQuery, safeErrMessage, getFeishuAccessToken, getFeishuBitableData, findConfigKeyByTableInfo, upsertFeishuGenericRecord, mapFeishuFieldToHrms, upsertTableVisitRecordFromMapped, notifyAdminsDualWriteFailure, syncDishLibraryCosts, syncSopSteps, lookupFeishuUserByUsername, sendLarkMessage, getBitableSubmissionStats, archiveOldBitableSubmissions, getLastCompletedWeekRangeShanghai, sendWeeklyDishOptimizationReport, updateMetricVersion, canAccessDailyAttendanceRegister, safeDateOnly, safeMonthOnly, backfillDailyAttendanceRegisterMissing, leaveAttendanceHelpers, runSalesRawFolderImportOnce, normalizeRoleForJwt, loadEmployeesFromTable, sendAdminSystemAlert, recordAiFeedback, createFeishuBitableRecord, express, isWebhookEnabled, tryParseJson, verifyFeishuWebhookRequest, requireWebhookSignature, decryptFeishuEncryptPayload, resolveWebhookTenantId, tenantContext, randomUUID, onFeishuEvent, resolveTenantIdDefault, loadTenantFeishuBitableConfig, getFeishuTokenByConfig
   } = deps;
 
 registerBirthdayRoutes(app, authRequired, {
@@ -254,7 +255,7 @@ registerBirthdayRoutes(app, authRequired, {
   stateFindUserRecord,
 });
 
-registerExamResultsRoutes(app, authRequired, { pool });
+registerExamResultsRoutes(app, authRequired, { pool, invalidateSharedStateCache });
 
 registerTenantSettingsRoutes(app, authRequired, {
   axios,
@@ -375,12 +376,13 @@ registerFeishuWebhookRoutes(app, {
 
 export function registerLegacyDomainRoutes(deps) {
   const {
-    registerRemainingStateRoutes, registerGmMailboxRoutes, registerAgentDataCenterRoutes, registerAgentOpsRoutes, registerAgentRecordsRoutes, registerAgentTriggersRoutes, registerAgentFeishuBotRoutes, registerAgentRoutes, registerAgentConfigRoutes, registerMasterRoutes, registerNewScoringRoutes, registerPerformanceInvalidationRoutes, registerHRMSApiRoutes, registerSOPDistributionRoutes, registerKitchenExecutionRoutes, registerRecipeRoutes, registerTrainingRoutes, registerUploadStatusRoute, app, authRequired, pool, getSharedState, resolveTenantIdDefault, saveSharedState, pickHqManagerUsername, pickAdminUsername, addStateNotification, makeNotif, uniqUsernames, hrmsNowISO, agentPool, getAgentPerformanceMetrics, cronJobLabelZh, runAgentEvalSuite, getScheduledTaskStatus, clearAgentCache, getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, calculateStoreRating, registerFeishuUser, runDataAuditor, pushIssuesToFeishu, syncDataAuditorIssuesToMasterTasks, runChiefEvaluator, pushScoresToFeishu, sendLarkMessage, callVisionLLM, callLLM, verifyLLMHealth, getLarkTenantToken, routeMessage, onFeishuEvent, upload, uploadsDir, ensureUploadsDir, recordUploadOwnership, trainingPracticeUpload, fileRoutes
+    registerRemainingStateRoutes, registerGmMailboxRoutes, registerAgentDataCenterRoutes, registerAgentOpsRoutes, registerAgentRecordsRoutes, registerAgentTriggersRoutes, registerAgentFeishuBotRoutes, registerAgentRoutes, registerAgentConfigRoutes, registerMasterRoutes, registerNewScoringRoutes, registerPerformanceInvalidationRoutes, registerHRMSApiRoutes, registerSOPDistributionRoutes, registerKitchenExecutionRoutes, registerRecipeRoutes, registerTrainingRoutes, registerUploadStatusRoute, app, authRequired, pool, getSharedState, invalidateSharedStateCache, resolveTenantIdDefault, saveSharedState, pickHqManagerUsername, pickAdminUsername, addStateNotification, makeNotif, uniqUsernames, hrmsNowISO, agentPool, getAgentPerformanceMetrics, cronJobLabelZh, runAgentEvalSuite, getScheduledTaskStatus, clearAgentCache, getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, calculateStoreRating, registerFeishuUser, runDataAuditor, pushIssuesToFeishu, syncDataAuditorIssuesToMasterTasks, runChiefEvaluator, pushScoresToFeishu, sendLarkMessage, callVisionLLM, callLLM, verifyLLMHealth, getLarkTenantToken, routeMessage, onFeishuEvent, upload, uploadsDir, ensureUploadsDir, recordUploadOwnership, trainingPracticeUpload, fileRoutes
   } = deps;
 
 registerRemainingStateRoutes(app, authRequired, {
   pool,
   getSharedState,
+  invalidateSharedStateCache,
   resolveTenantId: (req) => req.tenantId || req.user?.tenant_id || resolveTenantIdDefault(),
 });
 

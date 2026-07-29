@@ -7,7 +7,7 @@ const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 export function scheduleCriticalDataReconcile(deps) {
   const {
     pool, runForActiveTenants, runWithBootstrapTenantContext: _runWithBootstrapTenantContext, getSharedState,
-    mergeSharedStateFields, purgeExpiredCache: _purgeExpiredCache, upsertLeaveDomainFromState,
+    mergeSharedStateFields: _mergeSharedStateFields, purgeExpiredCache: _purgeExpiredCache, upsertLeaveDomainFromState,
     upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai,
     countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers: _leaveAttendanceHelpers, safeErrMessage: _safeErrMessage,
     allowSchemaChanges: _allowSchemaChanges, setIntervalFn = setInterval, setTimeoutFn: _setTimeoutFn = setTimeout,
@@ -15,7 +15,8 @@ export function scheduleCriticalDataReconcile(deps) {
     isPosSalesCheckWindow: _isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow: _isLeaveCumulativeSnapshotWindow,
     isPastMonthlyPerformanceCloseWindow,
     findMissingPosStores: _findMissingPosStores, expectedStoresFromState: _expectedStoresFromState,
-    dailyReportItemFromPgRow,
+    dailyReportItemFromPgRow: _dailyReportItemFromPgRow,
+    invalidateSharedStateCache,
     DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN: _DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN, filterStaleHeartbeats: _filterStaleHeartbeats,
     formatStaleHeartbeatDeadLabel: _formatStaleHeartbeatDeadLabel, staleHeartbeatDedupeKey: _staleHeartbeatDedupeKey,
   } = deps;
@@ -34,7 +35,7 @@ setIntervalFn(async () => {
       await beatHeartbeat('critical_data_reconcile');
       const stateNow = (await getSharedState(tenantId)) || {};
 
-    // 1) 营业日报：若 state 最新日期落后于表最新日期，则整段重建
+    // 1) 营业日报：表为权威，getSharedState 已 hydrate；blob 落后时只 invalidate，禁止再 jsonb_set 回灌 blob
     const drLatestR = await pool.query(`SELECT MAX(date)::text AS latest FROM daily_reports`);
     const drLatest = String(drLatestR.rows?.[0]?.latest || '').trim();
     const stateDrLatest = (Array.isArray(stateNow.dailyReports) ? stateNow.dailyReports : [])
@@ -43,60 +44,21 @@ setIntervalFn(async () => {
       .sort()
       .pop() || '';
     if (drLatest && drLatest > stateDrLatest) {
-      const pgAll = await pool.query(`
-        SELECT store, date, brand, actual_revenue, pre_discount_revenue, total_discount,
-               dine_orders, dine_revenue, dine_traffic, efficiency, labor_total,
-               actual_margin, gross_profit, dianping_rating, new_wechat_members, wechat_month_total,
-               private_room_uses, operational_anomaly_note, delivery_pre_revenue, delivery_actual,
-               delivery_orders, delivery_bad_reviews, budget, budget_rate, submitted, submitted_at, updated_at,
-               recharge_count, recharge_amount,
-               weather, segments, discount_dine, discount_delivery, categories, delivery_detail,
-               bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch
-        FROM daily_reports
-        ORDER BY date DESC
-      `);
-      const dbItems = pgAll.rows.map(row => dailyReportItemFromPgRow(row));
-      // 保留 state 中的草稿（DB 没有的行），避免直接覆写丢失
-      const existingArr = Array.isArray(stateNow.dailyReports) ? stateNow.dailyReports : [];
-      const dbKeySet = new Set(dbItems.map(x => `${x.date}|${x.store}`));
-      const stateOnlyItems = existingArr.filter(r => {
-        const k = `${String(r?.date || '').slice(0, 10)}|${String(r?.store || '').trim()}`;
-        return !dbKeySet.has(k);
-      });
-      const finalItems = [...dbItems, ...stateOnlyItems];
-      // 直接 UPDATE hrms_state 的 dailyReports 字段，不经过 mergeSharedStateFields（避免与用户提交抢乐观锁）
-      await pool.query(
-        `UPDATE hrms_state SET data = jsonb_set(COALESCE(data, '{}'), '{dailyReports}', $1::jsonb), updated_at = NOW() WHERE key = $2`,
-        [JSON.stringify(finalItems), tenantId]
-      );
-      await sendSystemAlert(`⚠️ [HRMS] 核心数据自愈：租户${tenantId} 营业日报 state 最新日期 ${stateDrLatest || '无'} 落后于表 ${drLatest}，已自动回灌。`);
+      if (typeof invalidateSharedStateCache === 'function') {
+        invalidateSharedStateCache(tenantId);
+      }
+      await sendSystemAlert(`⚠️ [HRMS] 核心数据：租户${tenantId} 营业日报 hydrate 视图最新日期 ${stateDrLatest || '无'} 落后于表 ${drLatest}，已刷新 state 缓存（不再回灌 blob）。`);
     }
 
-    // 2) 积分：若 point_records 数量大于 state.pointRecords，则自动重建
+    // 2) 积分：表为权威；数量落后时只 invalidate，禁止 merge 回灌 blob
     const prCountR = await pool.query(`SELECT COUNT(*)::int AS c FROM point_records`);
     const dbPrCount = Number(prCountR.rows?.[0]?.c || 0);
     const statePrCount = Array.isArray(stateNow.pointRecords) ? stateNow.pointRecords.length : 0;
     if (dbPrCount > statePrCount) {
-      const prRows = await pool.query(`
-        SELECT id::text, approval_id, username, name, store, item_name, reason, points, amount, approved_at, approved_by
-        FROM point_records
-        ORDER BY approved_at DESC NULLS LAST, created_at DESC
-      `);
-      const dbPrItems = prRows.rows.map(row => ({
-        id: row.id,
-        approvalId: row.approval_id || '',
-        username: row.username || '',
-        name: row.name || '',
-        store: row.store || '',
-        itemName: row.item_name || '',
-        reason: row.reason || '',
-        points: Number(row.points) || 0,
-        amount: Number(row.amount) || 0,
-        approvedAt: row.approved_at ? String(row.approved_at) : '',
-        approvedBy: row.approved_by || '',
-      }));
-      await mergeSharedStateFields({ pointRecords: dbPrItems }, { pointRecords: 'id' });
-      await sendSystemAlert(`⚠️ [HRMS] 核心数据自愈：积分记录 state=${statePrCount} 落后于表=${dbPrCount}，已自动回灌。`);
+      if (typeof invalidateSharedStateCache === 'function') {
+        invalidateSharedStateCache(tenantId);
+      }
+      await sendSystemAlert(`⚠️ [HRMS] 核心数据：积分记录 hydrate 视图=${statePrCount} 落后于表=${dbPrCount}，已刷新 state 缓存（不再回灌 blob）。`);
     }
 
     // 3) 绩效月结果：10 日关账窗口后，若应产出的月度绩效结果明显缺失，第一时间通知管理员。

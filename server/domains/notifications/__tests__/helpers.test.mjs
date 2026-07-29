@@ -7,6 +7,7 @@ function buildHelpers(overrides = {}) {
     merge: [],
     query: [],
     lark: [],
+    invalidate: [],
   };
   const helpers = createNotificationsHelpers({
     pool: {
@@ -15,9 +16,6 @@ function buildHelpers(overrides = {}) {
         return overrides.poolQueryResult ?? { rows: [] };
       },
     },
-    mergeSharedStateFields: async (...args) => {
-      calls.merge.push(args);
-    },
     resolveTenantIdDefault: () => 'default',
     hrmsNowISO: () => '2026-07-24T12:00:00+08:00',
     sendLarkMessage: async (...args) => {
@@ -25,6 +23,9 @@ function buildHelpers(overrides = {}) {
       return { ok: true };
     },
     lookupFeishuUserByUsername: async () => null,
+    invalidateSharedStateCache: (...args) => {
+      calls.invalidate.push(args);
+    },
     ...overrides,
   });
   return { helpers, calls };
@@ -67,11 +68,26 @@ test('systemAlertTitle takes first line, truncates', () => {
   assert.equal(helpers.systemAlertTitle(''), 'HRMS 系统告警');
 });
 
-test('appendNotifications([]) no-op (mergeSharedStateFields not called)', async () => {
+test('appendNotifications([]) no-op (insert not called)', async () => {
   const { helpers, calls } = buildHelpers();
   await helpers.appendNotifications([]);
-  assert.equal(calls.merge.length, 0);
+  assert.equal(calls.query.length, 0);
   await helpers.appendNotifications(null);
+  assert.equal(calls.query.length, 0);
+});
+
+test('appendNotifications with one notif calls pool.query INSERT', async () => {
+  const { helpers, calls } = buildHelpers();
+  await helpers.appendNotifications([
+    {
+      targetUser: 'bob',
+      title: 'Hi',
+      message: 'body',
+      type: 'system_notice',
+    },
+  ]);
+  assert.equal(calls.query.length, 1);
+  assert.match(String(calls.query[0][0]), /INSERT INTO hrms_user_notifications/);
   assert.equal(calls.merge.length, 0);
 });
 

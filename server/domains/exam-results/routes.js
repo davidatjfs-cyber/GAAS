@@ -5,10 +5,10 @@
 /**
  * @param {import('express').Express} app
  * @param {(req,res,next)=>void} authRequired
- * @param {{ pool: import('pg').Pool }} deps
+ * @param {{ pool: import('pg').Pool, invalidateSharedStateCache?: (tenantId?: string)=>void }} deps
  */
 export function registerExamResultsRoutes(app, authRequired, deps) {
-  const { pool } = deps;
+  const { pool, invalidateSharedStateCache } = deps;
 
   app.get('/api/exam-results', authRequired, async (req, res) => {
     const role = String(req.user?.role || '').trim();
@@ -61,6 +61,7 @@ export function registerExamResultsRoutes(app, authRequired, deps) {
     }
 
     try {
+      const tid = req.tenantId || req.user?.tenant_id || 'default';
       const r = await pool.query(
         `insert into exam_results (assignment_id, user_key, started_at, submitted_at, time_used_seconds, auto_submitted, set_index, total, correct, score, answers, tenant_id)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -77,9 +78,10 @@ export function registerExamResultsRoutes(app, authRequired, deps) {
           Number.isFinite(correct) ? Math.max(0, Math.floor(correct)) : null,
           Number.isFinite(score) ? Math.max(0, Math.floor(score)) : null,
           JSON.stringify(answers || []),
-          req.tenantId || req.user?.tenant_id || 'default'
+          tid
         ]
       );
+      if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
       return res.json({ item: r.rows?.[0] || null });
     } catch (e) {
       return res.status(500).json({ error: 'server_error', message: 'internal_error', request_id: req.requestId || null });

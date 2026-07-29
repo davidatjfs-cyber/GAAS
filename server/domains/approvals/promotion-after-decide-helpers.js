@@ -209,7 +209,7 @@ export function markFormalPromotionTrackPromoted(state, trackId, deps) {
 }
 
 export async function handleFormalPromotionApproved({ req, deps, updated, ctx, state0 }) {
-  const { makeNotif, mergeSharedStateFields, uniqUsernames } = deps;
+  const { makeNotif, mergeSharedStateFields, appendNotifications, uniqUsernames } = deps;
   const { applicantUser, applicantName, applicantManager } = ctx;
 
   const employeeUpdate = buildFormalPromotionEmployeeUpdate(state0, ctx, updated, deps);
@@ -239,11 +239,11 @@ export async function handleFormalPromotionApproved({ req, deps, updated, ctx, s
     {
       employees: state.employees,
       salaryChangeHistory: state.salaryChangeHistory,
-      notifications: notifs,
       ...(trackIdx >= 0 ? { promotionTracks: tracks } : {}),
     },
-    { employees: 'username', notifications: 'id', ...(trackIdx >= 0 ? { promotionTracks: 'id' } : {}) }
+    { employees: 'username', ...(trackIdx >= 0 ? { promotionTracks: 'id' } : {}) }
   );
+  await appendNotifications(notifs);
   return trackIdx >= 0 ? { ...state, promotionTracks: tracks } : state;
 }
 

@@ -94,22 +94,88 @@ test('loadPointRecordsFromTable / loadPayrollDomainFromTable / upsertPayrollDoma
   );
   assert.equal(domain.payrollAudits.a, 1);
 
-  const writes = [];
+  const updateParams = await upsertPayrollDomainCapture({
+    currentRow: {
+      payroll_adjustments: {},
+      payroll_audits: {},
+      salary_adjustments: [{ id: 'sa-existing' }],
+      monthly_confirmations: [{ id: 'mc-existing' }],
+      updated_at: 'ts1',
+    },
+    patch: {
+      payrollAdjustments: { k: 1 },
+      payrollAudits: { a: true },
+      salaryAdjustments: [{ id: 1 }],
+      monthlyConfirmations: [{ id: 2 }],
+    },
+  });
+  assert.equal(JSON.parse(updateParams[1]).k, 1);
+});
+
+/** upsertPayrollDomain 走 SELECT ... FOR UPDATE 加锁合并；这里模拟事务连接并回收 UPDATE 参数。 */
+async function upsertPayrollDomainCapture({ currentRow, patch, tenantId = 'default' }) {
+  let updateParams = null;
   const pool = {
-    query: async (sql, params) => {
-      writes.push({ sql: String(sql), params });
-      return { rows: [] };
+    async query() { return { rows: [] }; },
+    async connect() {
+      return {
+        async query(sql, params) {
+          const s = String(sql);
+          if (/^\s*(BEGIN|COMMIT|ROLLBACK)/i.test(s)) return {};
+          if (/SELECT[\s\S]*FROM hrms_payroll_domain[\s\S]*FOR UPDATE/i.test(s)) {
+            return { rows: currentRow ? [currentRow] : [] };
+          }
+          if (/UPDATE hrms_payroll_domain/i.test(s)) {
+            updateParams = params;
+            return { rowCount: 1 };
+          }
+          if (/INSERT INTO hrms_payroll_domain/i.test(s)) return {};
+          return { rows: [] };
+        },
+        release() {},
+      };
     },
   };
-  await upsertPayrollDomain(pool, 'default', {
-    payrollAdjustments: { k: 1 },
-    payrollAudits: { a: true },
-    salaryAdjustments: [{ id: 1 }],
-    monthlyConfirmations: [{ id: 2 }],
+  await upsertPayrollDomain(pool, tenantId, patch);
+  return updateParams;
+}
+
+test('upsertPayrollDomain：并发安全——只 patch 传入的字段，其余字段保留表里当前值', async () => {
+  const updateParams = await upsertPayrollDomainCapture({
+    currentRow: {
+      payroll_adjustments: { existingKey: { amount: 1 } },
+      payroll_audits: { existingAudit: true },
+      salary_adjustments: [{ id: 'sa-1' }],
+      monthly_confirmations: [{ id: 'mc-1' }],
+      updated_at: 'ts1',
+    },
+    // 只 patch payrollAdjustments 的一个新 key，模拟并发的另一次调用只改了 payrollAudits
+    patch: { payrollAdjustments: { newKey: { amount: 2 } } },
   });
-  assert.equal(writes.length, 1);
-  assert.match(writes[0].sql, /INSERT INTO hrms_payroll_domain/i);
-  assert.equal(JSON.parse(writes[0].params[1]).k, 1);
+  const adjustments = JSON.parse(updateParams[1]);
+  const audits = JSON.parse(updateParams[2]);
+  const salary = JSON.parse(updateParams[3]);
+  const confirmations = JSON.parse(updateParams[4]);
+  // 新 key 写入了，旧 key（模拟另一次并发调用刚写入的）没有被冲掉
+  assert.deepEqual(adjustments, { existingKey: { amount: 1 }, newKey: { amount: 2 } });
+  // 没有出现在 patch 里的字段必须原样保留，不能被清空成 {} / []
+  assert.deepEqual(audits, { existingAudit: true });
+  assert.deepEqual(salary, [{ id: 'sa-1' }]);
+  assert.deepEqual(confirmations, [{ id: 'mc-1' }]);
+});
+
+test('upsertPayrollDomain：patch 里对象 key 为 null 表示删除该 key', async () => {
+  const updateParams = await upsertPayrollDomainCapture({
+    currentRow: {
+      payroll_adjustments: { a: 1, b: 2 },
+      payroll_audits: {},
+      salary_adjustments: [],
+      monthly_confirmations: [],
+      updated_at: 'ts1',
+    },
+    patch: { payrollAdjustments: { a: null, c: 3 } },
+  });
+  assert.deepEqual(JSON.parse(updateParams[1]), { b: 2, c: 3 });
 });
 
 test('hydrate：表查询失败时保留原 state', async () => {

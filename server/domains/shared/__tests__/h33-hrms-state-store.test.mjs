@@ -36,6 +36,7 @@ test('getSharedState returns data object or null', async () => {
     applyHrmsUserAccountGateFromEmployee: async () => {},
     upsertEmployeeFromStateShape: async () => {},
     notifyAdminsDualWriteFailure: () => {},
+    hydrateAuthoritativeState: async (_pool, state) => state,
   });
   assert.deepEqual(await getSharedState('t1'), { a: 1 });
 });
@@ -250,6 +251,8 @@ function deps(extra = {}) {
     applyHrmsUserAccountGateFromEmployee: async () => {},
     upsertEmployeeFromStateShape: async () => {},
     notifyAdminsDualWriteFailure: () => {},
+    // 单测默认跳过权威表 hydrate，避免 mock pool 被 hydrate SQL 误伤
+    hydrateAuthoritativeState: async (_pool, state) => state,
     ...extra,
   };
 }
@@ -378,4 +381,86 @@ test('merge / remove：client 抛错走 ROLLBACK 再抛出', async () => {
   const h = createHrmsStateStoreHelpers({ pool: makePool(handlers), ...deps() });
   await assert.rejects(() => h.mergeSharedStateFields({ a: 1 }), /m_fail/);
   await assert.rejects(() => h.removeEmployeesFromSharedState(['z']), /m_fail/);
+});
+test('getSharedState：hydrate 后写入缓存；invalidate 后重新 hydrate', async () => {
+  let hydrateCalls = 0;
+  let reads = 0;
+  const { getSharedState, invalidateSharedStateCache } = createHrmsStateStoreHelpers({
+    pool: {
+      async query() {
+        reads += 1;
+        return { rows: [{ data: { blob: true, employees: [{ username: 'stale' }] } }] };
+      },
+    },
+    ...deps({
+      hydrateAuthoritativeState: async (_pool, state) => {
+        hydrateCalls += 1;
+        return { ...state, employees: [{ username: 'fresh' }] };
+      },
+    }),
+  });
+  const a = await getSharedState('default');
+  assert.equal(a.employees[0].username, 'fresh');
+  assert.equal(hydrateCalls, 1);
+  assert.equal(reads, 1);
+  const b = await getSharedState('default');
+  assert.equal(b.employees[0].username, 'fresh');
+  assert.equal(hydrateCalls, 1);
+  assert.equal(reads, 1);
+  invalidateSharedStateCache('default');
+  const c = await getSharedState('default');
+  assert.equal(c.employees[0].username, 'fresh');
+  assert.equal(hydrateCalls, 2);
+  assert.equal(reads, 2);
+});
+
+test('saveSharedState 成功后 invalidate，下次 get 会重新读库+hydrate', async () => {
+  let hydrateCalls = 0;
+  const handlers = {
+    released: 0,
+    async clientQuery(sql) {
+      if (/BEGIN/.test(sql)) return {};
+      if (/SELECT data, updated_at/.test(sql)) {
+        return { rows: [{ data: { keep: true }, updated_at: 'ts1' }] };
+      }
+      if (/UPDATE hrms_state/.test(sql)) return { rowCount: 1 };
+      if (/COMMIT/.test(sql)) return {};
+      return {};
+    },
+  };
+  let selectCount = 0;
+  const pool = {
+    async query() {
+      selectCount += 1;
+      return { rows: [{ data: { keep: true, fromDb: selectCount } }] };
+    },
+    async connect() {
+      return {
+        async query(sql, params) {
+          return handlers.clientQuery(sql, params);
+        },
+        release() {
+          handlers.released += 1;
+        },
+      };
+    },
+  };
+  const tid = 'tenant-save-invalidate';
+  const { getSharedState, saveSharedState, invalidateSharedStateCache } = createHrmsStateStoreHelpers({
+    pool,
+    ...deps({
+      resolveTenantIdDefault: (t) => t || tid,
+      hydrateAuthoritativeState: async (_p, state) => {
+        hydrateCalls += 1;
+        return { ...state, hydrated: hydrateCalls };
+      },
+    }),
+  });
+  invalidateSharedStateCache(tid);
+  const first = await getSharedState(tid);
+  assert.equal(first.hydrated, 1);
+  await saveSharedState({ x: 1 }, tid);
+  const second = await getSharedState(tid);
+  assert.equal(second.hydrated, 2);
+  assert.equal(selectCount, 2);
 });

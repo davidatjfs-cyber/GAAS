@@ -87,21 +87,92 @@ export async function hydrateStateFromAuthoritativeTables(pool, state, tenantId)
   return base;
 }
 
+/**
+ * hrms_payroll_domain 的字段级原子合并（同 leave-attendance/domain-service.js 的
+ * upsertLeaveDomain）：SELECT ... FOR UPDATE 锁行 + 只合并 fields 里出现过的字段 +
+ * 乐观锁冲突重试。之前是无条件整表覆盖四个字段——auditPayrollMonth/adjustPayrollRow
+ * 各自读一份旧快照、改一个字段、把四个字段整体覆盖写回，门店财务/HR 并发操作时后写的
+ * 会把先写的另一处改动整体冲掉。payrollAdjustments/payrollAudits 是对象，浅合并（patch
+ * 值为 null 表示删除该 key）；salaryAdjustments/monthlyConfirmations 目前只被
+ * schedulePayrollDomainSync 那条既有的定时双写路径整体覆盖写入，这里保持"未出现在
+ * fields 里就维持表中原值"，不改变它们的既有同步方式。
+ */
+function mergePayrollDomainObjectField(current, patch) {
+  const base = current && typeof current === 'object' ? current : {};
+  const next = { ...base, ...patch };
+  for (const k of Object.keys(next)) {
+    if (next[k] === null) delete next[k];
+  }
+  return next;
+}
+
 export async function upsertPayrollDomain(pool, tenantId, fields) {
   const tid = String(tenantId || 'default');
-  const pa = fields.payrollAdjustments && typeof fields.payrollAdjustments === 'object' ? fields.payrollAdjustments : {};
-  const pau = fields.payrollAudits && typeof fields.payrollAudits === 'object' ? fields.payrollAudits : {};
-  const sa = Array.isArray(fields.salaryAdjustments) ? fields.salaryAdjustments : [];
-  const mc = Array.isArray(fields.monthlyConfirmations) ? fields.monthlyConfirmations : [];
-  await pool.query(
-    `INSERT INTO hrms_payroll_domain (id, tenant_id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
-     VALUES ($1::text, $1::varchar(80), $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, NOW())
-     ON CONFLICT (id) DO UPDATE SET
-       payroll_adjustments = EXCLUDED.payroll_adjustments,
-       payroll_audits = EXCLUDED.payroll_audits,
-       salary_adjustments = EXCLUDED.salary_adjustments,
-       monthly_confirmations = EXCLUDED.monthly_confirmations,
-       updated_at = NOW()`,
-    [tid, JSON.stringify(pa), JSON.stringify(pau), JSON.stringify(sa), JSON.stringify(mc)]
-  );
+  const patch = fields && typeof fields === 'object' ? fields : {};
+  const touchAdjustments = Object.prototype.hasOwnProperty.call(patch, 'payrollAdjustments');
+  const touchAudits = Object.prototype.hasOwnProperty.call(patch, 'payrollAudits');
+  const touchSalary = Object.prototype.hasOwnProperty.call(patch, 'salaryAdjustments');
+  const touchConfirmations = Object.prototype.hasOwnProperty.call(patch, 'monthlyConfirmations');
+  if (!touchAdjustments && !touchAudits && !touchSalary && !touchConfirmations) return;
+
+  const MAX_RETRY = 10;
+  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query(
+        `SELECT payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at
+           FROM hrms_payroll_domain WHERE id = $1 FOR UPDATE`,
+        [tid]
+      );
+      const row = r.rows?.[0];
+      if (!row) {
+        await client.query(
+          `INSERT INTO hrms_payroll_domain (id, tenant_id, payroll_adjustments, payroll_audits, salary_adjustments, monthly_confirmations, updated_at)
+           VALUES ($1::text, $1::varchar(80), '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, NOW())
+           ON CONFLICT (id) DO NOTHING`,
+          [tid]
+        );
+        await client.query('COMMIT');
+        client.release();
+        continue; // 下一轮 SELECT ... FOR UPDATE 会锁到刚建好的行
+      }
+
+      const nextAdjustments = touchAdjustments
+        ? mergePayrollDomainObjectField(row.payroll_adjustments, patch.payrollAdjustments)
+        : (row.payroll_adjustments && typeof row.payroll_adjustments === 'object' ? row.payroll_adjustments : {});
+      const nextAudits = touchAudits
+        ? mergePayrollDomainObjectField(row.payroll_audits, patch.payrollAudits)
+        : (row.payroll_audits && typeof row.payroll_audits === 'object' ? row.payroll_audits : {});
+      const nextSalary = touchSalary
+        ? (Array.isArray(patch.salaryAdjustments) ? patch.salaryAdjustments : [])
+        : (Array.isArray(row.salary_adjustments) ? row.salary_adjustments : []);
+      const nextConfirmations = touchConfirmations
+        ? (Array.isArray(patch.monthlyConfirmations) ? patch.monthlyConfirmations : [])
+        : (Array.isArray(row.monthly_confirmations) ? row.monthly_confirmations : []);
+
+      const result = await client.query(
+        `UPDATE hrms_payroll_domain
+            SET payroll_adjustments = $2::jsonb,
+                payroll_audits = $3::jsonb,
+                salary_adjustments = $4::jsonb,
+                monthly_confirmations = $5::jsonb,
+                updated_at = NOW()
+          WHERE id = $1 AND updated_at = $6`,
+        [tid, JSON.stringify(nextAdjustments), JSON.stringify(nextAudits), JSON.stringify(nextSalary), JSON.stringify(nextConfirmations), row.updated_at]
+      );
+      if (result.rowCount > 0) {
+        await client.query('COMMIT');
+        client.release();
+        return;
+      }
+      await client.query('ROLLBACK');
+      client.release();
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+      throw e;
+    }
+  }
+  throw new Error('upsertPayrollDomain: max retries exceeded');
 }

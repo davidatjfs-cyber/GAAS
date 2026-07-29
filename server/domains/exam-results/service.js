@@ -1,6 +1,6 @@
 /**
  * 考试成绩域：exam_results 为权威，hrms_state.examResults 仅为镜像。
- * GET /api/state 通过 hydrateExamResultsFromTable 覆盖。
+ * GET /api/state / getSharedState 通过 hydrateExamResultsFromTable 覆盖；写入仅 INSERT 表，不写 blob。
  */
 
 import { SHARED_TABLES } from '@gaas/shared';

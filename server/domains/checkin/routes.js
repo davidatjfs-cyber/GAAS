@@ -129,6 +129,7 @@ export function registerCheckinRoutes(app, deps) {
       value: req.body?.value,
       mode: req.body?.mode,
       note: req.body?.note,
+      tenantId: req.tenantId || req.user?.tenant_id || 'default',
     });
     if (!result.ok) return sendFail(res, result);
     return res.json({

@@ -1,5 +1,7 @@
 /** 上月末累计池快照读写 */
 
+import { upsertLeaveDomain } from './domain-service.js';
+
 export function createCloseSnapshotHelpers({
   safeMonthOnly,
   shiftMonth,
@@ -7,7 +9,9 @@ export function createCloseSnapshotHelpers({
   getLeaveBalanceOverride,
   calcEmployeeMonthlyCarryover,
   getSharedState,
-  mergeSharedStateFields,
+  pool,
+  resolveTenantIdDefault,
+  invalidateSharedStateCache,
   isLegacyTestUsername,
   hrmsNowISO,
 }) {
@@ -100,8 +104,15 @@ export function createCloseSnapshotHelpers({
       n++;
     }
     try {
-      // 必须用字段级原子合并：saveSharedState 全量写回会与 mergeSharedStateFields（如人工累计假期）并发竞态，导致覆盖丢失
-      await mergeSharedStateFields({ leaveCumulativeCloseSnapshots: snaps });
+      const tid = typeof resolveTenantIdDefault === 'function' ? resolveTenantIdDefault() : 'default';
+      // 只 patch 这个函数真正要改的字段；leaveBalanceOverrides/leaveBalanceAdjustments 不传，
+      // upsertLeaveDomain 会保留它们在表里的当前值，不会被这里读到的旧快照覆盖。
+      await upsertLeaveDomain(pool, tid, {
+        leaveCumulativeCloseSnapshots: snaps,
+      });
+      if (typeof invalidateSharedStateCache === 'function') {
+        invalidateSharedStateCache(tid);
+      }
     } catch (e) {
       return { ok: false, error: 'internal_error', closedMonth: m };
     }

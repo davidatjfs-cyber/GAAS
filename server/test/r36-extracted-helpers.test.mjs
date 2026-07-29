@@ -213,17 +213,13 @@ test('hrms-state/routes：UTF8 repair + PUT ignoredKeys + setImmediate 路径', 
         return { rows: [] };
       },
     },
-    getSharedState: async () => ({ keep: 1 }),
+    getSharedState: async () => ({ keep: 1, dirty: true, repaired: true }),
     resolveTenantIdDefault: () => 'default',
     deepRepairGarbledStrings: (d, stats) => {
       if (stats) stats.changed = true;
       return { ...d, repaired: true };
     },
-    hydrateStateFromAuthoritativeTables: async (_p, d) => d,
-    hydrateEmployeesFromTable: async (_p, d) => d,
-    hydrateFlowConfigFromTable: async (_p, d) => d,
-    hydrateNotificationsFromTable: async (_p, d) => d,
-    hydrateExamResultsFromTable: async (_p, d) => d,
+    invalidateSharedStateCache: () => {},
     stripPasswordFieldsFromStateForClient: (d) => d,
     applyStatePeopleVisibilityForRole: async (d) => d,
     applyStatePutWhitelist: (ex, raw) => ({

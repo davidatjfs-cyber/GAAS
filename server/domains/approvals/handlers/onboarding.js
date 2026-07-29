@@ -160,7 +160,7 @@ export async function afterDecide(ctx) {
         const recipients = uniqUsernames([submitter, empManager, storeManagerUsername].filter(Boolean));
         const notifs = recipients.map(u => makeNotif(u, title, msg, { type: 'onboarding_result', approvalId: updated.id }));
         try {
-          await mergeSharedStateFields({ notifications: notifs }, { notifications: 'id' });
+          await appendNotifications(notifs);
         } catch (notifErr) {
           log.error({
             msg: 'onboarding_merge_notifications_failed',

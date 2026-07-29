@@ -251,9 +251,15 @@ function buildPredictionStatePatch({
 }
 
 export async function persistPredictForecastState(ctx, state0, predictionBundle) {
-  await ctx.saveSharedState({
+  const next = {
     ...state0,
     inventoryForecastPredictions: predictionBundle.predictionList,
     inventoryForecastEvaluations: predictionBundle.nextEvaluations,
-  });
+  };
+  await ctx.saveSharedState(next);
+  if (typeof ctx.syncInventoryForecastStateToTables === 'function') {
+    try {
+      await ctx.syncInventoryForecastStateToTables(next);
+    } catch (_e) { /* 表未建时忽略；hydrate 会兜底 */ }
+  }
 }

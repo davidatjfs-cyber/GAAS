@@ -109,7 +109,7 @@ test('offboarding afterDecide：通过立即关闭 / 拒绝通知 / 待审批', 
     },
     nextAssignee: 'hq1',
   });
-  assert.ok(merges.some((m) => m.patch.notifications?.[0]?.u === 'hq1'));
+  assert.ok(notifs.some((n) => n.u === 'hq1'));
 });
 
 test('offboarding afterDecide：未来离职日只打标不关登录；无日期立即关闭', async () => {
