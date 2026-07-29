@@ -1342,7 +1342,13 @@ test('L1 falsy：promotion formal/qualification 更多空字段回落', async ()
       },
     },
   });
-  assert.ok(qual.trainings.some((t) => t.assignedBy === 'decider1'));
+  // assignedBy 的回落链是 mentorUsername → 门店出品经理 → 店长 → decider（见
+  // promotion-after-decide-helpers.js 的 assignmentReviewer 计算）。这里 mentor 为空，
+  // 但这个文件里公用的 pickStoreRoleUsernameByStore mock（见 makePromotionAfterDeps）
+  // 对 store_production_manager 角色永远返回 'pm1'，所以真正落到的是产线经理 pm1，
+  // 不会走到 decider1 这一级——之前断言写的是 'decider1'，跟这个共用 mock 的实际行为对不上，
+  // 是断言写错了，不是生产代码的回落逻辑有问题。
+  assert.ok(qual.trainings.some((t) => t.assignedBy === 'pm1'));
   assert.ok(qual.trainings.some((t) => t.tenantId == null || t.tenantId === undefined));
 
   // pending status 空；外层 catch

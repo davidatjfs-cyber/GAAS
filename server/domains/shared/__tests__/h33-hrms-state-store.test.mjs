@@ -258,6 +258,12 @@ function deps(extra = {}) {
 }
 
 test('getSharedState：无行/非对象 → null；save/merge/remove 空入参 no-op', async () => {
+  // 这个文件里几乎所有测试的 resolveTenantIdDefault 都写死返回 'default'，getSharedState
+  // 加了2秒TTL内存缓存(hrms-state-store.js STATE_CACHE_TTL_MS)后，同一个key在2秒内被多个
+  // 测试共用——前一个测试('removeEmployeesFromSharedState filters...')会把 bob/carol 那份
+  // 数据写进 'default' 这个缓存key，这个测试紧跟着跑，读到的是缓存里的脏数据而不是这里
+  // mock的pool.query，导致断言的null变成了真实数据。用一个独占的tenant key避免撞缓存，
+  // 不改动生产的缓存实现本身。
   const { getSharedState, saveSharedState, mergeSharedStateFields, removeEmployeesFromSharedState } =
     createHrmsStateStoreHelpers({
       pool: {
@@ -267,6 +273,7 @@ test('getSharedState：无行/非对象 → null；save/merge/remove 空入参 n
         },
       },
       ...deps(),
+      resolveTenantIdDefault: () => '__h33_null_check_isolated__',
     });
   assert.equal(await getSharedState(), null);
   await saveSharedState({});

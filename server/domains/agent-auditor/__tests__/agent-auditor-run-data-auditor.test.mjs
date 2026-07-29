@@ -338,6 +338,12 @@ test('runDataAuditor: insert failure is non-fatal; findStoreManager fallback', a
 test('runDataAuditor custom mode date window + recharge streak high', async () => {
   DISABLED_LEGACY_BI_CATEGORIES.delete('充值异常');
   try {
+    // custom 模式的扫描窗口是"过去7天到今天"（相对当前时间滚动），这两个日期必须始终落在
+    // 窗口内——之前写死 2026-07-20/21，过了7天窗口就滚出去了，issuesFound 会跌到 0，
+    // 跟这次改动无关，是测试本身对"今天"的相对性处理有问题，改成基于 Date.now() 算。
+    const ymd = (d) => d.toISOString().slice(0, 10);
+    const dayBeforeYesterday = ymd(new Date(Date.now() - 2 * 86400000));
+    const yesterday = ymd(new Date(Date.now() - 1 * 86400000));
     const run = createRunDataAuditor(
       baseDeps({
         isBiSourceEnabled: (key) => key === 'daily_reports',
@@ -347,12 +353,12 @@ test('runDataAuditor custom mode date window + recharge streak high', async () =
           dailyReports: [
             {
               store: '洪潮久光店',
-              date: '2026-07-20',
+              date: dayBeforeYesterday,
               data: { recharge: { amount: 0, count: 0 }, dine: { orders: 1 }, actual: 1 },
             },
             {
               store: '洪潮久光店',
-              date: '2026-07-21',
+              date: yesterday,
               data: { recharge: { amount: 0, count: 0 }, dine: { orders: 1 }, actual: 1 },
             },
           ],

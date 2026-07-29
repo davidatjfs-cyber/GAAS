@@ -90,7 +90,7 @@ test('canUserReviewCertification: auto-assign fallback to same-store manager', a
 
 test('resolveCertificationReviewers merges assigned_by and fallback', async () => {
   const pool = mockPool([
-    (sql, params) => {
+    (sql, _params) => {
       if (/FROM training_assignments/i.test(sql)) {
         return { rows: [{ assigned_by: 'mentor1', source: 'promotion_qualification' }] };
       }

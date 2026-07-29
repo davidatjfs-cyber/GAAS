@@ -683,7 +683,6 @@ export async function uploadPracticeMedia({
 
     const rubric = session.step_rubric;
     const topicTitle = session.title || '';
-    const primary = fileList[0];
     const mediaUrls = [];
     const filePaths = [];
 

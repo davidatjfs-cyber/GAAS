@@ -648,7 +648,7 @@ test('uploadPracticeMedia: success image + rubric inserts certification', async 
       return { rows: [] };
     },
     ...mockUploadDeps,
-    callVisionLLM: async (filePathOrParts, prompt) => {
+    callVisionLLM: async (filePathOrParts, _prompt) => {
       visionCalled = true;
       assert.ok(Array.isArray(filePathOrParts) || typeof filePathOrParts === 'string');
       return { content: scoringJson };

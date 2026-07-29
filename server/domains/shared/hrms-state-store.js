@@ -6,6 +6,7 @@
 import { childLogger } from '../../utils/logger.js';
 import { isInactiveStatus } from '../employees/account-gate.js';
 import { hydrateAuthoritativeState as defaultHydrateAuthoritativeState } from './hydrate-authoritative-state.js';
+import { getAppEnv } from '../../safety.js';
 
 const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
 
@@ -20,14 +21,22 @@ const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
  */
 const STATE_CACHE_TTL_MS = 2000;
 const _stateCache = new Map(); // key -> { data, expiresAt }
+// 集成测试里大量测试助手(如 server/test/integration/helpers/db.mjs 的 appendStateEmployee)
+// 是跨进程直接对 hrms_state 表做原始SQL写入的——被测应用进程内存里的这份缓存完全不知道
+// 这次写入，2秒TTL内后续请求会读到写入前的旧快照，导致"刚插入的员工/manager查不到"这类
+// 大批假失败(missing_manager/no_targets_found等)。测试环境(APP_ENV=test)关掉缓存，
+// 不改变生产环境的缓存行为。
+const STATE_CACHE_DISABLED = getAppEnv() === 'test';
 
 function readStateCache(key) {
+  if (STATE_CACHE_DISABLED) return undefined;
   const entry = _stateCache.get(key);
   if (!entry || entry.expiresAt < Date.now()) return undefined;
   return entry.data;
 }
 
 function writeStateCache(key, data) {
+  if (STATE_CACHE_DISABLED) return;
   _stateCache.set(key, { data, expiresAt: Date.now() + STATE_CACHE_TTL_MS });
 }
 

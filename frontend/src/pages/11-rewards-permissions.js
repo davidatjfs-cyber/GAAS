@@ -1226,6 +1226,7 @@
             }
 
             const allItems = [
+                { icon:'🏠', label:'工作台', page:'workspace' },
                 { icon:'👤', label:'我的档案', page:'profile' },
                 { icon:'👥', label:'员工管理', page:'employees', roles:['admin','hr_manager','hq_manager','store_manager'] },
                 { icon:'📋', label:'营业日报', page:'daily-report', roles:['admin','hq_manager','store_manager','front_manager','front_supervisor'] },
