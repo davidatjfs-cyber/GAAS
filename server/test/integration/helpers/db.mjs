@@ -6,6 +6,7 @@
  * 需要清理时用 truncateTables() 只清测试自己用到的表。
  */
 import pg from 'pg';
+import { upsertEmployeeFromStateShape } from '../../../domains/employees/service.js';
 
 const { Pool } = pg;
 
@@ -44,6 +45,13 @@ export async function ensureDefaultTenant() {
 // 用单条原子UPDATE（jsonb_set + ||）而不是"JS里读出来改数组再整份写回"，
 // 避免并行测试互相覆盖对方刚写入的数据（应用层read-modify-write在并发下不安全，
 // 单条SQL语句由Postgres行锁保证原子性）。
+//
+// employees 表现在是权威源：getSharedState() 每次都会用 hydrateEmployeesFromTable
+// 拿 employees 表覆盖 state.employees（表非空时）——CI 里 'default' 租户被很多测试
+// 文件共用，employees 表大概率已经有别的测试写入的行，只写 blob 的话这里追加的员工会
+// 被 hydrate 直接覆盖冲掉（"missing_manager"这类假失败）。upsertEmployeeFromStateShape
+// 走 ON CONFLICT (username, tenant_id) DO UPDATE，用测试自己 uniqueId() 生成的用户名，
+// 同样是原子操作，不会引入之前注释担心的并发覆盖问题。
 export async function appendStateEmployee(tenantId, employee) {
   const db = testDb();
   await db.query(
@@ -57,6 +65,7 @@ export async function appendStateEmployee(tenantId, employee) {
      )`,
     [tenantId, JSON.stringify(employee)]
   );
+  await upsertEmployeeFromStateShape(db, tenantId, employee);
 }
 
 export async function truncateTables(tableNames) {
