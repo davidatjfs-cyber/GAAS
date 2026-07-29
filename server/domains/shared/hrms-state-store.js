@@ -8,11 +8,35 @@ import { isInactiveStatus } from '../employees/account-gate.js';
 
 const log = childLogger({ domain: 'shared', handler: 'hrms-state-store' });
 
+/**
+ * hrms_state.data 常年是几 MB 的大 JSON（如 default 租户 ~4.3MB），getSharedState 在整个
+ * 代码库里被高频调用（打卡/考勤/门店等几乎所有读路径都会经过）。没有缓存时每次调用都要重新
+ * 从 pg 拉整个 blob + 反序列化，2026-07-29 实测把这台 2 核服务器的 node 进程打到 100%+ CPU，
+ * 导致所有接口（含打卡）响应从毫秒级劣化到 15~36 秒。TTL 设短是为了让写后读尽量新鲜；写路径
+ * 命中缓存后直接回填最新值，不走"失效再重查"，避免缓存刚失效时的并发请求继续打满 CPU。
+ */
+const STATE_CACHE_TTL_MS = 2000;
+const _stateCache = new Map(); // key -> { data, expiresAt }
+
+function readStateCache(key) {
+  const entry = _stateCache.get(key);
+  if (!entry || entry.expiresAt < Date.now()) return undefined;
+  return entry.data;
+}
+
+function writeStateCache(key, data) {
+  _stateCache.set(key, { data, expiresAt: Date.now() + STATE_CACHE_TTL_MS });
+}
+
 async function getSharedStateImpl(pool, resolveTenantIdDefault, tenantId) {
   const key = resolveTenantIdDefault(tenantId);
+  const cached = readStateCache(key);
+  if (cached !== undefined) return cached;
   const r = await pool.query('select data from hrms_state where key = $1 limit 1', [key]);
   const row = r.rows?.[0] || null;
-  return row?.data && typeof row.data === 'object' ? row.data : null;
+  const data = row?.data && typeof row.data === 'object' ? row.data : null;
+  writeStateCache(key, data);
+  return data;
 }
 
 async function saveSharedStateImpl(deps, nextData, tenantId) {
@@ -42,6 +66,7 @@ async function saveSharedStateImpl(deps, nextData, tenantId) {
       if (result.rowCount > 0) {
         await client.query('COMMIT');
         client.release();
+        writeStateCache(key, merged);
         schedulePayrollDomainSync();
         scheduleLeaveDomainSync();
         await dualWriteStateToDB(merged);
@@ -122,6 +147,7 @@ async function mergeSharedStateFieldsImpl(deps, patches, arrayIdFields = {}, ten
       );
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
+        writeStateCache(key, next);
         if (
           Array.isArray(patches.employees) &&
           patches.employees.length &&
@@ -219,6 +245,7 @@ async function removeEmployeesFromSharedStateImpl(pool, resolveTenantIdDefault, 
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
         client.release();
+        writeStateCache(key, next);
         return;
       }
       await client.query('ROLLBACK');
