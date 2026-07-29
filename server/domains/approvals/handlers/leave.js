@@ -81,6 +81,7 @@ export async function afterDecide(ctx) {
       list.unshift(rec);
       state = { ...state, leaveRecords: list };
 
+      const tid = req.tenantId || req.user?.tenant_id || 'default';
       try {
         await pool.query(
           `INSERT INTO hrms_leave_records (id, username, name, store, brand, start_date, end_date, days, type, reason, status, approval_id, approved_by, approved_at, submitted_by, tenant_id)
@@ -91,14 +92,14 @@ export async function afterDecide(ctx) {
            String(applicant?.store || '').trim(), String(applicant?.brand || '').trim(),
            startDate, endDate, days == null ? 0 : days, String(updated.payload?.type || 'leave').trim(),
            reason, updated.id, username, new Date(hrmsNowISO()), username,
-           req.tenantId || req.user?.tenant_id || 'default']
+           tid]
         );
       } catch (e) {
         log.error({ msg: 'leave_records_dual_write_failed', err: e?.message });
         void notifyAdminsDualWriteFailure('hrms_leave_records（休假审批双写）', e);
       }
       if (typeof invalidateSharedStateCache === 'function') {
-        invalidateSharedStateCache(req.tenantId || req.user?.tenant_id || 'default');
+        invalidateSharedStateCache(tid);
       }
 
       const sd = fmtLeaveDate(startDate);
