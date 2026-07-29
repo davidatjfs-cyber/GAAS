@@ -851,35 +851,35 @@
                     const ratingText = storeRating ? `${storeRating}级` : '待评估';
                     ratingEl.textContent = ratingText;
                     const colors = {
-                        A: 'rgba(52,211,153,0.98)',
-                        B: 'rgba(96,165,250,0.98)',
-                        C: 'rgba(251,191,36,0.98)',
-                        D: 'rgba(248,113,113,0.98)',
-                        null: 'rgba(203,213,225,0.92)'
+                        A: 'rgba(134,201,162,0.98)',
+                        B: 'rgba(224,166,180,0.98)',
+                        C: 'rgba(207,161,74,0.98)',
+                        D: 'rgba(237,161,172,0.98)',
+                        null: 'rgba(184,170,177,0.92)'
                     };
                     const tint = {
-                        A: 'rgba(34,197,94,0.12)',
-                        B: 'rgba(59,130,246,0.12)',
-                        C: 'rgba(245,158,11,0.12)',
-                        D: 'rgba(239,68,68,0.12)',
-                        null: 'rgba(148,163,184,0.08)'
+                        A: 'rgba(134,201,162,0.12)',
+                        B: 'rgba(224,166,180,0.12)',
+                        C: 'rgba(207,161,74,0.12)',
+                        D: 'rgba(229,139,152,0.12)',
+                        null: 'rgba(151,132,142,0.08)'
                     };
                     const borderTint = {
-                        A: 'rgba(52,211,153,0.35)',
-                        B: 'rgba(96,165,250,0.35)',
-                        C: 'rgba(251,191,36,0.35)',
-                        D: 'rgba(248,113,113,0.35)',
-                        null: 'rgba(255,255,255,0.16)'
+                        A: 'rgba(134,201,162,0.35)',
+                        B: 'rgba(224,166,180,0.35)',
+                        C: 'rgba(207,161,74,0.35)',
+                        D: 'rgba(237,161,172,0.35)',
+                        null: 'rgba(242,234,238,0.16)'
                     };
                     const ratingKey = storeRating || 'null';
                     ratingEl.style.color = colors[ratingKey] || colors.null;
                     const ti = tint[ratingKey] || tint.null;
                     const bd = borderTint[ratingKey] || borderTint.null;
-                    badge.style.background = `linear-gradient(165deg, rgba(255,255,255,0.1), ${ti})`;
+                    badge.style.background = `linear-gradient(165deg, rgba(242,234,238,0.1), ${ti})`;
                     badge.style.backdropFilter = 'blur(18px) saturate(1.45)';
                     badge.style.webkitBackdropFilter = 'blur(18px) saturate(1.45)';
                     badge.style.border = `1px solid ${bd}`;
-                    badge.style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 28px rgba(0,0,0,0.22)';
+                    badge.style.boxShadow = 'inset 0 1px 0 rgba(242,234,238,0.14), 0 8px 28px rgba(0,0,0,0.22)';
                     badge.style.display = 'block';
                 }
             } catch (e) {
@@ -914,15 +914,30 @@
             if (!box || !empty || !currentUser) return;
             const data = HRMS_STORE.ensure();
             const myUsername = String(currentUser.username || currentUser.id || '').trim().toLowerCase();
+            const authHeaders = { 'Authorization': 'Bearer ' + ((typeof HRMS_STORE !== 'undefined' && HRMS_STORE && typeof HRMS_STORE.token === 'function') ? HRMS_STORE.token() : String(localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim()) };
+
+            // 公告必须从服务端拉 readBy，换设备登录时 localStorage 里的 HRMS_STORE 不能作为已读依据
+            let announcementSource = Array.isArray(data.announcements) ? data.announcements : [];
+            try {
+                const ar = await fetch('/api/announcements', { headers: authHeaders, cache: 'no-store' });
+                if (ar.ok) {
+                    const aj = await ar.json();
+                    if (Array.isArray(aj.items)) {
+                        announcementSource = aj.items;
+                        try {
+                            const localData = HRMS_STORE.ensure();
+                            localData.announcements = aj.items;
+                            HRMS_STORE.set(localData);
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            } catch (e) { /* ignore */ }
 
             // 从 API 获取 DB 中的公司通知（V2 Agent 直接写入 hrms_user_notifications 表）
             let dbNotifs = [];
             try {
-                const token = (typeof HRMS_STORE !== 'undefined' && HRMS_STORE && typeof HRMS_STORE.token === 'function')
-                    ? HRMS_STORE.token()
-                    : String(localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim();
                 const r = await fetch('/api/hrms-notifications/me?limit=100', {
-                    headers: { 'Authorization': 'Bearer ' + token },
+                    headers: authHeaders,
                     cache: 'no-store'
                 });
                 if (r.ok) {
@@ -955,7 +970,7 @@
                     id: String(n.id || '')
                 }));
 
-            const anns = (Array.isArray(data.announcements) ? data.announcements : [])
+            const anns = announcementSource
                 .filter(a => {
                     if (!a) return false;
                     const scope = a.scope || { type: 'all' };
@@ -982,29 +997,19 @@
                 return String(b?.createdAt || '').localeCompare(String(a?.createdAt || ''));
             });
 
-            // 强制确认队列：覆盖"公司通知"面板里的全部内容——管理员发布的公告 + 系统自动通知
-            // （培训任务指派、审批结果、系统告警等），只对"强制确认上线之后"产生的新消息生效，
-            // 之前已存在的历史消息不会突然弹窗骚扰所有员工。
-            // 公告的已读状态走服务端 readBy；系统通知走服务端 read_at（localStorage 仅作乐观缓存）。
-            const sysAckKey = 'hrms_acked_sys_notifs_' + myUsername;
-            let ackedSysIds = [];
-            try { ackedSysIds = JSON.parse(localStorage.getItem(sysAckKey) || '[]'); } catch (e) { ackedSysIds = []; }
-            // 注意：系统通知(db_notification)的createdAt来自后端timestamptz自定义解析，格式是
-            // "2026-06-26 19:22:24"(空格分隔，不带T/Z)；公告(announcement)的createdAt是前端
-            // hrmsNowISO()生成的标准ISO("...T...Z")。两种格式直接用字符串>=比较会踩坑——空格
-            // 的ASCII码比'T'小，导致"空格格式"的时间永远被判定"小于"ISO格式的cutoff，不管
-            // 实际多新都会被排除在强制队列外。这里统一转成Date时间戳再比较，规避格式差异。
+            // 强制确认队列：仅以服务端已读状态为准（read_at / announcements.readBy），
+            // 禁止用 localStorage 判定——换设备登录时必须不再重复弹已读通知。
             const forceAckCutoffMs = new Date(ANNOUNCEMENT_FORCE_ACK_SINCE).getTime();
             const ackQueue = visible.filter(a => {
                 if (!a) return false;
                 const createdMs = new Date(a?.createdAt || 0).getTime();
                 if (!Number.isFinite(createdMs) || createdMs < forceAckCutoffMs) return false;
-                if (a._src === 'announcement') return !(a?.readBy && a.readBy[myUsername]);
+                if (a._src === 'announcement') {
+                    const rb = a?.readBy && typeof a.readBy === 'object' ? a.readBy : {};
+                    return !rb[myUsername];
+                }
                 if (a._src === 'db_notification') {
-                    if (a.readAt) return false;
-                    const nid = String(a.id || a._id || '');
-                    if (ackedSysIds.includes(nid) || ackedSysIds.includes(String(a._id || ''))) return false;
-                    return true;
+                    return !(a.readAt != null && String(a.readAt).trim() !== '');
                 }
                 return false;
             });
@@ -1056,7 +1061,9 @@
                 const annLevel = String(a?.level || 'normal');
                 const isUrgent = annLevel === 'urgent';
                 const isImportant = annLevel === 'important' || isUrgent;
-                const isRead = isSys ? true : !!(a?.readBy && a.readBy[myUsername]);
+                const isRead = isSys
+                    ? !!(a.readAt != null && String(a.readAt).trim() !== '')
+                    : !!(a?.readBy && a.readBy[myUsername]);
 
                 const __ic = n => '<svg class="pfi"><use href="#pfi-' + n + '"/></svg>';
                 let typeIcon = __ic(isSys ? 'bell' : 'mega');
@@ -1217,24 +1224,11 @@
             const annId = String(a.id || a._id || '');
             const myUsername = String(currentUser?.username || currentUser?.id || '').trim().toLowerCase();
             if (a._src === 'db_notification') {
-                // 系统通知已读必须落服务端 read_at；localStorage 只做乐观缓存，避免 WebView 清缓存后重复弹。
                 const rawId = String(a.id || String(a._id || '').replace(/^db-/, '') || '').trim();
                 try {
                     const ackRes = await HRMS_API.request('/api/hrms-notifications/' + encodeURIComponent(rawId) + '/ack', { method: 'POST' });
+                    a.readAt = ackRes?.read_at || new Date().toISOString();
                     const ackedIds = Array.isArray(ackRes?.acked_ids) ? ackRes.acked_ids.map(String) : [rawId];
-                    try {
-                        const key = 'hrms_acked_sys_notifs_' + myUsername;
-                        let ids = [];
-                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { ids = []; }
-                        for (const id of ackedIds) {
-                            const bare = String(id);
-                            const prefixed = bare.startsWith('db-') ? bare : ('db-' + bare);
-                            if (!ids.includes(bare)) ids.push(bare);
-                            if (!ids.includes(prefixed)) ids.push(prefixed);
-                        }
-                        localStorage.setItem(key, JSON.stringify(ids));
-                    } catch (e) {}
-                    // 同 assignment 的历史提醒已在服务端一并标记，本地队列也要跳过，避免继续弹。
                     if (ackedIds.length > 1) {
                         const ackedSet = new Set(ackedIds.map((x) => String(x)));
                         __ackAnnouncementQueue = __ackAnnouncementQueue.filter((item, idx) => {
@@ -1246,20 +1240,17 @@
                     }
                 } catch (e) {
                     console.warn('ack system notification failed', e);
-                    // 服务端失败时仍写本地，至少本机本会话不再重复；下次登录会再尝试服务端。
-                    try {
-                        const key = 'hrms_acked_sys_notifs_' + myUsername;
-                        let ids = [];
-                        try { ids = JSON.parse(localStorage.getItem(key) || '[]'); } catch (err) { ids = []; }
-                        if (!ids.includes(annId)) ids.push(annId);
-                        if (rawId && !ids.includes(rawId)) ids.push(rawId);
-                        localStorage.setItem(key, JSON.stringify(ids));
-                    } catch (err) {}
+                    showNotification('已读确认失败，请检查网络后重试', 'error');
+                    return;
                 }
             } else {
                 try {
                     await HRMS_API.request('/api/announcements/' + encodeURIComponent(annId) + '/ack', { method: 'POST' });
-                } catch (e) { console.warn('ack announcement failed', e); }
+                } catch (e) {
+                    console.warn('ack announcement failed', e);
+                    showNotification('公告确认失败，请检查网络后重试', 'error');
+                    return;
+                }
                 // 本地同步标记已读：renderProfileNotifications 用的是本地缓存的 data.announcements，
                 // 不写回的话下次重渲染还是查到 readBy 缺失，又被判定成未读重新塞回强制队列，弹窗消不掉。
                 try {
@@ -1297,20 +1288,20 @@
                 const unread = Array.isArray(data.unread) ? data.unread : [];
                 const pct = total ? Math.round((readCount / total) * 100) : 0;
                 let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">'
-                    + '<div style="font-size:28px;font-weight:800;color:' + (pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444') + ';">' + pct + '%</div>'
+                    + '<div style="font-size:28px;font-weight:800;color:' + (pct >= 80 ? '#86C9A2' : pct >= 50 ? '#CFA14A' : '#E58B98') + ';">' + pct + '%</div>'
                     + '<div style="color:#666;font-size:12px;">已读 ' + readCount + ' / 共 ' + total + ' 人</div>'
                     + '</div>';
                 if (unread.length) {
                     html += '<div style="font-weight:700;margin-bottom:6px;">未读名单（' + unread.length + '人）</div>';
                     html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + unread.map(u =>
-                        '<span style="background:rgba(239,68,68,0.1);color:#ef4444;padding:4px 10px;border-radius:8px;font-size:12px;">' + escapeHtml(u.name || u.username) + (u.store ? '（' + escapeHtml(u.store) + '）' : '') + '</span>'
+                        '<span style="background:rgba(229,139,152,0.1);color:#E58B98;padding:4px 10px;border-radius:8px;font-size:12px;">' + escapeHtml(u.name || u.username) + (u.store ? '（' + escapeHtml(u.store) + '）' : '') + '</span>'
                     ).join('') + '</div>';
                 } else {
-                    html += '<div style="color:#10b981;">🎉 全员已读</div>';
+                    html += '<div style="color:#86C9A2;">🎉 全员已读</div>';
                 }
                 body.innerHTML = html;
             } catch (e) {
-                body.innerHTML = '<span style="color:#ef4444;">加载失败：' + escapeHtml(e.message || '') + '</span>';
+                body.innerHTML = '<span style="color:#E58B98;">加载失败：' + escapeHtml(e.message || '') + '</span>';
             }
         }
         function closeAnnouncementReceiptsModal() {
@@ -1490,7 +1481,7 @@
             mine.sort((a, b) => String(b?.createdAt || '').localeCompare(String(a?.createdAt || '')));
             const top = mine.slice(0, 5);
             if (!top.length) {
-                box.innerHTML = '<div style="color: rgba(200,215,230,0.72); font-size: 12px; padding: 10px 2px;">暂无休假记录</div>';
+                box.innerHTML = '<div style="color: rgba(151,132,142,0.72); font-size: 12px; padding: 10px 2px;">暂无休假记录</div>';
                 return;
             }
             box.innerHTML = `
@@ -1502,10 +1493,10 @@
                     const days = String(r?.days || '').trim();
                     const meta = [days ? (days + '天') : '', String(r?.createdAt || '').slice(0, 10)].filter(Boolean).join(' · ');
                     return `
-                        <div style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); margin-bottom: 10px;">
+                        <div style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(242,234,238,0.08); background: rgba(242,234,238,0.03); margin-bottom: 10px;">
                             <div style="font-weight: 900;">${start} 至 ${end}</div>
-                            ${reason ? `<div style="margin-top: 6px; color: rgba(226,232,240,0.92); font-size: 13px;">${reason}</div>` : ''}
-                            <div style="margin-top: 6px; color: rgba(200,215,230,0.72); font-size: 12px;">${escapeHtml(meta || '-') }</div>
+                            ${reason ? `<div style="margin-top: 6px; color: rgba(242,234,238,0.92); font-size: 13px;">${reason}</div>` : ''}
+                            <div style="margin-top: 6px; color: rgba(151,132,142,0.72); font-size: 12px;">${escapeHtml(meta || '-') }</div>
                         </div>
                     `;
                 }).join('')}
@@ -2107,8 +2098,8 @@
                             <div class="dr-staff-meta">${escapeHtml(meta || '')}</div>
                         </div>
                         <div class="dr-staff-actions">
-                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #f97316;">${escapeHtml(dayText)}</button>
-                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #ef4444;">删除</button>
+                            <button class="btn" type="button" data-click="toggleDailyReportStaffDays" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #CFA14A;">${escapeHtml(dayText)}</button>
+                            <button class="btn" type="button" data-click="removeDailyReportStaffItem" data-arg="${escapeHtml(kind)}" data-arg2="${idx}" data-arg2-type="number" style="padding: 8px 12px; background: #E58B98;">删除</button>
                         </div>
                     </div>
                 `;
@@ -2573,7 +2564,7 @@
                 const srcDisp = drResolveDailyReportPhotoSrc(srcRaw);
                 const src = escapeHtml(srcDisp);
                 return `
-                    <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03);">
+                    <div style="position: relative; width: 96px; height: 96px; border-radius: 12px; overflow:hidden; border: 1px solid rgba(242,234,238,0.10); background: rgba(242,234,238,0.03);">
                         <img alt="日结单" src="${src}" loading="lazy" decoding="async" referrerpolicy="no-referrer" style="width: 100%; height: 100%; object-fit: cover;" />
                         <button class="btn btn-secondary" type="button" data-click="removeDailyReportPhoto" data-arg="${idx}" data-arg-type="number" style="position:absolute; top: 6px; right: 6px; padding: 4px 8px; font-size: 12px; border-radius: 999px;">×</button>
                     </div>
@@ -2693,7 +2684,7 @@
             const listEl = document.getElementById('dr-list');
             const emptyEl = document.getElementById('dr-empty');
             const banner = document.getElementById('dr-missing-banner');
-            if (listEl) listEl.innerHTML = '<div style="color:#777; font-size: 12px; padding: 10px 2px;">加载中...</div>';
+            if (listEl) listEl.innerHTML = '<div style="color:#97848E; font-size: 12px; padding: 10px 2px;">加载中...</div>';
             if (emptyEl) emptyEl.style.display = 'none';
             if (banner) banner.style.display = 'none';
 

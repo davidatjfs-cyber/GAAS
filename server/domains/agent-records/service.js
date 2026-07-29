@@ -147,15 +147,17 @@ export async function resolveAgentIssue(pool, { id, resolution, tenantId = 'defa
   return { ok: true };
 }
 
-export async function listMyNotifications(pool, username, limit) {
+export async function listMyNotifications(pool, username, limit, opts = {}) {
   const u = String(username || '').trim();
   if (!u) return { ok: false, status: 400, error: 'missing_username' };
   const lim = clampLimit(limit, { min: 1, max: 100, fallback: 30 });
+  const unreadOnly = opts.unreadOnly === true;
+  const unreadSql = unreadOnly ? ' AND read_at IS NULL' : '';
   try {
     const r = await pool.query(
       `SELECT id, title, message, type, meta, created_at, read_at
          FROM hrms_user_notifications
-         WHERE lower(target_username) = lower($1)
+         WHERE lower(target_username) = lower($1)${unreadSql}
          ORDER BY created_at DESC
          LIMIT $2`,
       [u, lim]
@@ -169,7 +171,7 @@ export async function listMyNotifications(pool, username, limit) {
       const r = await pool.query(
         `SELECT id, title, message, type, meta, created_at
            FROM hrms_user_notifications
-           WHERE lower(target_username) = lower($1)
+           WHERE lower(target_username) = lower($1)${unreadSql}
            ORDER BY created_at DESC
            LIMIT $2`,
         [u, lim]

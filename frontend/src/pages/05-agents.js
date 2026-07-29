@@ -102,7 +102,7 @@
         function getOpFrequencySelectHtml(value, cls) {
             const v = String(value || 'daily').trim();
             const label = { daily: '每天', weekly: '每周', biweekly: '每2周', monthly: '每月', custom: '自定义' };
-            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;">${OP_FREQUENCY_OPTIONS.map((k)=>`<option value="${k}" ${k===v?'selected':''}>${label[k]||k}</option>`).join('')}</select>`;
+            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(242,234,238,0.1); color: #fff;">${OP_FREQUENCY_OPTIONS.map((k)=>`<option value="${k}" ${k===v?'selected':''}>${label[k]||k}</option>`).join('')}</select>`;
         }
 
         function getOpInspectionTypeSelectHtml(value, cls) {
@@ -111,14 +111,14 @@
             const isCustom = !OP_INSPECTION_TYPE_OPTIONS.includes(v);
             let opts = OP_INSPECTION_TYPE_OPTIONS.map((k)=>`<option value="${k}" ${k===v?'selected':''}>${label[k]||k}</option>`).join('');
             if (isCustom) opts += `<option value="${v}" selected>${v}</option>`;
-            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff;" data-change="hrmsOpsInspectionTypeChange" data-arg-self>${opts}</select>`;
+            return `<select class="${cls}" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(242,234,238,0.1); color: #fff;" data-change="hrmsOpsInspectionTypeChange" data-arg-self>${opts}</select>`;
         }
 
         function getOpRandomTypeSelectHtml(value, cls) {
             const v = String(value || '').trim();
             const dlId = 'dl-rand-type-' + Math.random().toString(36).slice(2, 8);
             const presetOpts = OP_RANDOM_TYPE_OPTIONS.map((x) => `<option value="${escapeHtml(x.label)}"></option>`).join('');
-            return `<input class="${cls}" list="${dlId}" value="${escapeHtml(v)}" placeholder="选择或输入自定义类型" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size:13px;"><datalist id="${dlId}">${presetOpts}</datalist>`;
+            return `<input class="${cls}" list="${dlId}" value="${escapeHtml(v)}" placeholder="选择或输入自定义类型" style="width:100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid rgba(242,234,238,0.1); color: #fff; font-size:13px;"><datalist id="${dlId}">${presetOpts}</datalist>`;
         }
 
         function getOpStoreOptions(selectedStore = '', allowAll = false) {
@@ -143,7 +143,7 @@
             const normalized = Array.isArray(selectedRoles) && selectedRoles.length ? selectedRoles : all;
             return all.map((role) => {
                 const checked = normalized.includes(role) ? 'checked' : '';
-                return `<label style="display:inline-flex;align-items:center;gap:6px;margin-right:10px;color:#cbd5e1;font-size:12px;"><input type="checkbox" class="op-random-role" value="${role}" ${checked}>${labels[role] || role}</label>`;
+                return `<label style="display:inline-flex;align-items:center;gap:6px;margin-right:10px;color:#B8AAB1;font-size:12px;"><input type="checkbox" class="op-random-role" value="${role}" ${checked}>${labels[role] || role}</label>`;
             }).join('');
         }
 
@@ -211,35 +211,35 @@
                 const dailyList = document.getElementById('op-config-daily-list');
                 const dailyInspections = cfg.scheduledTasks?.dailyInspections || [];
                 dailyList.innerHTML = dailyInspections.map((item, idx) => `
-                    <div class="am-card" data-checklist="${escapeHtml(JSON.stringify(item.checklist || []))}" style="padding:14px;margin-bottom:0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;">
+                    <div class="am-card" data-checklist="${escapeHtml(JSON.stringify(item.checklist || []))}" style="padding:14px;margin-bottom:0;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.08);border-radius:10px;">
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
                             <div style="grid-column:span 2;">
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">门店</label>
-                                <select class="op-daily-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">门店</label>
+                                <select class="op-daily-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                     ${getOpStoreOptions(item.store || '')}
                                 </select>
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">类型</label>
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">类型</label>
                                 ${getOpInspectionTypeSelectHtml(item.type || 'opening', 'op-daily-type')}
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">触发时间</label>
-                                <input type="time" class="op-daily-time" value="${item.time || ''}" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">触发时间</label>
+                                <input type="time" class="op-daily-time" value="${item.time || ''}" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">触发频率</label>
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">触发频率</label>
                                 ${getOpFrequencySelectHtml(item.frequency || 'daily', 'op-daily-frequency')}
                                 <div class="op-daily-custom-wrap" style="margin-top:6px;display:none;">
-                                    <input type="number" class="op-daily-custom-days" min="1" value="${Number(item.customIntervalDays || 1)}" placeholder="间隔天数" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                    <input type="number" class="op-daily-custom-days" min="1" value="${Number(item.customIntervalDays || 1)}" placeholder="间隔天数" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                 </div>
                             </div>
                             <div style="grid-column:span 2;">
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">检查表链接（可选，留空则在聊天中回复）</label>
-                                <input class="op-daily-formurl" value="${item.formUrl || ''}" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">检查表链接（可选，留空则在聊天中回复）</label>
+                                <input class="op-daily-formurl" value="${item.formUrl || ''}" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div style="display:flex;align-items:flex-end;">
-                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg="[data-checklist]" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg="[data-checklist]" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -251,40 +251,40 @@
                 const randomList = document.getElementById('op-config-random-list');
                 const randomInspections = cfg.scheduledTasks?.randomInspections || [];
                 randomList.innerHTML = randomInspections.map((item, idx) => `
-                    <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;">
+                    <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.08);border-radius:10px;">
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">类型</label>
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">类型</label>
                                 ${getOpRandomTypeSelectHtml((() => { const t = item.type || ''; const found = OP_RANDOM_TYPE_OPTIONS.find(x => x.key === t); return found ? found.label : t; })(), 'op-random-type')}
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">指定门店</label>
-                                <select class="op-random-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">指定门店</label>
+                                <select class="op-random-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                     ${getOpStoreOptions(item.store || '', true)}
                                 </select>
                             </div>
                             <div style="grid-column:span 2;">
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">任务描述</label>
-                                <input class="op-random-desc" value="${item.description || ''}" placeholder="例如：拍摄海鲜池水温计照片" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">任务描述</label>
+                                <input class="op-random-desc" value="${item.description || ''}" placeholder="例如：拍摄海鲜池水温计照片" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">随机间隔(小时)</label>
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">随机间隔(小时)</label>
                                 <div style="display:flex;gap:6px;align-items:center;">
-                                    <input type="number" class="op-random-interval-min" value="${Number(item.intervalMinHours || item.interval?.[0] || 2)}" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
-                                    <span style="color:#64748b;font-size:13px;">~</span>
-                                    <input type="number" class="op-random-interval-max" value="${Number(item.intervalMaxHours || item.interval?.[1] || 4)}" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                    <input type="number" class="op-random-interval-min" value="${Number(item.intervalMinHours || item.interval?.[0] || 2)}" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
+                                    <span style="color:#7A6B72;font-size:13px;">~</span>
+                                    <input type="number" class="op-random-interval-max" value="${Number(item.intervalMaxHours || item.interval?.[1] || 4)}" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                 </div>
                             </div>
                             <div>
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">时间窗口(分钟)</label>
-                                <input type="number" class="op-random-time" value="${item.timeWindow || 15}" min="1" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">时间窗口(分钟)</label>
+                                <input type="number" class="op-random-time" value="${item.timeWindow || 15}" min="1" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                             <div style="grid-column:span 2;">
-                                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">指定人员角色</label>
+                                <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">指定人员角色</label>
                                 <div>${getOpRandomRoleChecksHtml(item.assigneeRoles || [])}</div>
                             </div>
                             <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                                <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.25);font-size:13px;">删除</button>
                             </div>
                         </div>
                     </div>
@@ -300,35 +300,35 @@
             const list = document.getElementById('op-config-daily-list');
             const div = document.createElement('div');
             div.innerHTML = `
-                <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;">
+                <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.08);border-radius:10px;">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
                         <div style="grid-column:span 2;">
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">门店</label>
-                            <select class="op-daily-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">门店</label>
+                            <select class="op-daily-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                 ${getOpStoreOptions('')}
                             </select>
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">类型</label>
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">类型</label>
                             ${getOpInspectionTypeSelectHtml('opening', 'op-daily-type')}
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">触发时间</label>
-                            <input type="time" class="op-daily-time" value="10:00" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">触发时间</label>
+                            <input type="time" class="op-daily-time" value="10:00" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">触发频率</label>
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">触发频率</label>
                             ${getOpFrequencySelectHtml('daily', 'op-daily-frequency')}
                             <div class="op-daily-custom-wrap" style="margin-top:6px;display:none;">
-                                <input type="number" class="op-daily-custom-days" min="1" value="1" placeholder="间隔天数" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <input type="number" class="op-daily-custom-days" min="1" value="1" placeholder="间隔天数" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                         </div>
                         <div style="grid-column:span 2;">
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">检查表链接（可选，留空则在聊天中回复）</label>
-                            <input class="op-daily-formurl" value="" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">检查表链接（可选，留空则在聊天中回复）</label>
+                            <input class="op-daily-formurl" value="" placeholder="https://xxx.feishu.cn/base/..." style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div style="display:flex;align-items:flex-end;">
-                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="width:100%;padding:10px;border-radius:8px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
@@ -343,40 +343,40 @@
             const list = document.getElementById('op-config-random-list');
             const div = document.createElement('div');
             div.innerHTML = `
-                <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;">
+                <div class="am-card" style="padding:14px;margin-bottom:0;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.08);border-radius:10px;">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">类型</label>
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">类型</label>
                             ${getOpRandomTypeSelectHtml(OP_RANDOM_TYPE_OPTIONS[0].label, 'op-random-type')}
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">指定门店</label>
-                            <select class="op-random-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">指定门店</label>
+                            <select class="op-random-store" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                                 ${getOpStoreOptions('', true)}
                             </select>
                         </div>
                         <div style="grid-column:span 2;">
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">任务描述</label>
-                            <input class="op-random-desc" placeholder="例如：拍摄海鲜池水温计照片" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">任务描述</label>
+                            <input class="op-random-desc" placeholder="例如：拍摄海鲜池水温计照片" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">随机间隔(小时)</label>
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">随机间隔(小时)</label>
                             <div style="display:flex;gap:6px;align-items:center;">
-                                <input type="number" class="op-random-interval-min" value="2" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
-                                <span style="color:#64748b;font-size:13px;">~</span>
-                                <input type="number" class="op-random-interval-max" value="4" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                                <input type="number" class="op-random-interval-min" value="2" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
+                                <span style="color:#7A6B72;font-size:13px;">~</span>
+                                <input type="number" class="op-random-interval-max" value="4" min="1" style="width:50%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                             </div>
                         </div>
                         <div>
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">时间窗口(分钟)</label>
-                            <input type="number" class="op-random-time" value="15" min="1" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:13px;">
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">时间窗口(分钟)</label>
+                            <input type="number" class="op-random-time" value="15" min="1" style="width:100%;padding:10px 12px;border-radius:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(242,234,238,0.1);color:#fff;font-size:13px;">
                         </div>
                         <div style="grid-column:span 2;">
-                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;font-weight:600;">指定人员角色</label>
+                            <label style="font-size:11px;color:#97848E;display:block;margin-bottom:4px;font-weight:600;">指定人员角色</label>
                             <div>${getOpRandomRoleChecksHtml([])}</div>
                         </div>
                         <div style="grid-column:span 2;display:flex;justify-content:flex-end;">
-                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.25);font-size:13px;">删除</button>
+                            <button class="btn btn-secondary" data-click="hrmsRemoveClosest" data-arg=".am-card" data-arg-self="1" style="padding:10px 20px;border-radius:8px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.25);font-size:13px;">删除</button>
                         </div>
                     </div>
                 </div>
@@ -485,15 +485,15 @@
                 const label = preset?.label || rule.customLabel || '自定义规则';
                 const modeLabel = compareModeLabels[rule.compareMode] || rule.compareMode;
                 const unitLabel = rule.unit || preset?.unit || '';
-                return `<div style="background:#1e293b;border-radius:10px;padding:12px 14px;border:1px solid #334155;">
+                return `<div style="background:#1C181C;border-radius:10px;padding:12px 14px;border:1px solid #6E5F67;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <div style="font-weight:600;color:#e2e8f0;font-size:13px;">${escapeHtml(label)}</div>
+                        <div style="font-weight:600;color:#F2EAEE;font-size:13px;">${escapeHtml(label)}</div>
                         <div style="display:flex;gap:6px;align-items:center;">
-                            <label style="font-size:11px;color:#94a3b8;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} data-change="hrmsSetBiAnomalyRuleEnabled" data-arg="${idx}" data-arg-type="number" data-pass-checked> 启用</label>
-                            <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
+                            <label style="font-size:11px;color:#97848E;"><input type="checkbox" ${rule.enabled !== false ? 'checked' : ''} data-change="hrmsSetBiAnomalyRuleEnabled" data-arg="${idx}" data-arg-type="number" data-pass-checked> 启用</label>
+                            <button data-click="removeBiAnomalyRule" data-arg="${idx}" data-arg-type="number" style="background:none;border:none;color:#E58B98;cursor:pointer;font-size:16px;padding:2px;" title="删除">✕</button>
                         </div>
                     </div>
-                    <div style="font-size:11px;color:#64748b;margin-bottom:8px;">${escapeHtml(preset?.description || rule.description || '')}　|　比较方式: ${escapeHtml(modeLabel)}</div>
+                    <div style="font-size:11px;color:#7A6B72;margin-bottom:8px;">${escapeHtml(preset?.description || rule.description || '')}　|　比较方式: ${escapeHtml(modeLabel)}</div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
                         <div>
                             <label class="acm-lbl">🟡 中优先级 (${escapeHtml(unitLabel)})</label>
@@ -539,7 +539,7 @@
         function renderBiStoreOverrides(){
             var el=document.getElementById('bi-store-overrides-area');
             if(!el)return;
-            if(!__BI_ANOMALY_RULES.length||!__BI_KNOWN_STORES.length){el.innerHTML='<div style="color:#64748b;font-size:12px;padding:12px">请先添加全局规则</div>';return;}
+            if(!__BI_ANOMALY_RULES.length||!__BI_KNOWN_STORES.length){el.innerHTML='<div style="color:#7A6B72;font-size:12px;padding:12px">请先添加全局规则</div>';return;}
             var h='';
             for(var i=0;i<__BI_KNOWN_STORES.length;i++){
                 var s=__BI_KNOWN_STORES[i],ov=__BI_STORE_OVERRIDES[s]||{},cells='';
@@ -549,11 +549,11 @@
                     var mk=p.configKeys[0],hk=p.configKeys[1],ip=!!p.isPercent;
                     var mv=ov[mk]!=null?(ip?+(ov[mk]*100).toFixed(2):ov[mk]):'';
                     var hv=ov[hk]!=null?(ip?+(ov[hk]*100).toFixed(2):ov[hk]):'';
-                    cells+='<div style="display:flex;gap:4px;align-items:center;margin:2px 0"><span style="font-size:10px;color:#64748b;width:68px;flex-shrink:0">'+escapeHtml(p.label.slice(0,6))+'</span>';
+                    cells+='<div style="display:flex;gap:4px;align-items:center;margin:2px 0"><span style="font-size:10px;color:#7A6B72;width:68px;flex-shrink:0">'+escapeHtml(p.label.slice(0,6))+'</span>';
                     cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="中" value="'+mv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+mk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any">';
                     cells+='<input type="number" class="acm-inp acm-inp-sm" style="width:58px;font-size:11px" placeholder="高" value="'+hv+'" data-change="setBiStoreOverride" data-arg="'+s.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" data-arg2="'+hk+'" data-pass-value data-arg3="'+(ip?1:0)+'" data-arg3-type="number" step="any"></div>';
                 }
-                h+='<div style="background:#1e293b;border-radius:8px;padding:10px;border:1px solid #334155;margin-bottom:8px"><div style="font-weight:600;color:#e2e8f0;font-size:12px;margin-bottom:4px">🏪 '+escapeHtml(s)+'</div><div style="font-size:10px;color:#64748b;margin-bottom:4px">留空=使用全局默认值</div>'+cells+'</div>';
+                h+='<div style="background:#1C181C;border-radius:8px;padding:10px;border:1px solid #6E5F67;margin-bottom:8px"><div style="font-weight:600;color:#F2EAEE;font-size:12px;margin-bottom:4px">🏪 '+escapeHtml(s)+'</div><div style="font-size:10px;color:#7A6B72;margin-bottom:4px">留空=使用全局默认值</div>'+cells+'</div>';
             }
             el.innerHTML=h;
         }
@@ -767,7 +767,7 @@
                 renderAgentTemplatesList();
             } catch (e) {
                 if (String(e?.name || '') === 'AbortError') return;
-                if (box) box.innerHTML = '<div class="acm-empty" style="color:#f87171;">模板加载失败</div>';
+                if (box) box.innerHTML = '<div class="acm-empty" style="color:#EDA1AC;">模板加载失败</div>';
             }
         }
 
@@ -794,8 +794,8 @@
                                 <div class="acm-tpl-name">${escapeHtml(t.name || '')}</div>
                                 <div class="acm-tpl-agent">${escapeHtml(t.agent_id || '')} ${locked ? '· 系统模板' : '· 公司模板'}</div>
                             </div>
-                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#64748b;flex-shrink:0;">
-                                <input type="checkbox" id="tpl-enabled-${escapeHtml(t.id)}" ${t.enabled ? 'checked' : ''} style="accent-color:#6366f1;"> 启用
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#7A6B72;flex-shrink:0;">
+                                <input type="checkbox" id="tpl-enabled-${escapeHtml(t.id)}" ${t.enabled ? 'checked' : ''} style="accent-color:#D18FA0;"> 启用
                             </label>
                         </div>
                         <input id="tpl-name-${escapeHtml(t.id)}" value="${escapeHtml(t.name || '')}" placeholder="模板名称" class="acm-inp acm-inp-sm" style="margin-top:10px;">
@@ -981,10 +981,10 @@
                 return `<div class="acm-card" style="position:relative;">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                         <div style="display:flex;align-items:center;gap:8px;">
-                            <span style="background:rgba(99,102,241,0.15);color:#818cf8;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;">${escapeHtml(catLabel)}</span>
-                            <span style="font-size:13px;font-weight:700;color:#e2e8f0;">${escapeHtml(dim.label || preset.label || '')}</span>
+                            <span style="background:rgba(209,143,160,0.15);color:#E0A6B4;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;">${escapeHtml(catLabel)}</span>
+                            <span style="font-size:13px;font-weight:700;color:#F2EAEE;">${escapeHtml(dim.label || preset.label || '')}</span>
                         </div>
-                        <button data-click="removeHrRatingDim" data-arg="${i}" data-arg-type="number" style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
+                        <button data-click="removeHrRatingDim" data-arg="${i}" data-arg-type="number" style="background:none;border:none;color:#E58B98;font-size:16px;cursor:pointer;padding:2px 6px;">✕</button>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
                         <div>
@@ -996,7 +996,7 @@
                             <select class="acm-inp acm-inp-sm" data-change="hrmsSetHrRatingDimWeight" data-arg="${i}" data-arg-type="number" data-pass-number>${weightOpts}</select>
                         </div>
                     </div>
-                    <div style="font-size:11px;color:#64748b;margin-bottom:6px;">ABCD 评级阈值 <span style="color:#818cf8;">(${dirLabel})</span></div>
+                    <div style="font-size:11px;color:#7A6B72;margin-bottom:6px;">ABCD 评级阈值 <span style="color:#E0A6B4;">(${dirLabel})</span></div>
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
                         <div style="text-align:center;">
                             <span class="acm-badge acm-ba" style="display:inline-block;margin-bottom:4px;">A</span>
@@ -1011,7 +1011,7 @@
                             <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.C ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="C" data-pass-number placeholder="${dir === 'higher_better' ? '≥' : '≤'}">
                         </div>
                         <div style="text-align:center;">
-                            <span class="acm-badge" style="background:#ef4444;display:inline-block;margin-bottom:4px;">D</span>
+                            <span class="acm-badge" style="background:#E58B98;display:inline-block;margin-bottom:4px;">D</span>
                             <input type="number" step="any" class="acm-inp acm-inp-sm" value="${dim.thresholds?.D ?? ''}" data-change="hrmsSetHrRatingDimThreshold" data-arg="${i}" data-arg-type="number" data-arg2="D" data-pass-number placeholder="${dir === 'higher_better' ? '<' : '>'}">
                         </div>
                     </div>
@@ -1156,10 +1156,10 @@
                 if (emRows.length) {
                     monthly.innerHTML = emRows.map((r) => {
                         const sc = r.total_score != null ? Number(r.total_score).toFixed(1) : '—';
-                        return `<span style="display:block;margin-bottom:4px;"><strong>本月累计绩效（employee_scores）</strong> · ${escapeHtml(r.store || '—')} · ${escapeHtml(r.role || '—')}：<strong style="color:#fde68a;">${escapeHtml(sc)}</strong> 分（执行力 ${escapeHtml(r.execution_rating || '—')} · 态度 ${escapeHtml(r.attitude_rating || '—')} · 能力 ${escapeHtml(r.ability_rating || '—')}）</span>`;
+                        return `<span style="display:block;margin-bottom:4px;"><strong>本月累计绩效（employee_scores）</strong> · ${escapeHtml(r.store || '—')} · ${escapeHtml(r.role || '—')}：<strong style="color:#EAD2A0;">${escapeHtml(sc)}</strong> 分（执行力 ${escapeHtml(r.execution_rating || '—')} · 态度 ${escapeHtml(r.attitude_rating || '—')} · 能力 ${escapeHtml(r.ability_rating || '—')}）</span>`;
                     }).join('');
                 } else {
-                    monthly.innerHTML = '<span style="color:#64748b;">未查到该统计月在 <code style="font-size:10px;">employee_scores</code> 中的月度汇总（可能未到关账日或尚未写入）。卡片上的「100 分」等为<strong>当周周度 BI 汇总行</strong>得分，与月度累计不同；最终绩效以月度汇总为准。填写账号后再次查询可核对本人月度行。</span>';
+                    monthly.innerHTML = '<span style="color:#7A6B72;">未查到该统计月在 <code style="font-size:10px;">employee_scores</code> 中的月度汇总（可能未到关账日或尚未写入）。卡片上的「100 分」等为<strong>当周周度 BI 汇总行</strong>得分，与月度累计不同；最终绩效以月度汇总为准。填写账号后再次查询可核对本人月度行。</span>';
                 }
             }
 
@@ -1178,21 +1178,21 @@
                         })();
                         const dedLines = deductions.filter(d => Number(d?.points || 0) > 0).map(d => `${escapeHtml(perfAuditDeductionLabelZh(d.category || d.reason || d.metric_key))} -${d.points}`).join('、');
                         const bgStyle = inv
-                            ? 'background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);opacity:0.6;'
-                            : 'background:rgba(30,41,59,0.5);border:1px solid rgba(255,255,255,0.06);';
+                            ? 'background:rgba(229,139,152,0.08);border:1px solid rgba(229,139,152,0.25);opacity:0.6;'
+                            : 'background:rgba(28,24,28,0.5);border:1px solid rgba(242,234,238,0.06);';
                         const scNum = Number(w.total_score);
                         const scDisp = (w.total_score !== null && w.total_score !== undefined && String(w.total_score).trim() !== '' && Number.isFinite(scNum))
                             ? scNum.toFixed(1)
                             : escapeHtml(String(w.total_score ?? '—'));
-                        const scColor = Number.isFinite(scNum) && scNum < 100 ? '#fb923c' : '#22c55e';
+                        const scColor = Number.isFinite(scNum) && scNum < 100 ? '#DDB66A' : '#86C9A2';
                         return `<div style="padding:10px 12px;border-radius:8px;${bgStyle}">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                                <span style="font-size:13px;font-weight:600;color:#f1f5f9;">${escapeHtml(w.name || w.username)} <span style="color:#64748b;font-weight:400;">(${escapeHtml(w.username)})</span></span>
+                                <span style="font-size:13px;font-weight:600;color:#F2EAEE;">${escapeHtml(w.name || w.username)} <span style="color:#7A6B72;font-weight:400;">(${escapeHtml(w.username)})</span></span>
                                 <span style="font-size:14px;font-weight:700;color:${scColor};">${scDisp}分</span>
                             </div>
-                            <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">${escapeHtml(w.period)} · ${escapeHtml(w.store)}</div>
-                            ${dedLines ? `<div style="font-size:12px;color:#fb923c;margin-bottom:4px;">${dedLines}</div>` : ''}
-                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="agent_scores_weekly" data-arg2="${escapeHtml(String(w.id))}" data-arg3="${escapeHtml(w.username)}" data-arg4="${escapeHtml(w.store || '')}" data-arg5="${escapeHtml(period)}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
+                            <div style="font-size:12px;color:#97848E;margin-bottom:4px;">${escapeHtml(w.period)} · ${escapeHtml(w.store)}</div>
+                            ${dedLines ? `<div style="font-size:12px;color:#DDB66A;margin-bottom:4px;">${dedLines}</div>` : ''}
+                            ${inv ? '<div style="font-size:12px;color:#E58B98;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="agent_scores_weekly" data-arg2="${escapeHtml(String(w.id))}" data-arg3="${escapeHtml(w.username)}" data-arg4="${escapeHtml(w.store || '')}" data-arg5="${escapeHtml(period)}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.3);cursor:pointer;">标记失效</button>`}
                         </div>`;
                     }).join('');
                 }
@@ -1211,9 +1211,9 @@
                         const sev = escapeHtml(dcDeductionSeverityZh(r.severity));
                         const st = escapeHtml(String(r.status || '—'));
                         const ak = escapeHtml(dcDeductionAnomalyKeyZh(r.anomaly_key));
-                        return `<div style="padding:8px 10px;border-radius:8px;background:rgba(30,41,59,0.45);border:1px solid rgba(255,255,255,0.06);font-size:12px;color:#cbd5e1;">
-                            <div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-weight:600;color:#e2e8f0;">${dt}</span><span style="color:#64748b;">${sev} · ${st}</span></div>
-                            <div style="margin-top:4px;color:#94a3b8;">${escapeHtml(r.store || '')} · ${ak}</div>
+                        return `<div style="padding:8px 10px;border-radius:8px;background:rgba(28,24,28,0.45);border:1px solid rgba(242,234,238,0.06);font-size:12px;color:#B8AAB1;">
+                            <div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-weight:600;color:#F2EAEE;">${dt}</span><span style="color:#7A6B72;">${sev} · ${st}</span></div>
+                            <div style="margin-top:4px;color:#97848E;">${escapeHtml(r.store || '')} · ${ak}</div>
                         </div>`;
                     }).join('');
                 }
@@ -1231,8 +1231,8 @@
                     filingList.innerHTML = filings.map(f => {
                         const inv = f.is_invalidated;
                         const bgStyle = inv
-                            ? 'background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);opacity:0.6;'
-                            : 'background:rgba(30,41,59,0.5);border:1px solid rgba(255,255,255,0.06);';
+                            ? 'background:rgba(229,139,152,0.08);border:1px solid rgba(229,139,152,0.25);opacity:0.6;'
+                            : 'background:rgba(28,24,28,0.5);border:1px solid rgba(242,234,238,0.06);';
                         const dt = f.dispatched_at ? new Date(f.dispatched_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '';
                         const dispName = String(f.assignee_name || f.name || '').trim();
                         const who = dispName && dispName !== f.assignee_username
@@ -1240,12 +1240,12 @@
                             : `${escapeHtml(f.assignee_username || dispName || '—')}`;
                         return `<div style="padding:10px 12px;border-radius:8px;${bgStyle}">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                                <span style="font-size:13px;font-weight:600;color:#f1f5f9;">${who}</span>
-                                <span style="font-size:11px;color:#64748b;">${escapeHtml(perfAuditMasterSourceZh(f.source))}</span>
+                                <span style="font-size:13px;font-weight:600;color:#F2EAEE;">${who}</span>
+                                <span style="font-size:11px;color:#7A6B72;">${escapeHtml(perfAuditMasterSourceZh(f.source))}</span>
                             </div>
-                            <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">${escapeHtml(f.title || f.category || '')}</div>
-                            <div style="font-size:11px;color:#64748b;margin-bottom:4px;">${dt} · ${escapeHtml(f.store || '')}</div>
-                            ${inv ? '<div style="font-size:12px;color:#ef4444;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="master_tasks_filing" data-arg2="${escapeHtml(f.task_id)}" data-arg3="${escapeHtml(f.assignee_username || '')}" data-arg4="${escapeHtml(f.store || '')}" data-arg5="${period}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);cursor:pointer;">标记失效</button>`}
+                            <div style="font-size:12px;color:#97848E;margin-bottom:4px;">${escapeHtml(f.title || f.category || '')}</div>
+                            <div style="font-size:11px;color:#7A6B72;margin-bottom:4px;">${dt} · ${escapeHtml(f.store || '')}</div>
+                            ${inv ? '<div style="font-size:12px;color:#E58B98;font-weight:600;">已失效</div>' : `<button data-click="invalidatePerformanceRecord" data-arg="master_tasks_filing" data-arg2="${escapeHtml(f.task_id)}" data-arg3="${escapeHtml(f.assignee_username || '')}" data-arg4="${escapeHtml(f.store || '')}" data-arg5="${period}" style="margin-top:6px;font-size:12px;padding:4px 12px;border-radius:6px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:1px solid rgba(229,139,152,0.3);cursor:pointer;">标记失效</button>`}
                         </div>`;
                     }).join('');
                 }
@@ -1261,11 +1261,11 @@
                     invList.innerHTML = invs.map(iv => {
                         const dt = iv.invalidated_at ? new Date(iv.invalidated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '';
                         const srcLabel = iv.source_type === 'agent_scores_weekly' ? '周度扣分' : iv.source_type === 'master_tasks_filing' ? '备案记录' : iv.source_type;
-                        return `<div style="padding:8px 12px;border-radius:8px;background:rgba(30,41,59,0.3);border:1px solid rgba(255,255,255,0.04);">
-                            <span style="font-size:12px;color:#f87171;font-weight:600;">已失效</span>
-                            <span style="font-size:12px;color:#94a3b8;margin-left:6px;">${srcLabel}</span>
-                            <span style="font-size:12px;color:#64748b;margin-left:6px;">${escapeHtml(iv.username || '')} · ${escapeHtml(iv.source_id || '')}</span>
-                            <span style="font-size:11px;color:#475569;margin-left:8px;">${dt} · by ${escapeHtml(iv.invalidated_by || '')}</span>
+                        return `<div style="padding:8px 12px;border-radius:8px;background:rgba(28,24,28,0.3);border:1px solid rgba(242,234,238,0.04);">
+                            <span style="font-size:12px;color:#EDA1AC;font-weight:600;">已失效</span>
+                            <span style="font-size:12px;color:#97848E;margin-left:6px;">${srcLabel}</span>
+                            <span style="font-size:12px;color:#7A6B72;margin-left:6px;">${escapeHtml(iv.username || '')} · ${escapeHtml(iv.source_id || '')}</span>
+                            <span style="font-size:11px;color:#6E5F67;margin-left:8px;">${dt} · by ${escapeHtml(iv.invalidated_by || '')}</span>
                         </div>`;
                     }).join('');
                 }
@@ -1330,7 +1330,7 @@
                 const token = localStorage.getItem('hrms_token');
                 const resp = await fetchWithAgentAbort('agent_configs', '/api/admin/agents/configs', { headers: { 'Authorization': 'Bearer ' + token } });
                 if (!resp.ok) {
-                    box.innerHTML = '<div class="acm-empty" style="color:#f87171;">无权限或接口不可用</div>';
+                    box.innerHTML = '<div class="acm-empty" style="color:#EDA1AC;">无权限或接口不可用</div>';
                     return;
                 }
                 const data = await resp.json();
@@ -1344,11 +1344,11 @@
                     <div class="acm-card">
                         <div class="acm-card-hd">
                             <div class="acm-card-title">${escapeHtml(c.name || c.agent_id || '')}</div>
-                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#64748b;flex-shrink:0;">
-                                <input type="checkbox" id="cfg-enabled-${escapeHtml(c.agent_id)}" ${c.enabled ? 'checked' : ''} style="accent-color:#6366f1;"> 启用
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#7A6B72;flex-shrink:0;">
+                                <input type="checkbox" id="cfg-enabled-${escapeHtml(c.agent_id)}" ${c.enabled ? 'checked' : ''} style="accent-color:#D18FA0;"> 启用
                             </label>
                         </div>
-                        <div style="font-size:11px;color:#334155;margin-bottom:10px;">${escapeHtml(c.agent_id || '')}</div>
+                        <div style="font-size:11px;color:#6E5F67;margin-bottom:10px;">${escapeHtml(c.agent_id || '')}</div>
                         <div style="display:flex;flex-direction:column;gap:8px;">
                             <div>
                                 <label class="acm-lbl">模型名称</label>
@@ -1394,7 +1394,7 @@
                 `).join('');
             } catch (e) {
                 if (String(e?.name || '') === 'AbortError') return;
-                box.innerHTML = '<div class="acm-empty" style="color:#f87171;">加载失败</div>';
+                box.innerHTML = '<div class="acm-empty" style="color:#EDA1AC;">加载失败</div>';
             }
         }
 
@@ -1445,7 +1445,7 @@
                 const token = localStorage.getItem('hrms_token');
                 const resp = await fetchWithAgentAbort('agent_rules', '/api/admin/agents/rules', { headers: { 'Authorization': 'Bearer ' + token } });
                 if (!resp.ok) {
-                    list.innerHTML = '<div class="acm-empty" style="color:#f87171;">无权限或接口不可用</div>';
+                    list.innerHTML = '<div class="acm-empty" style="color:#EDA1AC;">无权限或接口不可用</div>';
                     return;
                 }
                 const data = await resp.json();
@@ -1460,7 +1460,7 @@
                     <div class="acm-rule-row">
                         <div class="acm-rule-info">
                             <div class="acm-rule-cat">${escapeHtml(r.category || '')}</div>
-                            <div class="acm-rule-meta">${roleLabel[r.assignee_role] || escapeHtml(r.assignee_role || '')} · ${r.enabled ? '启用' : '<span style="color:#f87171">停用</span>'}</div>
+                            <div class="acm-rule-meta">${roleLabel[r.assignee_role] || escapeHtml(r.assignee_role || '')} · ${r.enabled ? '启用' : '<span style="color:#EDA1AC">停用</span>'}</div>
                         </div>
                         <span class="acm-rule-deduct">中-${Number(r.normal_deduction||0)} / 重-${Number(r.major_deduction||0)}</span>
                         <button class="acm-edit-btn" data-click="openAgentRuleEditor" data-arg="${escapeHtml(String(r.id))}">编辑</button>
@@ -1468,7 +1468,7 @@
                 `).join('');
             } catch (e) {
                 if (String(e?.name || '') === 'AbortError') return;
-                list.innerHTML = '<div class="acm-empty" style="color:#f87171;">加载失败</div>';
+                list.innerHTML = '<div class="acm-empty" style="color:#EDA1AC;">加载失败</div>';
             }
         }
 
@@ -1585,7 +1585,7 @@
                         <button class="btn" data-click="triggerAmAudit">数据审计</button>
                         <button class="btn" data-click="triggerAmEval">绩效评估</button>`;
                 } else if (actionsBox) { actionsBox.innerHTML = ''; }
-            } catch (e) { box.innerHTML = '<div class="am-stat-card" style="grid-column:1/-1; text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-stat-card" style="grid-column:1/-1; text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 
         async function triggerAmAudit() {
@@ -1640,10 +1640,10 @@
                         ${i.status !== 'resolved' ? `<div class="am-resolve-row">
                             <input id="resolve-${i.id}" placeholder="整改说明...">
                             <button class="btn" data-click="resolveAmIssue" data-arg="${i.id}">解决</button>
-                        </div>` : (i.resolution ? `<div class="am-card-detail" style="color:#4ade80;">✓ ${escapeHtml(i.resolution)}</div>` : '')}
+                        </div>` : (i.resolution ? `<div class="am-card-detail" style="color:#9ED9B4;">✓ ${escapeHtml(i.resolution)}</div>` : '')}
                     </div>`;
                 }).join('');
-            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 
         async function resolveAmIssue(id) {
@@ -1684,11 +1684,11 @@
                         <div class="am-card-tags">
                             ${Object.entries(breakdown).map(([k,v]) => `<span class="am-tag">${escapeHtml(k)}: ${v}</span>`).join('')}
                         </div>
-                        ${deductions.length ? `<div class="am-card-detail" style="color:#f87171;">扣分：${deductions.map(d => `${escapeHtml(d.category||'')}(${d.points})`).join('、')}</div>` : ''}
+                        ${deductions.length ? `<div class="am-card-detail" style="color:#EDA1AC;">扣分：${deductions.map(d => `${escapeHtml(d.category||'')}(${d.points})`).join('、')}</div>` : ''}
                         ${s.summary ? `<div class="am-card-detail">${escapeHtml(s.summary)}</div>` : ''}
                     </div>`;
                 }).join('');
-            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 
         async function loadAmAudits() {
@@ -1713,7 +1713,7 @@
                         ${a.findings ? `<div class="am-card-detail">${escapeHtml(a.findings)}${conf}</div>` : ''}
                     </div>`;
                 }).join('');
-            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 
         async function loadAmMessages() {
@@ -1737,10 +1737,10 @@
                         </div>
                         <div class="am-card-meta">${formatAmTime(m.created_at)}</div>
                         ${m.content ? `<div class="am-card-detail">${escapeHtml(String(m.content).slice(0, 150))}${String(m.content).length > 150 ? '...' : ''}</div>` : ''}
-                        ${m.agent_response ? `<div class="am-card-detail" style="background:rgba(20,184,166,0.1); padding:8px; border-radius:6px; margin-top:6px; color:#14b8a6;">${escapeHtml(String(m.agent_response).slice(0, 200))}${String(m.agent_response).length > 200 ? '...' : ''}</div>` : ''}
+                        ${m.agent_response ? `<div class="am-card-detail" style="background:rgba(111,175,137,0.1); padding:8px; border-radius:6px; margin-top:6px; color:#6FAF89;">${escapeHtml(String(m.agent_response).slice(0, 200))}${String(m.agent_response).length > 200 ? '...' : ''}</div>` : ''}
                     </div>`;
                 }).join('');
-            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 
         async function loadAmUsers() {
@@ -1765,6 +1765,6 @@
                         <div class="am-card-detail" style="font-size:10px;">open_id: ${escapeHtml(String(u.open_id || '').slice(0, 20))}... · ${formatAmTime(u.created_at)}</div>
                     </div>`;
                 }).join('');
-            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#f87171;">加载失败</div>'; }
+            } catch (e) { box.innerHTML = '<div class="am-card" style="text-align:center; color:#EDA1AC;">加载失败</div>'; }
         }
 

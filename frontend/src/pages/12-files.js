@@ -52,9 +52,9 @@
 
             const html = files.map(file => {
                 const validationBadge = {
-                    'pending': '<span style="background:#fbbf24;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">待校验</span>',
-                    'passed': '<span style="background:#10b981;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">✓ 已通过</span>',
-                    'failed': '<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">✗ 未通过</span>'
+                    'pending': '<span style="background:#DDB66A;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">待校验</span>',
+                    'passed': '<span style="background:#86C9A2;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">✓ 已通过</span>',
+                    'failed': '<span style="background:#E58B98;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">✗ 未通过</span>'
                 }[file.validation_status] || '';
 
                 const fileTypeLabel = {
@@ -68,7 +68,7 @@
                 const isSelected = selectedFiles.has(file.file_id);
 
                 return `
-                    <div class="card" style="margin-bottom:12px;${isSelected ? 'border:2px solid #3b82f6;' : ''}">
+                    <div class="card" style="margin-bottom:12px;${isSelected ? 'border:2px solid #E0A6B4;' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;">
                             <div style="display:flex;align-items:start;gap:12px;flex:1;min-width:0;">
                                 <input type="checkbox" ${isSelected ? 'checked' : ''} data-change="toggleFileSelection" data-arg="${file.file_id}" style="margin-top:4px;">
@@ -86,7 +86,7 @@
                                         ${file.store ? `<div>门店: ${file.store}</div>` : ''}
                                         ${file.download_count > 0 ? `<div>下载: ${file.download_count}次</div>` : ''}
                                     </div>
-                                    ${file.upload_note ? `<div style="margin-top:8px;padding:8px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#666;">备注: ${file.upload_note}</div>` : ''}
+                                    ${file.upload_note ? `<div style="margin-top:8px;padding:8px;background:#F2EAEE;border-radius:6px;font-size:12px;color:#666;">备注: ${file.upload_note}</div>` : ''}
                                     ${file.validation_status === 'failed' && file.validation_result?.errors ? `
                                         <div style="margin-top:8px;padding:8px;background:#fee;border-radius:6px;font-size:12px;color:#c00;">
                                             校验失败: ${file.validation_result.errors.join('; ')}
@@ -130,7 +130,7 @@
             if (checkbox) {
                 const card = checkbox.closest('.card');
                 if (selectedFiles.has(fileId)) {
-                    card.style.border = '2px solid #3b82f6';
+                    card.style.border = '2px solid #E0A6B4';
                 } else {
                     card.style.border = '';
                 }
@@ -356,7 +356,7 @@
 
                         <!-- 文件类型 -->
                         <div class="uf-field">
-                            <label class="uf-label">文件类型 <span style="color:#f43f5e;">*</span></label>
+                            <label class="uf-label">文件类型 <span style="color:#E58B98;">*</span></label>
                             <div class="uf-type-grid" id="uf-type-grid">
                                 <button class="uf-type-btn active" data-val="pos_sales" data-click="ufSelectType" data-arg-self="1">📊<br><span>POS销售</span></button>
                                 <button class="uf-type-btn" data-val="feishu_export" data-click="ufSelectType" data-arg-self="1">🪶<br><span>飞书导出</span></button>
@@ -771,14 +771,14 @@
                 title.textContent = `${GS_PROBLEM_ICONS[key] || ''} ${data.title} · ${store}`;
                 // extraAnalysis：从自定义问题分析(gsAnalyzeCustom)判断出"这属于六大标准问题之一"时，
                 // AI基于真实数据做的分析文字——之前直接跳转详情页会把这段分析丢掉，现在放在最前面。
-                const analysisHtml = extraAnalysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(109,124,255,0.06);border:1px solid rgba(109,124,255,0.18);border-radius:12px;padding:12px;margin-bottom:10px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(extraAnalysis)}</div></div>` : '';
+                const analysisHtml = extraAnalysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(224,166,180,0.06);border:1px solid rgba(224,166,180,0.18);border-radius:12px;padding:12px;margin-bottom:10px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(extraAnalysis)}</div></div>` : '';
                 body.innerHTML = analysisHtml + (data.open_round ? gsRenderRound(data) : gsRenderPlan(data));
             } catch (e) {
                 body.innerHTML = `<div class="dx-empty">❌ ${escapeHtml(e.message)}</div>`;
             }
         }
 
-        function gsFmtVal(v, unit) { return v == null ? '—' : `${Number(v).toLocaleString('zh-CN')}<small style="font-size:12px;color:#9AA3C7"> ${escapeHtml(unit)}</small>`; }
+        function gsFmtVal(v, unit) { return v == null ? '—' : `${Number(v).toLocaleString('zh-CN')}<small style="font-size:12px;color:#97848E"> ${escapeHtml(unit)}</small>`; }
 
         function gsStageHtml(baseline, target, unit, baselineHint, targetHint) {
             return `<div class="gs-stage">
@@ -832,8 +832,8 @@
                   <div class="gs-task__body">
                     <div class="gs-task__title">${escapeHtml(t.title)}${t.phase ? `<span class="gs-task__phase">${escapeHtml(t.phase)}</span>` : ''}</div>
                     <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
-                    ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
-                    ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
+                    ${t.why ? `<div style="font-size:12px;color:#EABBC5;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
+                    ${t.acceptance_criteria ? `<div style="font-size:12px;color:#86C9A2;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
                     <div class="gs-task__meta">
                       <label class="gs-task__field"><span class="gs-task__field-label">责任人</span><select class="gs-assignee ${opts ? '' : 'gs-missing'}" data-idx="${i}">${opts || '<option value="">⚠️ 无候选人,请补员工岗位</option>'}</select></label>
                       <label class="gs-task__field"><span class="gs-task__field-label">截止日期</span><input type="date" class="gs-due" data-idx="${i}" value="${defDue}"></label>
@@ -844,15 +844,15 @@
             const histHtml = (data.history || []).length ? `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">历史轮次</div>${data.history.map(h => `<div class="dx-anomaly-modal__text">第${h.round_no}轮:基线 ${h.baseline} → 目标 ${h.target},实际 ${h.actual ?? '—'},达成率 ${h.achievement_rate != null ? (h.achievement_rate * 100).toFixed(1) + '%' : '—'}(${h.decision === 'advance' ? '达成进阶' : '重跑'})</div>`).join('')}</div>` : '';
             // analysis是这次的核心内容——不管有没有匹配到六大指标，都要求AI给出150-300字的
             // 现状判断+根因假设+任务关联分析，不是简单复述数字。放在最前面、单独一块突出展示。
-            const analysisHtml = data.analysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(109,124,255,0.06);border:1px solid rgba(109,124,255,0.18);border-radius:12px;padding:12px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(data.analysis)}</div></div>` : '';
-            const priorityHtml = data.priority_recommendation ? `<div class="gs-report" style="border-color:rgba(62,217,166,0.3);background:rgba(62,217,166,0.06);margin-bottom:10px;">🎯 ${escapeHtml(data.priority_recommendation)}</div>` : '';
+            const analysisHtml = data.analysis ? `<div class="dx-anomaly-modal__section" style="background:rgba(224,166,180,0.06);border:1px solid rgba(224,166,180,0.18);border-radius:12px;padding:12px;"><div class="dx-anomaly-modal__label">📋 经营分析</div><div class="dx-anomaly-modal__text" style="white-space:pre-line;line-height:1.7;">${escapeHtml(data.analysis)}</div></div>` : '';
+            const priorityHtml = data.priority_recommendation ? `<div class="gs-report" style="border-color:rgba(134,201,162,0.3);background:rgba(134,201,162,0.06);margin-bottom:10px;">🎯 ${escapeHtml(data.priority_recommendation)}</div>` : '';
             // data.metric 为空说明六大指标都不适用，没有"现状/目标"可展示——不硬凑stage box。
             const stageHtml = data.metric ? gsStageHtml(data.current?.value, data.suggested_target, data.unit, data.metric, '') : '';
             // real_data_evidence：差评/员工流动这类新接的真实数据源，跟六大指标是两套东西，
             // 单独渲染成证据卡片，附带明细列表(点开能看到具体差评原文/在职离职人数)。
             const evidenceHtml = (data.real_data_evidence || []).map(ev => {
               const detailHtml = Array.isArray(ev.detail) && ev.detail.length
-                ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:#9AA3C7;font-size:12px;">查看明细</summary><div style="margin-top:6px;">${ev.detail.map(d => `<div class="dx-anomaly-modal__text" style="font-size:12px;padding:4px 0;border-top:1px solid rgba(255,255,255,.06);">${escapeHtml(d)}</div>`).join('')}</div></details>`
+                ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:#97848E;font-size:12px;">查看明细</summary><div style="margin-top:6px;">${ev.detail.map(d => `<div class="dx-anomaly-modal__text" style="font-size:12px;padding:4px 0;border-top:1px solid rgba(242,234,238,.06);">${escapeHtml(d)}</div>`).join('')}</div></details>`
                 : '';
               return `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">📊 ${escapeHtml(ev.label)}</div><div class="dx-anomaly-modal__text">${escapeHtml(ev.value)}</div>${detailHtml}</div>`;
             }).join('');
@@ -868,13 +868,13 @@
               <div class="gs-task__body">
                 <div class="gs-task__title">${escapeHtml(t.title)}</div>
                 <div class="gs-task__desc">${escapeHtml(t.description || '')}</div>
-                ${t.why ? `<div style="font-size:12px;color:#A5B0FF;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
-                ${t.acceptance_criteria ? `<div style="font-size:12px;color:#3ED9A6;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
+                ${t.why ? `<div style="font-size:12px;color:#EABBC5;margin-top:6px;">💡 为什么要做:${escapeHtml(t.why)}</div>` : ''}
+                ${t.acceptance_criteria ? `<div style="font-size:12px;color:#86C9A2;margin-top:4px;">✓ 验收标准:${escapeHtml(t.acceptance_criteria)}</div>` : ''}
                 <div class="gs-task__meta">
                   <span class="dx-d-tag">👤 ${escapeHtml(t.assignee_name || t.assignee_username)}</span>
                   ${t.due_date ? `<span class="gs-task__phase">截止 ${String(t.due_date).slice(0, 10)}</span>` : ''}
                   <span class="gs-task__status gs-task__status--${t.status === 'done' ? 'done' : 'pending'}">${t.status === 'done' ? '✓ 已完成' : (t.due_date && String(t.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10) ? '⚠️ 已逾期' : '进行中')}</span>
-                  ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#FF8A7A;">已催促 ${t.reminder_count} 次</span>` : ''}
+                  ${Number(t.reminder_count) > 0 ? `<span class="gs-task__phase" style="color:#EDA1AC;">已催促 ${t.reminder_count} 次</span>` : ''}
                   ${t.status !== 'done' && r.status === 'active' ? `<button class="ga-btn ga-btn--ghost ga-btn--sm" data-click="gsRemindTask" data-arg="${t.id}" data-arg-type="number" data-arg-self="1">提醒</button>` : ''}
                 </div>
               </div>
@@ -895,11 +895,11 @@
                 const ex = rp.execution || null;
                 let execHtml = '';
                 if (ex) {
-                    const findings = (ex.findings || []).map(f => `<div style="padding:6px 10px;border-radius:8px;background:rgba(255,138,122,0.08);border:1px solid rgba(255,138,122,0.2);margin-top:6px;color:#FFB4A8;font-size:12px;line-height:1.5;">⚠️ ${escapeHtml(f)}</div>`).join('');
+                    const findings = (ex.findings || []).map(f => `<div style="padding:6px 10px;border-radius:8px;background:rgba(255,138,122,0.08);border:1px solid rgba(255,138,122,0.2);margin-top:6px;color:#EDA1AC;font-size:12px;line-height:1.5;">⚠️ ${escapeHtml(f)}</div>`).join('');
                     const personRows = (ex.per_person || []).map(p => `<tr><td>${escapeHtml(p.assignee)}</td><td>${p.done}/${p.total}</td><td>${p.on_time}</td><td>${p.late}${p.max_days_late ? `(最长${p.max_days_late}天)` : ''}</td><td>${p.undone}</td><td>${p.reminders}</td></tr>`).join('');
                     execHtml = `<div class="dx-anomaly-modal__section"><div class="dx-anomaly-modal__label">执行力问责(按时完成率 ${ex.on_time_rate}%)</div>
-                      <div style="font-size:13px;color:#EEF1FA;line-height:1.6;">${escapeHtml(ex.verdict || '')}</div>
-                      ${findings || '<div style="font-size:12px;color:#3ED9A6;margin-top:6px;">✓ 无执行问题,全部按时完成</div>'}
+                      <div style="font-size:13px;color:#F2EAEE;line-height:1.6;">${escapeHtml(ex.verdict || '')}</div>
+                      ${findings || '<div style="font-size:12px;color:#86C9A2;margin-top:6px;">✓ 无执行问题,全部按时完成</div>'}
                       <table class="gs-dishtable" style="margin-top:10px;"><tr><th>责任人</th><th>完成</th><th>按时</th><th>逾期</th><th>未完成</th><th>被催促</th></tr>${personRows}</table>
                     </div>`;
                 }
@@ -910,7 +910,7 @@
                   </div>
                   ${execHtml}
                   <div style="margin-top:10px;">${escapeHtml(rp.attribution || '')}</div>
-                  <div style="margin-top:8px;color:#9AA3C7;">${escapeHtml(rp.suggestion || '')}</div>
+                  <div style="margin-top:8px;color:#97848E;">${escapeHtml(rp.suggestion || '')}</div>
                   <div class="gs-actions">
                     ${ok ? `<button class="ga-btn ga-btn--primary" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="advance">确认达成,进入下一轮</button>` : ''}
                     <button class="ga-btn ga-btn--ghost" data-click="gsConfirm" data-arg="${r.id}" data-arg-type="number" data-arg2="retry">同目标重跑一轮</button>
@@ -1048,11 +1048,11 @@
                 const data = await res.json();
                 if (!data.ok || !(data.rounds || []).length) { host.innerHTML = ''; return; }
                 const statusLabel = { active: '执行中', observing: '观察期', reviewing: '待复盘确认' };
-                host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">📌 进行中的自定义任务(点击查看进度)</div>' +
+                host.innerHTML = '<div style="font-size:11px;color:#6E5F67;margin-bottom:6px;">📌 进行中的自定义任务(点击查看进度)</div>' +
                   '<div style="display:flex;flex-direction:column;gap:6px;">' +
                   data.rounds.map(r => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="justify-content:space-between;width:100%;" data-click="gsOpenDetail" data-arg="${escapeHtml(r.problem_key)}">
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.problem_title)} · 第${r.round_no}轮</span>
-                    <span style="flex-shrink:0;margin-left:8px;color:#A5B0FF;">${statusLabel[r.status] || r.status} ${r.tasks_done}/${r.tasks_total}</span>
+                    <span style="flex-shrink:0;margin-left:8px;color:#EABBC5;">${statusLabel[r.status] || r.status} ${r.tasks_done}/${r.tasks_total}</span>
                   </button>`).join('') +
                   '</div>';
             } catch (e) { host.innerHTML = ''; }
@@ -1066,7 +1066,7 @@
                 const res = await fetch(`/api/diagnosis/solutions/custom/history?store=${encodeURIComponent(store)}&limit=10`, { headers: { 'Authorization': 'Bearer ' + dxToken() } });
                 const data = await res.json();
                 if (!data.ok || !(data.history || []).length) { host.innerHTML = ''; return; }
-                host.innerHTML = '<div style="font-size:11px;color:#5B6597;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
+                host.innerHTML = '<div style="font-size:11px;color:#6E5F67;margin-bottom:6px;">最近查询记录(点击直接查看，不用重新输入)</div>' +
                   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
                   data.history.map(h => `<button type="button" class="ga-btn ga-btn--ghost ga-btn--sm" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-click="gsRerunFromHistory" data-arg="${escapeHtml(h.question)}" title="${escapeHtml(h.question)}">${escapeHtml(h.title || h.question)}</button>`).join('') +
                   '</div>';
@@ -1097,7 +1097,7 @@
             document.body.classList.add('gs-printing');
             try {
                 await new Promise(r => setTimeout(r, 50)); // 等gs-printing的样式(隐藏按钮)先应用再截图
-                const canvas = await html2canvas(box, { scale: 2, backgroundColor: '#12162b', useCORS: true });
+                const canvas = await html2canvas(box, { scale: 2, backgroundColor: '#1C181C', useCORS: true });
                 const imgData = canvas.toDataURL('image/jpeg', 0.92);
                 const { jsPDF } = window.jspdf;
                 const pdf = new jsPDF('p', 'pt', 'a4');
@@ -1238,14 +1238,14 @@
             const contribHTML = (revenue.contributions || []).length > 0
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">提升/增加为 +，下降/减少为 -</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.contributions.map(c => {
                     const good = dxIsGoodFactor(c.factor, c.direction);
-                    return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.factor)}</div><div class="v" style="color:${good ? '#5EEAD4' : '#FF7A90'}">${escapeHtml(c.impact || '-')}</div><div class="s">${escapeHtml(c.detail || '')}</div></div>`;
+                    return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.factor)}</div><div class="v" style="color:${good ? '#86C9A2' : '#E58B98'}">${escapeHtml(c.impact || '-')}</div><div class="s">${escapeHtml(c.detail || '')}</div></div>`;
                   }).join('')}</div></div>`
                 : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">📊 贡献度分析</div><div class="dx-board__meta">按因素拆解本期波动来源</div></div></div><div class="dx-empty dx-empty--compact">暂无贡献度数据</div></div>';
 
             const catHTML = (revenue.categories || []).length > 0
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额、占比与制作量（本期汇总）</div></div></div><div class="dx-section-grid dx-section-grid--2">${revenue.categories.slice(0, 6).map(c => {
                     const sharePct = Number(c.share_pct || 0);
-                    const shareColor = sharePct >= 25 ? '#5EEAD4' : (sharePct >= 15 ? '#FFC46B' : '#FF7A90');
+                    const shareColor = sharePct >= 25 ? '#86C9A2' : (sharePct >= 15 ? '#DDB66A' : '#E58B98');
                     return `<div class="dx-metric-card"><div class="k">${escapeHtml(c.name)}</div><div class="v" style="font-size:16px;">${dxFmtMoney(c.avg_daily || 0)} <span class="dx-cat-share" style="color:${shareColor}">${sharePct.toFixed(1)}%</span></div><div class="s">占全部营收 ${sharePct.toFixed(1)}% · 本期合计 ${dxFmtMoney(c.total || 0)}${c.qty_total != null ? ' · ' + Number(c.qty_total).toLocaleString('zh-CN') + '份' : ''}</div></div>`;
                   }).join('')}</div></div>`
                 : '<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🍽️ 品类营收</div><div class="dx-board__meta">各档口销售金额与制作量（本期汇总）</div></div></div><div class="dx-empty dx-empty--compact">本期日报未填写品类销售数据</div></div>';
@@ -1254,7 +1254,7 @@
                 ? `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">🔴 本周异常（${anomalies.length}项）</div><div class="dx-board__meta">点击查看每条异常的基础信息与触发记录</div></div></div><div class="dx-section-grid dx-section-grid--2">${anomalies.map((a, idx) =>
                     `<div class="dx-metric-card dx-anomaly-card" data-click="dxShowAnomalyDetail" data-arg="${idx}" data-arg-type="number" role="button" tabindex="0">
                         <div class="k">${escapeHtml(a.type)}</div>
-                        <div class="v" style="font-size:16px;color:${a.severity === 'high' ? '#FF7A90' : '#FFC46B'}">${escapeHtml(a.count != null ? String(a.count) : '-') }</div>
+                        <div class="v" style="font-size:16px;color:${a.severity === 'high' ? '#E58B98' : '#DDB66A'}">${escapeHtml(a.count != null ? String(a.count) : '-') }</div>
                         <div class="s">${escapeHtml(a.detail || a.description || '')}</div>
                         <div class="dx-anomaly-card__hint">点击查看详情 →</div>
                     </div>`
@@ -1292,7 +1292,7 @@
                                 </div>
                             </div>
                             ${item.detail ? `<div class="dx-action-card__detail">${escapeHtml(item.detail)}</div>` : ''}
-                            ${notes.length ? `<div class="dx-action-card__detail" style="margin-top:8px;color:#9AA3C7;">${notes.map(n => escapeHtml(n)).join(' · ')}</div>` : ''}
+                            ${notes.length ? `<div class="dx-action-card__detail" style="margin-top:8px;color:#97848E;">${notes.map(n => escapeHtml(n)).join(' · ')}</div>` : ''}
                             ${dxRenderActionSteps(steps)}
                         </div>`;
                     }).join('')}</div>
@@ -1306,7 +1306,7 @@
             const untrained = d.training?.employees_without_training || [];
             const trainingScope = d.training?.scope_label || '截至本期结束日，在职且从未被指派任何培训任务';
             const trainingEmpty = d.training?.empty_label || '全员均已指派培训任务，无漏培人员';
-            const trainingHTML = `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">👤 未指派培训任务员工</div><div class="dx-board__meta">${escapeHtml(trainingScope)}</div></div><div class="dx-chip dx-chip--info">${untrained.length} 人</div></div><div class="dx-d-people">${untrained.length ? untrained.map(e => `<span class="dx-d-tag">${escapeHtml(e.name)} (${escapeHtml(e.position || '-')}${e.is_new ? ' · 新入职' : ''})</span>`).join('') : `<span class="dx-d-tag" style="color:#5EEAD4;">✅ ${escapeHtml(trainingEmpty)}</span>`}</div></div>`;
+            const trainingHTML = `<div class="dx-board"><div class="dx-board__head"><div><div class="dx-board__title">👤 未指派培训任务员工</div><div class="dx-board__meta">${escapeHtml(trainingScope)}</div></div><div class="dx-chip dx-chip--info">${untrained.length} 人</div></div><div class="dx-d-people">${untrained.length ? untrained.map(e => `<span class="dx-d-tag">${escapeHtml(e.name)} (${escapeHtml(e.position || '-')}${e.is_new ? ' · 新入职' : ''})</span>`).join('') : `<span class="dx-d-tag" style="color:#86C9A2;">✅ ${escapeHtml(trainingEmpty)}</span>`}</div></div>`;
 
             content.innerHTML = `
                 <div class="dx-detail-hero">
@@ -1484,7 +1484,7 @@
                 await loadGrowthOntologyBrain();
                 showNotification('今日诊断已生成', 'success');
             } catch (e) {
-                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">诊断失败：' + escapeHtml(e?.message || e) + '</div>';
+                if (host) host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">诊断失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         async function generateGrowthOpportunityTasks(oppId, btn) {
@@ -1493,10 +1493,10 @@
                 var r = await fetch('/api/ontology/opportunities/' + encodeURIComponent(oppId) + '/generate-tasks', { method:'POST', headers:growthAuthHeaders(), body:JSON.stringify({ store_id: storeId }) });
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'generate_failed');
-                if (btn) btn.outerHTML = '<span style="color:#22c55e;font-size:12px;">已生成正式任务 ' + (d.tasks || []).length + ' 个</span>';
+                if (btn) btn.outerHTML = '<span style="color:#86C9A2;font-size:12px;">已生成正式任务 ' + (d.tasks || []).length + ' 个</span>';
                 showNotification('已生成正式任务', 'success');
             } catch (e) {
-                if (btn) btn.insertAdjacentHTML('afterend', '<div style="color:#ef4444;font-size:12px;margin-top:6px;">创建失败：' + escapeHtml(e?.message || e) + '</div>');
+                if (btn) btn.insertAdjacentHTML('afterend', '<div style="color:#E58B98;font-size:12px;margin-top:6px;">创建失败：' + escapeHtml(e?.message || e) + '</div>');
             }
         }
         async function loadGrowthOntologyBrain() {
@@ -1516,41 +1516,41 @@
                 var oppRows = opportunities.opportunities || report.opportunities || [];
                 var evidence = (report.attributionSummary && report.attributionSummary.evidenceDetails) || [];
                 var issueHtml = issueRows.slice(0, 6).map(function(x) {
-                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.boss_language_summary || x.issue_title || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#fb7185' : '#c9a96a') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,.56);margin-top:4px;">' + escapeHtml(x.issue_type || '') + ' · 置信度 ' + escapeHtml(String(x.confidence_score || '-')) + '</div>'
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.boss_language_summary || x.issue_title || '-') + '</b><span style="color:' + (x.severity === 'P1' ? '#E58B98' : '#CFA14A') + ';font-weight:800;">' + escapeHtml(x.severity || '-') + '</span></div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,.56);margin-top:4px;">' + escapeHtml(x.issue_type || '') + ' · 置信度 ' + escapeHtml(String(x.confidence_score || '-')) + '</div>'
                         + '</div>';
                 }).join('');
                 var oppHtml = oppRows.slice(0, 6).map(function(x) {
-                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.title || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(x.priority || '-') + '</span></div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,.58);margin:4px 0 8px;">' + escapeHtml(x.description || '') + '</div>'
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(x.title || '-') + '</b><span style="color:#EABBC5;">' + escapeHtml(x.priority || '-') + '</span></div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,.58);margin:4px 0 8px;">' + escapeHtml(x.description || '') + '</div>'
                         + '<button class="rep-seg-btn rep-seg-btn--active" style="width:auto;padding:7px 12px;" data-click="generateGrowthOpportunityTasks" data-arg="' + escapeHtml(x.opportunity_id || '') + '" data-arg-self="1">生成任务草稿并确认创建</button>'
                         + '</div>';
                 }).join('');
                 var taskHtml = (report.tasks || []).slice(0, 8).map(function(t) {
-                    return '<div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.55;">'
+                    return '<div style="padding:8px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.55;">'
                         + '<b style="color:#fff;">' + escapeHtml(t.title || '-') + '</b>'
-                        + '<div style="color:rgba(226,232,240,.58);">状态：' + escapeHtml(t.status || '-') + ' · 负责人：' + escapeHtml(t.assignee_role || t.assignee_username || '-') + ' · 截止：' + escapeHtml(String(t.due_at || '').slice(0, 10) || '-')
+                        + '<div style="color:rgba(242,234,238,.58);">状态：' + escapeHtml(t.status || '-') + ' · 负责人：' + escapeHtml(t.assignee_role || t.assignee_username || '-') + ' · 截止：' + escapeHtml(String(t.due_at || '').slice(0, 10) || '-')
                         + '</div></div>';
                 }).join('');
-                var evHtml = evidence.length ? '<details style="margin-top:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后窗口内产生的真实消费记录</summary>'
+                var evHtml = evidence.length ? '<details style="margin-top:12px;background:rgba(242,234,238,.04);border:1px solid rgba(242,234,238,.08);border-radius:12px;padding:12px;"><summary style="cursor:pointer;color:#fff;font-weight:800;">归因证据 · 以下订单为本次营销触达后窗口内产生的真实消费记录</summary>'
                     + evidence.slice(0, 20).map(function(e) {
                         var ev = e.evidence || {};
-                        var assisted = e.attributionType === 'assisted' ? '<div style="color:#c9a96a;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
-                        return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.6;">'
-                            + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || '-') + '</b><span style="color:#38bdf8;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
-                            + '<div style="color:rgba(226,232,240,.65);">触达：' + escapeHtml(String(ev.touchTime || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(ev.conversionTime || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || '-') + '</div>'
-                            + '<div style="color:rgba(226,232,240,.55);">金额：' + fmtCustMoney(e.orderAmount || 0) + ' · 用券：' + (ev.couponUsed ? '是' : '否') + '</div>'
+                        var assisted = e.attributionType === 'assisted' ? '<div style="color:#CFA14A;margin-top:4px;">辅助归因：客户在触达后窗口内回店，但未使用对应优惠券。</div>' : '';
+                        return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.6;">'
+                            + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">客户 ' + escapeHtml(e.customerId || '-') + '</b><span style="color:#EABBC5;">' + escapeHtml(e.attributionType || '-') + '</span></div>'
+                            + '<div style="color:rgba(242,234,238,.65);">触达：' + escapeHtml(String(ev.touchTime || '-').slice(0, 16)) + ' · 回店：' + escapeHtml(String(ev.conversionTime || '-').slice(0, 16)) + ' · 订单：' + escapeHtml(e.relatedOrderId || '-') + '</div>'
+                            + '<div style="color:rgba(242,234,238,.55);">金额：' + fmtCustMoney(e.orderAmount || 0) + ' · 用券：' + (ev.couponUsed ? '是' : '否') + '</div>'
                             + assisted + '</div>';
                     }).join('') + '</details>' : '';
                 host.innerHTML = ''
                     + '<div class="rep-metric" style="text-align:left;margin-bottom:12px;"><div class="k">AI经营结论</div><div style="font-size:15px;color:#fff;line-height:1.7;margin-top:8px;">' + escapeHtml(report.boss_summary || report.bossSummary || '当前数据不足，暂无法生成经营判断。') + '</div></div>'
                     + '<div class="rep-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:12px;">'
-                    + custopsMiniMetric('经营问题', issueRows.length, '经营问题地图', '#fb7185')
-                    + custopsMiniMetric('增长机会', oppRows.length, '增长机会列表', '#38bdf8')
-                    + custopsMiniMetric('闭环任务', (report.tasks || []).length, '动作闭环看板', '#22c55e')
-                    + custopsMiniMetric('归因营业额', fmtCustMoney(report.attributionSummary?.attributedRevenue || 0), '真实订单支撑', '#c9a96a')
+                    + custopsMiniMetric('经营问题', issueRows.length, '经营问题地图', '#E58B98')
+                    + custopsMiniMetric('增长机会', oppRows.length, '增长机会列表', '#EABBC5')
+                    + custopsMiniMetric('闭环任务', (report.tasks || []).length, '动作闭环看板', '#86C9A2')
+                    + custopsMiniMetric('归因营业额', fmtCustMoney(report.attributionSummary?.attributedRevenue || 0), '真实订单支撑', '#CFA14A')
                     + '</div>'
                     + '<div class="rep-dashboard-grid">'
                     + '<div class="rep-metric" style="text-align:left;"><div class="k">经营问题地图</div>' + (issueHtml || '<div class="rep-pay-empty">暂无经营问题</div>') + '</div>'
@@ -1558,10 +1558,10 @@
                     + '</div>'
                     + '<div class="rep-dashboard-grid" style="margin-top:12px;">'
                     + '<div class="rep-metric" style="text-align:left;"><div class="k">动作闭环看板</div>' + (taskHtml || '<div class="rep-pay-empty">暂无任务</div>') + '</div>'
-                    + '<div class="rep-metric" style="text-align:left;"><div class="k">老板版闭环报告</div><div style="font-size:12px;color:rgba(226,232,240,.65);line-height:1.7;margin-top:8px;">' + escapeHtml((report.key_findings_for_owner || []).join('；') || report.confidence_note || '') + '</div>' + evHtml + '</div>'
+                    + '<div class="rep-metric" style="text-align:left;"><div class="k">老板版闭环报告</div><div style="font-size:12px;color:rgba(242,234,238,.65);line-height:1.7;margin-top:8px;">' + escapeHtml((report.key_findings_for_owner || []).join('；') || report.confidence_note || '') + '</div>' + evHtml + '</div>'
                     + '</div>';
             } catch (e) {
-                host.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
 
@@ -1605,16 +1605,16 @@
                     var editable = editableKeys.filter(function(k){ return thresholds[k]; });
                     var thresholdHtml = editable.length ? editable.map(function(k) {
                         var t = thresholds[k];
-                        return '<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:rgba(226,232,240,.68);">'
+                        return '<label style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:rgba(242,234,238,.68);">'
                             + '<span>' + escapeHtml(__GROWTH_RULE_THRESHOLD_LABELS[k]) + '</span>'
                             + '<input class="dr-store-select growth-rule-threshold" data-rule="' + escapeHtml(rule.rule_id) + '" data-key="' + escapeHtml(k) + '" value="' + escapeHtml(String(t.threshold_value ?? '')) + '" style="height:34px;">'
                             + '</label>';
-                    }).join('') : '<div style="font-size:12px;color:rgba(226,232,240,.45);">暂无可编辑判断标准</div>';
-                    return '<div style="border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,.20);">'
+                    }).join('') : '<div style="font-size:12px;color:rgba(242,234,238,.45);">暂无可编辑判断标准</div>';
+                    return '<div style="border:1px solid rgba(242,234,238,.08);border-radius:12px;padding:14px;margin-bottom:10px;background:rgba(0,0,0,.20);">'
                         + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px;">'
                         + '<div><div style="font-weight:800;color:#fff;">' + escapeHtml(rule.rule_name || '-') + '</div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,.55);margin-top:4px;">' + escapeHtml(rule.business_domain || '-') + ' · ' + escapeHtml(growthRuleScopeLabel(rule.rule_scope)) + '</div></div>'
-                        + '<div style="font-size:12px;color:#38bdf8;font-weight:800;">近30天命中 ' + escapeHtml(String(rule.recentHitCount || 0)) + ' 次</div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,.55);margin-top:4px;">' + escapeHtml(rule.business_domain || '-') + ' · ' + escapeHtml(growthRuleScopeLabel(rule.rule_scope)) + '</div></div>'
+                        + '<div style="font-size:12px;color:#EABBC5;font-weight:800;">近30天命中 ' + escapeHtml(String(rule.recentHitCount || 0)) + ' 次</div>'
                         + '</div>'
                         + '<div class="rep-filters__grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">' + thresholdHtml + '</div>'
                         + '</div>';
@@ -1624,14 +1624,14 @@
                 hits.innerHTML = hitRows.map(function(h) {
                     var rule = (__GROWTH_RULES_CACHE || []).find(function(r){ return r.rule_id === h.rule_id; });
                     var generated = [h.generated_issue_id ? '问题' : '', h.generated_opportunity_id ? '机会' : '', h.generated_task_id ? '任务' : ''].filter(Boolean).join(' / ') || '记录';
-                    return '<div style="padding:10px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12px;line-height:1.65;">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(rule?.rule_name || h.rule_id || '-') + '</b><span style="color:#22c55e;">' + escapeHtml(generated) + '</span></div>'
-                        + '<div style="color:rgba(226,232,240,.6);">门店：' + escapeHtml(h.store_id || '全部') + ' · ' + escapeHtml(String(h.hit_at || '').slice(0, 16).replace('T', ' ')) + '</div>'
-                        + '<div style="color:rgba(226,232,240,.75);">' + escapeHtml(h.boss_language_output || '已按经营规则生成判断。') + '</div>'
+                    return '<div style="padding:10px 0;border-top:1px solid rgba(242,234,238,.06);font-size:12px;line-height:1.65;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;"><b style="color:#fff;">' + escapeHtml(rule?.rule_name || h.rule_id || '-') + '</b><span style="color:#86C9A2;">' + escapeHtml(generated) + '</span></div>'
+                        + '<div style="color:rgba(242,234,238,.6);">门店：' + escapeHtml(h.store_id || '全部') + ' · ' + escapeHtml(String(h.hit_at || '').slice(0, 16).replace('T', ' ')) + '</div>'
+                        + '<div style="color:rgba(242,234,238,.75);">' + escapeHtml(h.boss_language_output || '已按经营规则生成判断。') + '</div>'
                         + '</div>';
                 }).join('') || '<div class="rep-pay-empty">暂无命中记录</div>';
             } catch (e) {
-                if (list) list.innerHTML = '<div class="rep-pay-empty" style="color:#ef4444;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
+                if (list) list.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escapeHtml(e?.message || e) + '</div>';
             }
         }
         async function saveGrowthRuleThresholds() {

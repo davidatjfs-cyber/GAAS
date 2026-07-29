@@ -245,15 +245,44 @@ export function buildTenantAlerts(tenantRow, licenseRow, profile, feishuSummary)
     });
   }
   if (!feishuSummary?.configured) {
-    alerts.push({ level: 'warn', key: 'feishu_missing', title: '飞书未配置', detail: '未绑定独立飞书 Bitable。' });
+    alerts.push({ level: 'warn', key: 'feishu_missing', title: '飞书未配置', detail: '未绑定独立飞书多维表格。' });
   }
   if (!String(profile?.system_name || '').trim()) {
     alerts.push({ level: 'warn', key: 'branding_missing', title: '品牌信息未完善', detail: '建议先补系统名称与 Logo。' });
   }
   if (tenantRow?.status !== 'active') {
-    alerts.push({ level: 'warn', key: 'tenant_inactive', title: '租户未激活', detail: `当前状态：${tenantRow?.status || '-'}` });
+    const statusMap = { active: '正常', provisioning: '初始化中', suspended: '已暂停' };
+    const st = String(tenantRow?.status || '-');
+    alerts.push({
+      level: 'warn',
+      key: 'tenant_inactive',
+      title: '租户未激活',
+      detail: `当前状态：${statusMap[st] || st}`,
+    });
   }
   return alerts;
+}
+
+export const FEISHU_TABLE_LABELS = {
+  ops_checklist: '营运检查表',
+  table_visit: '桌访记录',
+  bad_review: '差评记录',
+  closing_reports: '收档报告',
+  opening_reports: '开档报告',
+  meeting_reports: '会议记录',
+  material_majixian: '马己仙物料',
+  material_hongchao: '洪潮物料',
+  dish_library: '菜品库',
+  dish_library_majixian_takeaway: '马己仙外卖菜品库',
+  loss_report: '损耗报告',
+  task_responses: '任务回复',
+  actual_gross_margin: '实际毛利',
+  sop_steps: 'SOP步骤',
+};
+
+export function labelFeishuTableKey(key) {
+  const k = String(key || '').trim();
+  return FEISHU_TABLE_LABELS[k] || k;
 }
 
 export async function runTenantAcceptance(pool, tenantId, { tenantIntegrationEncryptionKey, requiredTenantFeishuTableKeys }) {
@@ -265,12 +294,16 @@ export async function runTenantAcceptance(pool, tenantId, { tenantIntegrationEnc
     [tenantId]
   );
   if (!tenant.rows.length) {
-    return { ok: false, tenant_id: tenantId, checks: [{ key: 'tenant_exists', ok: false, detail: 'tenant_not_found' }] };
+    return { ok: false, tenant_id: tenantId, checks: [{ key: 'tenant_exists', ok: false, detail: '租户不存在' }] };
   }
 
   const checks = [];
   const stateRow = await tenantContext.run(tenantId, () => pool.query(`SELECT 1 FROM hrms_state WHERE key = $1 LIMIT 1`, [tenantId]));
-  checks.push({ key: 'state_seeded', ok: !!stateRow.rows.length, detail: stateRow.rows.length ? 'ok' : 'missing_hrms_state' });
+  checks.push({
+    key: 'state_seeded',
+    ok: !!stateRow.rows.length,
+    detail: stateRow.rows.length ? '初始状态已写入' : '缺少初始状态数据',
+  });
 
   const adminRow = await tenantContext.run(tenantId, () => pool.query(
     `SELECT COUNT(*)::int AS count
@@ -278,10 +311,11 @@ export async function runTenantAcceptance(pool, tenantId, { tenantIntegrationEnc
         WHERE role = 'admin' AND is_active = TRUE`,
     []
   ));
+  const adminCount = Number(adminRow.rows?.[0]?.count || 0);
   checks.push({
     key: 'admin_ready',
-    ok: Number(adminRow.rows?.[0]?.count || 0) > 0,
-    detail: `active_admins=${Number(adminRow.rows?.[0]?.count || 0)}`
+    ok: adminCount > 0,
+    detail: `可用管理员 ${adminCount} 个`,
   });
 
   const licenseRow = await pool.query(
@@ -293,20 +327,23 @@ export async function runTenantAcceptance(pool, tenantId, { tenantIntegrationEnc
     [tenantId]
   );
   if (!licenseRow.rows.length) {
-    checks.push({ key: 'license_present', ok: false, detail: 'missing_license' });
+    checks.push({ key: 'license_present', ok: false, detail: '尚未发放许可证' });
   } else {
     const license = licenseRow.rows[0];
     const licenseStatus = String(license.status || '').trim().toLowerCase();
     const expiresAt = license.expires_at ? new Date(license.expires_at) : null;
+    const statusZh = { active: '有效', trial: '试用', expired: '已过期', suspended: '已暂停' }[licenseStatus] || licenseStatus || '未知';
     checks.push({
       key: 'license_present',
       ok: ['active', 'trial'].includes(licenseStatus),
-      detail: `status=${licenseStatus || 'unknown'}`
+      detail: `许可证状态：${statusZh}`,
     });
     checks.push({
       key: 'license_not_expired',
       ok: !expiresAt || !Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() >= Date.now(),
-      detail: license.expires_at || 'no_expiry'
+      detail: license.expires_at
+        ? `到期时间：${new Date(license.expires_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+        : '未设置到期时间',
     });
   }
 
@@ -320,12 +357,16 @@ export async function runTenantAcceptance(pool, tenantId, { tenantIntegrationEnc
     checks.push({
       key: 'feishu_configured',
       ok: !!integration.configured,
-      detail: integration.configured ? `tables=${configuredTables.join(',')}` : 'missing_feishu_bitable'
+      detail: integration.configured
+        ? `已配置表：${configuredTables.map(labelFeishuTableKey).join('、') || '无'}`
+        : '未绑定飞书多维表格',
     });
     checks.push({
       key: 'feishu_required_tables',
       ok: !!integration.configured && missingTables.length === 0,
-      detail: missingTables.length ? `missing=${missingTables.join(',')}` : 'ok'
+      detail: missingTables.length
+        ? `缺少表：${missingTables.map(labelFeishuTableKey).join('、')}`
+        : '必填业务表齐全',
     });
   }
 

@@ -537,7 +537,7 @@
                 const holidayMark = !!(r?.data?.holiday_switch ?? r?.data?.holidaySwitch);
                 const submittedAt = String(r?.submittedAt || r?.submitted_at || '').trim();
                 const submitterName = escapeHtml(String(r?.submitterName || '').trim());
-                const submittedBadge = submittedAt ? '<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(34,197,94,0.15); color:#22c55e; font-weight:800;">已提交</span>' : '<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(245,158,11,0.15); color:#f59e0b; font-weight:800;">草稿</span>';
+                const submittedBadge = submittedAt ? '<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(134,201,162,0.15); color:#86C9A2; font-weight:800;">已提交</span>' : '<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(207,161,74,0.15); color:#CFA14A; font-weight:800;">草稿</span>';
                 const actual = Number(r?.data?.actual || 0);
                 const budget = Number(r?.data?.budget || 0);
                 const gross = Number(r?.data?.gross || 0);
@@ -548,7 +548,7 @@
                 const meituanRev = Number(r?.data?.delivery?.meituan?.revenue || 0);
                 const rechargeAmt = Number(r?.data?.recharge?.amount || 0);
                 const rate = (budget > 0 && gross > 0) ? (gross / budget) : 0;
-                const rateColor = rate >= 1 ? '#22c55e' : rate >= 0.8 ? '#f59e0b' : '#ef4444';
+                const rateColor = rate >= 1 ? '#86C9A2' : rate >= 0.8 ? '#CFA14A' : '#E58B98';
                 const safeStore = escapeHtml(rawStore).replace(/'/g, '&#39;');
                 const safeDate = escapeHtml(rawDate).replace(/'/g, '&#39;');
 
@@ -560,15 +560,15 @@
                                 <div class="dr-report-arrow">›</div>
                             </div>
                             <div class="dr-report-sub">
-                                <span style="color:#93c5fd; font-weight:800;">🏬 ${store}</span>
-                                ${submitterName ? `<span style="color:rgba(200,215,230,0.7);">·</span><span style="color:rgba(200,215,230,0.7);">👤 ${submitterName}</span>` : ''}
-                                ${weather ? `<span style="color:rgba(200,215,230,0.7);">·</span><span style="color:rgba(200,215,230,0.7);">${weather}</span>` : ''}
-                                ${holidayMark ? `<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(249,115,22,0.18); color:#fb923c; font-weight:800;">休</span>` : ''}
+                                <span style="color:#EABBC5; font-weight:800;">🏬 ${store}</span>
+                                ${submitterName ? `<span style="color:rgba(151,132,142,0.7);">·</span><span style="color:rgba(151,132,142,0.7);">👤 ${submitterName}</span>` : ''}
+                                ${weather ? `<span style="color:rgba(151,132,142,0.7);">·</span><span style="color:rgba(151,132,142,0.7);">${weather}</span>` : ''}
+                                ${holidayMark ? `<span style="margin-left:6px; font-size:10px; padding:2px 7px; border-radius:99px; background:rgba(207,161,74,0.18); color:#CFA14A; font-weight:800;">休</span>` : ''}
                             </div>
                             <div class="dr-report-kpis">
                                 <div class="dr-kpi">
                                     <div class="k">今日实收</div>
-                                    <div class="v" style="color:#f1f5f9;">${fmtMoney(actual)}</div>
+                                    <div class="v" style="color:#F2EAEE;">${fmtMoney(actual)}</div>
                                 </div>
                                 <div class="dr-kpi">
                                     <div class="k">达成率</div>
@@ -577,12 +577,12 @@
                             </div>
                         </div>
                         <div class="dr-report-metrics">
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">折前营业额</span><span class="dm-val" style="color:#93c5fd;">${fmtMoney(gross)}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">总折扣</span><span class="dm-val" style="color:#f87171;">${fmtMoney(discount)}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">堂食</span><span class="dm-val" style="color:#34d399;">${fmtMoney(dineRev)}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">人效</span><span class="dm-val" style="color:#60a5fa;">¥${escapeHtml(Number.isFinite(eff) ? fmtInt(eff) : '0')}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">饿了么</span><span class="dm-val" style="color:#38bdf8;">${fmtMoney(elemeRev)}</span></div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">美团</span><span class="dm-val" style="color:#fb923c;">${fmtMoney(meituanRev)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">折前营业额</span><span class="dm-val" style="color:#EABBC5;">${fmtMoney(gross)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">总折扣</span><span class="dm-val" style="color:#EDA1AC;">${fmtMoney(discount)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">堂食</span><span class="dm-val" style="color:#86C9A2;">${fmtMoney(dineRev)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">人效</span><span class="dm-val" style="color:#E0A6B4;">¥${escapeHtml(Number.isFinite(eff) ? fmtInt(eff) : '0')}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">饿了么</span><span class="dm-val" style="color:#EABBC5;">${fmtMoney(elemeRev)}</span></div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;"><span class="dm-lab">美团</span><span class="dm-val" style="color:#CFA14A;">${fmtMoney(meituanRev)}</span></div>
                         </div>
                     </div>
                 `;
@@ -958,25 +958,25 @@
         function repAttendanceDateTags(dates, tone, emptyText) {
             const items = Array.isArray(dates) ? dates.filter(Boolean) : [];
             if (!items.length) {
-                return '<span style="font-size:11px; color:rgba(148,163,184,0.82);">' + escapeHtml(emptyText || '暂无') + '</span>';
+                return '<span style="font-size:11px; color:rgba(151,132,142,0.82);">' + escapeHtml(emptyText || '暂无') + '</span>';
             }
             const bgMap = {
-                green: 'rgba(34,197,94,0.14)',
-                red: 'rgba(248,113,113,0.16)',
-                amber: 'rgba(251,191,36,0.16)',
-                blue: 'rgba(96,165,250,0.14)'
+                green: 'rgba(134,201,162,0.14)',
+                red: 'rgba(237,161,172,0.16)',
+                amber: 'rgba(207,161,74,0.16)',
+                blue: 'rgba(224,166,180,0.14)'
             };
             const borderMap = {
-                green: 'rgba(74,222,128,0.28)',
-                red: 'rgba(248,113,113,0.28)',
-                amber: 'rgba(251,191,36,0.28)',
-                blue: 'rgba(96,165,250,0.24)'
+                green: 'rgba(158,217,180,0.28)',
+                red: 'rgba(237,161,172,0.28)',
+                amber: 'rgba(207,161,74,0.28)',
+                blue: 'rgba(224,166,180,0.24)'
             };
             const textMap = {
-                green: '#bbf7d0',
-                red: '#fecaca',
-                amber: '#fde68a',
-                blue: '#bfdbfe'
+                green: '#CFE9DA',
+                red: '#F1C5CC',
+                amber: '#CFA14A',
+                blue: '#F2D3DA'
             };
             const bg = bgMap[tone] || bgMap.blue;
             const bd = borderMap[tone] || borderMap.blue;
@@ -1081,14 +1081,14 @@
             const titleStore = store || '全部门店';
             const hasRegisterData = resp?.hasRegisterData !== false;
             const heroMetric = function(label, value, hint, color) {
-                return '<div class="rep-metric" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);"><div class="k">' + escapeHtml(label) + '</div><div class="v" style="color:' + color + ';">' + escapeHtml(String(value)) + '</div><div style="margin-top:4px; font-size:11px; color:rgba(191,219,254,0.72);">' + escapeHtml(hint) + '</div></div>';
+                return '<div class="rep-metric" style="background:rgba(242,234,238,0.06); border:1px solid rgba(242,234,238,0.08);"><div class="k">' + escapeHtml(label) + '</div><div class="v" style="color:' + color + ';">' + escapeHtml(String(value)) + '</div><div style="margin-top:4px; font-size:11px; color:rgba(242,211,218,0.72);">' + escapeHtml(hint) + '</div></div>';
             };
             const statCell = function(label, value, color) {
-                return '<div style="padding:10px 12px; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);"><div style="font-size:11px; color:rgba(148,163,184,0.9);">' + escapeHtml(label) + '</div><div style="margin-top:4px; font-size:20px; font-weight:900; color:' + color + ';">' + escapeHtml(String(value)) + '</div></div>';
+                return '<div style="padding:10px 12px; border-radius:12px; background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.06);"><div style="font-size:11px; color:rgba(151,132,142,0.9);">' + escapeHtml(label) + '</div><div style="margin-top:4px; font-size:20px; font-weight:900; color:' + color + ';">' + escapeHtml(String(value)) + '</div></div>';
             };
 
             return `
-                <div class="rep-hero" style="background:linear-gradient(135deg, #14532d, #0f766e 58%, #1d4ed8);">
+                <div class="rep-hero" style="background: radial-gradient(800px 280px at 0% 0%, rgba(134,201,162,0.16), transparent 55%), linear-gradient(155deg, rgba(28,24,28,0.95), rgba(24,20,24,0.98)); border: 1px solid rgba(134,201,162,0.2);">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                         <div>
                             <div style="font-weight:900; font-size:16px;">${escapeHtml(titleStore)} 考勤核查总览</div>
@@ -1096,14 +1096,14 @@
                         </div>
                     </div>
                     <div class="rep-grid">
-                        ${heroMetric('员工人数', (totals.people || digestRows.length) + ' 人', '本周期进入汇总的员工', '#f8fafc')}
-                        ${heroMetric('实际出勤', Number(totals.actualAttendanceDays || 0) + ' 天', '按日报核对 + 打卡回退', '#86efac')}
-                        ${heroMetric('缺勤', Number(totals.absenceDays || 0) + ' 天', '无打卡且未命中休息/休假', '#fca5a5')}
-                        ${heroMetric('迟到', Number(totals.lateDays || 0) + ' 天', '以上班首次打卡判断', '#fde68a')}
-                        ${heroMetric('休息', Number(totals.restDays || 0) + ' 天', '营业日报排休 + 已批休假', '#93c5fd')}
-                        ${heroMetric('打卡轨迹', checkinDetails.length + ' 条', '默认不再直接铺满原始流水', '#c4b5fd')}
+                        ${heroMetric('员工人数', (totals.people || digestRows.length) + ' 人', '本周期进入汇总的员工', '#F2EAEE')}
+                        ${heroMetric('实际出勤', Number(totals.actualAttendanceDays || 0) + ' 天', '按日报核对 + 打卡回退', '#86C9A2')}
+                        ${heroMetric('缺勤', Number(totals.absenceDays || 0) + ' 天', '无打卡且未命中休息/休假', '#EDA1AC')}
+                        ${heroMetric('迟到', Number(totals.lateDays || 0) + ' 天', '以上班首次打卡判断', '#CFA14A')}
+                        ${heroMetric('休息', Number(totals.restDays || 0) + ' 天', '营业日报排休 + 已批休假', '#EABBC5')}
+                        ${heroMetric('打卡轨迹', checkinDetails.length + ' 条', '默认不再直接铺满原始流水', '#EABBC5')}
                     </div>
-                    ${!hasRegisterData ? '<div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(251,191,36,0.14); border:1px solid rgba(251,191,36,0.22); color:#fde68a; font-size:12px;">当前区间缺少营业日报核对台账，缺勤/休息统计已尽量按打卡回退，但仍建议结合日报补录后再复核。</div>' : ''}
+                    ${!hasRegisterData ? '<div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(207,161,74,0.14); border:1px solid rgba(207,161,74,0.22); color:#CFA14A; font-size:12px;">当前区间缺少营业日报核对台账，缺勤/休息统计已尽量按打卡回退，但仍建议结合日报补录后再复核。</div>' : ''}
                 </div>
 
                 ${(function() {
@@ -1135,21 +1135,21 @@
                     });
                     if (!sdRows.length) return '';
                     const anomTotal = sdRows.reduce(function(s, sd) { return s + sd.people.filter(function(p) { return p.isAnomalous; }).length; }, 0);
-                    const parts = [`<details open style="margin-top:14px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);overflow:hidden;"><summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(200,215,230,0.78);font-weight:800;flex:1;">打卡全局视图（按门店/日期）</span>${anomTotal > 0 ? `<span style="padding:2px 8px;border-radius:999px;background:rgba(249,115,22,0.18);color:#fdba74;font-size:11px;font-weight:800;">⚠ ${anomTotal} 人异常</span>` : '<span style="padding:2px 8px;border-radius:999px;background:rgba(34,197,94,0.12);color:#86efac;font-size:11px;font-weight:800;">✓ 全部正常</span>'}<span style="font-size:11px;color:rgba(148,163,184,0.5);">▾</span></summary>`, '<div style="display:flex;flex-direction:column;gap:8px;padding:0 10px 12px;">'];
+                    const parts = [`<details open style="margin-top:14px;border-radius:14px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);overflow:hidden;"><summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(151,132,142,0.78);font-weight:800;flex:1;">打卡全局视图（按门店/日期）</span>${anomTotal > 0 ? `<span style="padding:2px 8px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ ${anomTotal} 人异常</span>` : '<span style="padding:2px 8px;border-radius:999px;background:rgba(134,201,162,0.12);color:#86C9A2;font-size:11px;font-weight:800;">✓ 全部正常</span>'}<span style="font-size:11px;color:rgba(151,132,142,0.5);">▾</span></summary>`, '<div style="display:flex;flex-direction:column;gap:8px;padding:0 10px 12px;">'];
                     sdRows.forEach(function(sd) {
                         const anomPeople = sd.people.filter(function(p) { return p.isAnomalous; });
                         const hasAnom = anomPeople.length > 0;
-                        parts.push(`<details style="border-radius:14px;background:${hasAnom ? 'rgba(30,15,5,0.45)' : 'rgba(15,23,42,0.28)'};border:1px solid ${hasAnom ? 'rgba(249,115,22,0.25)' : 'rgba(34,197,94,0.15)'};overflow:hidden;">`);
-                        parts.push(`<summary style="list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;"><span style="display:inline-block;transition:transform .15s;color:rgba(148,163,184,0.8);font-size:12px;">▸</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#e2e8f0;">${escapeHtml(sd.store || '未知门店')}</div><div style="font-size:11px;color:rgba(148,163,184,0.8);margin-top:2px;">${escapeHtml(sd.date)} · ${escapeHtml(String(sd.people.length))} 人打卡</div></div>${hasAnom ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(249,115,22,0.18);color:#fdba74;font-size:11px;font-weight:800;">⚠ ${escapeHtml(String(anomPeople.length))} 人异常</span>` : '<span style="padding:3px 10px;border-radius:999px;background:rgba(34,197,94,0.15);color:#86efac;font-size:11px;font-weight:800;">✓ 正常</span>'}</summary>`);
+                        parts.push(`<details style="border-radius:14px;background:${hasAnom ? 'rgba(30,15,5,0.45)' : 'rgba(28,24,28,0.28)'};border:1px solid ${hasAnom ? 'rgba(207,161,74,0.25)' : 'rgba(134,201,162,0.15)'};overflow:hidden;">`);
+                        parts.push(`<summary style="list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;"><span style="display:inline-block;transition:transform .15s;color:rgba(151,132,142,0.8);font-size:12px;">▸</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:800;color:#F2EAEE;">${escapeHtml(sd.store || '未知门店')}</div><div style="font-size:11px;color:rgba(151,132,142,0.8);margin-top:2px;">${escapeHtml(sd.date)} · ${escapeHtml(String(sd.people.length))} 人打卡</div></div>${hasAnom ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ ${escapeHtml(String(anomPeople.length))} 人异常</span>` : '<span style="padding:3px 10px;border-radius:999px;background:rgba(134,201,162,0.15);color:#86C9A2;font-size:11px;font-weight:800;">✓ 正常</span>'}</summary>`);
                         if (hasAnom) {
                             parts.push(`<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);">`);
                             anomPeople.forEach(function(p) {
                                 const label = p.isAbsent ? '未打卡' : (p.isLate ? '迟到' + (p.firstIn ? ' ' + p.firstIn : '') : '异常打卡');
-                                parts.push(`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><div style="width:6px;height:6px;border-radius:50%;background:${p.isAbsent ? '#f87171' : '#fbbf24'};flex-shrink:0;"></div><div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#e2e8f0;">${escapeHtml(p.name || p.username || '—')}</div></div><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${p.isAbsent ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.15)'};color:${p.isAbsent ? '#fca5a5' : '#fde68a'};">${escapeHtml(label)}</span></div>`);
+                                parts.push(`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(242,234,238,0.04);"><div style="width:6px;height:6px;border-radius:50%;background:${p.isAbsent ? '#EDA1AC' : '#CFA14A'};flex-shrink:0;"></div><div style="flex:1;"><div style="font-size:12px;font-weight:700;color:#F2EAEE;">${escapeHtml(p.name || p.username || '—')}</div></div><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${p.isAbsent ? 'rgba(237,161,172,0.15)' : 'rgba(207,161,74,0.15)'};color:${p.isAbsent ? '#EDA1AC' : '#CFA14A'};">${escapeHtml(label)}</span></div>`);
                             });
                             parts.push(`</div>`);
                         } else {
-                            parts.push(`<div style="padding:10px 14px 12px;font-size:12px;color:rgba(134,239,172,0.7);">当日所有打卡记录均正常 ✓</div>`);
+                            parts.push(`<div style="padding:10px 14px 12px;font-size:12px;color:rgba(190,230,206,0.7);">当日所有打卡记录均正常 ✓</div>`);
                         }
                         parts.push('</details>');
                     });
@@ -1158,41 +1158,41 @@
                 })()}
 
                 ${summaryRows.length ? `
-                <details open style="margin-top:14px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);overflow:hidden;">
-                <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(200,215,230,0.78);font-weight:800;flex:1;">打卡出勤汇总（${summaryRows.length} 人）</span><span style="font-size:11px;color:rgba(148,163,184,0.5);">▾</span></summary>
+                <details open style="margin-top:14px;border-radius:14px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);overflow:hidden;">
+                <summary style="list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;user-select:none;"><span style="font-size:12px;color:rgba(151,132,142,0.78);font-weight:800;flex:1;">打卡出勤汇总（${summaryRows.length} 人）</span><span style="font-size:11px;color:rgba(151,132,142,0.5);">▾</span></summary>
                 <div style="display:grid; grid-template-columns:1fr; gap:12px; padding:0 10px 12px;">
                     ${summaryRows.map(function(row) {
                         return `
-                        <details style="border-radius:18px; background:linear-gradient(180deg, rgba(15,23,42,0.72), rgba(2,6,23,0.88)); border:1px solid rgba(255,255,255,0.08); overflow:hidden;">
+                        <details style="border-radius:18px; background:linear-gradient(180deg, rgba(28,24,28,0.72), rgba(18,16,18,0.88)); border:1px solid rgba(242,234,238,0.08); overflow:hidden;">
                             <summary style="list-style:none; cursor:pointer; padding:16px; display:flex; justify-content:space-between; align-items:flex-start; gap:14px;">
                                 <div>
-                                    <div style="font-size:14px; font-weight:900; color:#f8fafc;">${escapeHtml(row.name || row.username || '-')}</div>
-                                    <div style="margin-top:4px; font-size:11px; color:rgba(148,163,184,0.88);">${escapeHtml(row.store || '-')} · ${escapeHtml(row.username || '-')}</div>
+                                    <div style="font-size:14px; font-weight:900; color:#F2EAEE;">${escapeHtml(row.name || row.username || '-')}</div>
+                                    <div style="margin-top:4px; font-size:11px; color:rgba(151,132,142,0.88);">${escapeHtml(row.store || '-')} · ${escapeHtml(row.username || '-')}</div>
                                 </div>
-                                <div style="font-size:11px; color:rgba(148,163,184,0.84); white-space:nowrap;">点击展开日期核查</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.84); white-space:nowrap;">点击展开日期核查</div>
                             </summary>
                             <div style="padding:0 16px 16px;">
                                 <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;">
-                                    ${statCell('实际出勤', row.actualAttendanceDays || 0, '#86efac')}
-                                    ${statCell('缺勤', row.absenceDays || 0, '#fca5a5')}
-                                    ${statCell('迟到', row.lateDays || 0, '#fde68a')}
-                                    ${statCell('休息', row.restDays || 0, '#93c5fd')}
+                                    ${statCell('实际出勤', row.actualAttendanceDays || 0, '#86C9A2')}
+                                    ${statCell('缺勤', row.absenceDays || 0, '#EDA1AC')}
+                                    ${statCell('迟到', row.lateDays || 0, '#CFA14A')}
+                                    ${statCell('休息', row.restDays || 0, '#EABBC5')}
                                 </div>
                                 <div style="margin-top:14px; display:grid; grid-template-columns:1fr; gap:12px;">
                                     <div>
-                                        <div style="font-size:11px; color:rgba(148,163,184,0.88); margin-bottom:8px;">实际出勤日期</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.88); margin-bottom:8px;">实际出勤日期</div>
                                         <div style="display:flex; flex-wrap:wrap; gap:8px;">${repAttendanceDateTags(row.actualDates, 'green', '无')}</div>
                                     </div>
                                     <div>
-                                        <div style="font-size:11px; color:rgba(148,163,184,0.88); margin-bottom:8px;">缺勤日期</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.88); margin-bottom:8px;">缺勤日期</div>
                                         <div style="display:flex; flex-wrap:wrap; gap:8px;">${repAttendanceDateTags(row.absentDates, 'red', '无缺勤')}</div>
                                     </div>
                                     <div>
-                                        <div style="font-size:11px; color:rgba(148,163,184,0.88); margin-bottom:8px;">迟到日期</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.88); margin-bottom:8px;">迟到日期</div>
                                         <div style="display:flex; flex-wrap:wrap; gap:8px;">${repAttendanceDateTags(row.lateDates, 'amber', '无迟到')}</div>
                                     </div>
                                     <div>
-                                        <div style="font-size:11px; color:rgba(148,163,184,0.88); margin-bottom:8px;">休息 / 可抵扣日期</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.88); margin-bottom:8px;">休息 / 可抵扣日期</div>
                                         <div style="display:flex; flex-wrap:wrap; gap:8px;">${repAttendanceDateTags(row.restOffsetDates || row.restDates, 'blue', '无休息/休假')}</div>
                                     </div>
                                 </div>
@@ -1201,7 +1201,7 @@
                     }).join('')}
                 </div></details>` : ''}
 
-                ${!summaryRows.length && !digestRows.length ? '<div style="color:rgba(200,215,230,0.52); padding:24px; text-align:center;">暂无考勤数据</div>' : ''}
+                ${!summaryRows.length && !digestRows.length ? '<div style="color:rgba(151,132,142,0.52); padding:24px; text-align:center;">暂无考勤数据</div>' : ''}
             `;
         }
 
@@ -1252,52 +1252,52 @@
         async function loadAttentionReport() {
             const box = document.getElementById('rep-attention-box');
             if (!box) return;
-            box.innerHTML = '<div style="color:rgba(200,215,230,0.6); text-align:center; padding:24px 0;">加载中...</div>';
+            box.innerHTML = '<div style="color:rgba(151,132,142,0.6); text-align:center; padding:24px 0;">加载中...</div>';
             try {
                 const base = String(HRMS_API.baseUrl() || '').replace(/\/$/, '');
                 const token = String(HRMS_API.token() || '').trim();
-                if (!token) { box.innerHTML = '<div style="color:#c2410c;">请先登录</div>'; return; }
+                if (!token) { box.innerHTML = '<div style="color:#97848E;">请先登录</div>'; return; }
 
                 const resp = await fetch(base + '/api/attention-scores/summary', {
                     headers: { 'Authorization': 'Bearer ' + token }
                 });
                 if (!resp.ok) {
-                    if (resp.status === 403) { box.innerHTML = '<div style="color:#c2410c;">无权限查看专注度报告</div>'; return; }
+                    if (resp.status === 403) { box.innerHTML = '<div style="color:#97848E;">无权限查看专注度报告</div>'; return; }
                     throw new Error('HTTP ' + resp.status);
                 }
                 const data = await resp.json();
                 const summary = Array.isArray(data?.summary) ? data.summary : [];
 
                 if (!summary.length) {
-                    box.innerHTML = '<div style="color:rgba(200,215,230,0.6); text-align:center; padding:24px 0;">暂无专注度数据</div>';
+                    box.innerHTML = '<div style="color:rgba(151,132,142,0.6); text-align:center; padding:24px 0;">暂无专注度数据</div>';
                     return;
                 }
 
-                let html = '<div style="margin-bottom:12px; font-size:13px; font-weight:800; color:rgba(226,232,240,0.95);">📊 培训专注度汇总（按员工）</div>';
+                let html = '<div style="margin-bottom:12px; font-size:13px; font-weight:800; color:rgba(242,234,238,0.95);">📊 培训专注度汇总（按员工）</div>';
                 html += '<div style="overflow-x:auto;">';
                 html += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-                html += '<thead><tr style="background:rgba(255,255,255,0.06);">';
-                html += '<th style="padding:10px 8px; text-align:left; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">员工</th>';
-                html += '<th style="padding:10px 8px; text-align:left; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">门店</th>';
-                html += '<th style="padding:10px 8px; text-align:center; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">学习次数</th>';
-                html += '<th style="padding:10px 8px; text-align:center; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">平均专注度</th>';
-                html += '<th style="padding:10px 8px; text-align:center; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">总时长</th>';
-                html += '<th style="padding:10px 8px; text-align:right; color:rgba(200,215,230,0.8); font-weight:700; border-bottom:1px solid rgba(255,255,255,0.08);">最近学习</th>';
+                html += '<thead><tr style="background:rgba(242,234,238,0.06);">';
+                html += '<th style="padding:10px 8px; text-align:left; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">员工</th>';
+                html += '<th style="padding:10px 8px; text-align:left; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">门店</th>';
+                html += '<th style="padding:10px 8px; text-align:center; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">学习次数</th>';
+                html += '<th style="padding:10px 8px; text-align:center; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">平均专注度</th>';
+                html += '<th style="padding:10px 8px; text-align:center; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">总时长</th>';
+                html += '<th style="padding:10px 8px; text-align:right; color:rgba(151,132,142,0.8); font-weight:700; border-bottom:1px solid rgba(242,234,238,0.08);">最近学习</th>';
                 html += '</tr></thead><tbody>';
 
                 for (const row of summary) {
                     const avgScore = Number(row.avg_score || 0);
-                    const scoreColor = avgScore >= 70 ? '#22c55e' : avgScore >= 40 ? '#eab308' : '#ef4444';
+                    const scoreColor = avgScore >= 70 ? '#86C9A2' : avgScore >= 40 ? '#CFA14A' : '#E58B98';
                     const totalMin = Math.round(Number(row.total_duration || 0) / 60);
                     const lastDate = row.last_session ? new Date(row.last_session).toLocaleDateString('zh-CN') : '-';
 
-                    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">';
-                    html += `<td style="padding:10px 8px; color:rgba(226,232,240,0.95); font-weight:700;">${escapeHtml(row.name || row.username || '-')}</td>`;
-                    html += `<td style="padding:10px 8px; color:rgba(200,215,230,0.7);">${escapeHtml(row.store || '-')}</td>`;
-                    html += `<td style="padding:10px 8px; text-align:center; color:rgba(226,232,240,0.9);">${Number(row.session_count || 0)}</td>`;
+                    html += '<tr style="border-bottom:1px solid rgba(242,234,238,0.04);">';
+                    html += `<td style="padding:10px 8px; color:rgba(242,234,238,0.95); font-weight:700;">${escapeHtml(row.name || row.username || '-')}</td>`;
+                    html += `<td style="padding:10px 8px; color:rgba(151,132,142,0.7);">${escapeHtml(row.store || '-')}</td>`;
+                    html += `<td style="padding:10px 8px; text-align:center; color:rgba(242,234,238,0.9);">${Number(row.session_count || 0)}</td>`;
                     html += `<td style="padding:10px 8px; text-align:center;"><span style="display:inline-block; padding:3px 10px; border-radius:8px; font-weight:800; font-size:13px; color:${scoreColor}; background:${scoreColor}18;">${avgScore}%</span></td>`;
-                    html += `<td style="padding:10px 8px; text-align:center; color:rgba(200,215,230,0.7);">${totalMin} 分钟</td>`;
-                    html += `<td style="padding:10px 8px; text-align:right; color:rgba(200,215,230,0.7);">${lastDate}</td>`;
+                    html += `<td style="padding:10px 8px; text-align:center; color:rgba(151,132,142,0.7);">${totalMin} 分钟</td>`;
+                    html += `<td style="padding:10px 8px; text-align:right; color:rgba(151,132,142,0.7);">${lastDate}</td>`;
                     html += '</tr>';
                 }
 
@@ -1311,14 +1311,14 @@
 
                 box.innerHTML = html;
             } catch (e) {
-                box.innerHTML = '<div style="color:#c2410c; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
+                box.innerHTML = '<div style="color:#97848E; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
             }
         }
 
         async function loadAttentionDetail() {
             const box = document.getElementById('rep-attention-detail');
             if (!box) return;
-            box.innerHTML = '<div style="color:rgba(200,215,230,0.6); text-align:center; padding:12px 0;">加载中...</div>';
+            box.innerHTML = '<div style="color:rgba(151,132,142,0.6); text-align:center; padding:12px 0;">加载中...</div>';
             try {
                 const base = String(HRMS_API.baseUrl() || '').replace(/\/$/, '');
                 const token = String(HRMS_API.token() || '').trim();
@@ -1330,40 +1330,40 @@
                 const scores = Array.isArray(data?.scores) ? data.scores : [];
 
                 if (!scores.length) {
-                    box.innerHTML = '<div style="color:rgba(200,215,230,0.6); text-align:center; padding:12px 0;">暂无详细记录</div>';
+                    box.innerHTML = '<div style="color:rgba(151,132,142,0.6); text-align:center; padding:12px 0;">暂无详细记录</div>';
                     return;
                 }
 
-                let html = '<div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.9); margin-bottom:8px;">📋 详细学习记录（最近100条）</div>';
+                let html = '<div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.9); margin-bottom:8px;">📋 详细学习记录（最近100条）</div>';
                 html += '<div style="overflow-x:auto;">';
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
-                html += '<thead><tr style="background:rgba(255,255,255,0.05);">';
-                html += '<th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">员工</th>';
-                html += '<th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">资料</th>';
-                html += '<th style="padding:8px 6px; text-align:center; color:rgba(200,215,230,0.7); font-weight:700;">专注度</th>';
-                html += '<th style="padding:8px 6px; text-align:center; color:rgba(200,215,230,0.7); font-weight:700;">时长</th>';
-                html += '<th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">时间</th>';
+                html += '<thead><tr style="background:rgba(242,234,238,0.05);">';
+                html += '<th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">员工</th>';
+                html += '<th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">资料</th>';
+                html += '<th style="padding:8px 6px; text-align:center; color:rgba(151,132,142,0.7); font-weight:700;">专注度</th>';
+                html += '<th style="padding:8px 6px; text-align:center; color:rgba(151,132,142,0.7); font-weight:700;">时长</th>';
+                html += '<th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">时间</th>';
                 html += '</tr></thead><tbody>';
 
                 for (const s of scores) {
                     const sc = Number(s.score || s.avg_score || 0);
-                    const scColor = sc >= 70 ? '#22c55e' : sc >= 40 ? '#eab308' : '#ef4444';
+                    const scColor = sc >= 70 ? '#86C9A2' : sc >= 40 ? '#CFA14A' : '#E58B98';
                     const dur = Math.round(Number(s.duration_seconds || 0) / 60);
                     const dt = s.created_at ? new Date(s.created_at).toLocaleString('zh-CN') : '-';
 
-                    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);">';
-                    html += `<td style="padding:8px 6px; color:rgba(226,232,240,0.9); font-weight:600;">${escapeHtml(s.name || s.username || '-')}</td>`;
-                    html += `<td style="padding:8px 6px; color:rgba(200,215,230,0.7); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(s.material_title || s.material_id || '-')}</td>`;
+                    html += '<tr style="border-bottom:1px solid rgba(242,234,238,0.03);">';
+                    html += `<td style="padding:8px 6px; color:rgba(242,234,238,0.9); font-weight:600;">${escapeHtml(s.name || s.username || '-')}</td>`;
+                    html += `<td style="padding:8px 6px; color:rgba(151,132,142,0.7); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(s.material_title || s.material_id || '-')}</td>`;
                     html += `<td style="padding:8px 6px; text-align:center;"><span style="color:${scColor}; font-weight:800;">${sc}%</span></td>`;
-                    html += `<td style="padding:8px 6px; text-align:center; color:rgba(200,215,230,0.7);">${dur}分</td>`;
-                    html += `<td style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.6);">${dt}</td>`;
+                    html += `<td style="padding:8px 6px; text-align:center; color:rgba(151,132,142,0.7);">${dur}分</td>`;
+                    html += `<td style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.6);">${dt}</td>`;
                     html += '</tr>';
                 }
 
                 html += '</tbody></table></div>';
                 box.innerHTML = html;
             } catch (e) {
-                box.innerHTML = '<div style="color:#c2410c; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
+                box.innerHTML = '<div style="color:#97848E; font-size:12px;">加载失败: ' + escapeHtml(String(e?.message || e)) + '</div>';
             }
         }
 
@@ -1759,26 +1759,26 @@
                 const predictions = Array.isArray(rec?.predictions) ? rec.predictions.slice(0, 6) : [];
                 const sourceLabel = rec?.source === 'ai' ? 'AI模型' : '历史加权';
                 return `
-                    <div style="padding:12px; border-radius:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);">
+                    <div style="padding:12px; border-radius:12px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08);">
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                            <div style="font-weight:900; font-size:13px; color:rgba(226,232,240,0.95);">${slotLabel(slot)}</div>
-                            <div style="font-size:11px; color:rgba(200,215,230,0.65);">${sourceLabel} · 置信度 ${fmt(Number(rec?.confidence || 0) * 100)}%</div>
+                            <div style="font-weight:900; font-size:13px; color:rgba(242,234,238,0.95);">${slotLabel(slot)}</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.65);">${sourceLabel} · 置信度 ${fmt(Number(rec?.confidence || 0) * 100)}%</div>
                         </div>
                         <div style="margin-top:8px; display:grid; gap:6px;">
                             ${predictions.map(p => `
                                 <div style="display:flex; justify-content:space-between; gap:8px; font-size:12px;">
-                                    <span style="color:rgba(226,232,240,0.9);">${escapeHtml(String(p?.product || ''))}</span>
-                                    <span style="font-weight:800; color:#22c55e;">${fmt(p?.qty)} 份</span>
+                                    <span style="color:rgba(242,234,238,0.9);">${escapeHtml(String(p?.product || ''))}</span>
+                                    <span style="font-weight:800; color:#86C9A2;">${fmt(p?.qty)} 份</span>
                                 </div>
                             `).join('')}
-                            ${predictions.length ? '' : '<div style="font-size:12px; color:rgba(200,215,230,0.5);">暂无预测结果</div>'}
+                            ${predictions.length ? '' : '<div style="font-size:12px; color:rgba(151,132,142,0.5);">暂无预测结果</div>'}
                         </div>
                     </div>
                 `;
             };
 
             const html = `
-                <div class="rep-hero" style="background:linear-gradient(135deg, #0f766e, #0ea5e9);">
+                <div class="rep-hero" style="background: radial-gradient(800px 280px at 0% 0%, rgba(224,166,180,0.16), transparent 55%), linear-gradient(155deg, rgba(28,24,28,0.95), rgba(24,20,24,0.98)); border: 1px solid rgba(224,166,180,0.2);">
                     <div style="font-weight:900; font-size:16px;">智能助手（品牌级）</div>
                     <div class="meta" style="margin-top:6px;">品牌：${escapeHtml(brandName || '-')}${store ? ` · 门店：${escapeHtml(store)}` : ''} · 模糊归类与毛利配置按品牌隔离</div>
                     <div class="rep-grid" style="margin-top:10px;">
@@ -1787,7 +1787,7 @@
                         <div class="rep-metric"><div class="k">堂食预计营收</div><div class="v">¥${fmt(state.expectedRevenueDinein ?? state.expectedRevenue ?? 0)}</div></div>
                         <div class="rep-metric"><div class="k">历史样本</div><div class="v">${historyRows.length} 条</div></div>
                         <div class="rep-metric"><div class="k">折前毛利率</div><div class="v">${fmt(grossMarginRate * 100)}%</div></div>
-                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#f59e0b;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#E0A6B4;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
                     </div>
                 </div>
 
@@ -1797,12 +1797,12 @@
                     <div class="rep-metric"><div class="k">预估营业额-合计</div><div class="v">¥${fmt(Number(revenueEstimate?.totalEstimatedRevenue || 0))}</div></div>
                 </div>
 
-                <div style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
-                    <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.9); margin-bottom:8px;">预估毛利率（按历史销售+毛利配置）</div>
+                <div style="margin-top:12px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
+                    <div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.9); margin-bottom:8px;">预估毛利率（按历史销售+毛利配置）</div>
                     <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:8px;">
-                        <input id="rep-gm-start-date" type="date" value="${escapeHtml(String(state.grossMarginStartDate || state.date || ''))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; color-scheme:dark;" />
-                        <input id="rep-gm-end-date" type="date" value="${escapeHtml(String(state.grossMarginEndDate || state.date || ''))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; color-scheme:dark;" />
-                        <select id="rep-gm-biz-type" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff;">
+                        <input id="rep-gm-start-date" type="date" value="${escapeHtml(String(state.grossMarginStartDate || state.date || ''))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff; color-scheme:dark;" />
+                        <input id="rep-gm-end-date" type="date" value="${escapeHtml(String(state.grossMarginEndDate || state.date || ''))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff; color-scheme:dark;" />
+                        <select id="rep-gm-biz-type" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff;">
                             <option value="" ${!state.grossMarginBizType ? 'selected' : ''}>全部业务</option>
                             <option value="takeaway" ${state.grossMarginBizType === 'takeaway' ? 'selected' : ''}>仅外卖</option>
                             <option value="dinein" ${state.grossMarginBizType === 'dinein' ? 'selected' : ''}>仅堂食</option>
@@ -1811,30 +1811,30 @@
                     <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;">
                         <div class="rep-metric"><div class="k">样本天数</div><div class="v">${Number(grossMarginEstimate?.sampleCount || 0)}</div></div>
                         <div class="rep-metric"><div class="k">折前营收</div><div class="v">¥${fmt(grossRevenue)}</div></div>
-                        <div class="rep-metric"><div class="k">实收营收</div><div class="v" style="color:#f59e0b;">¥${grossActualRevenue > 0 ? fmt(grossActualRevenue) : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收营收</div><div class="v" style="color:#E0A6B4;">¥${grossActualRevenue > 0 ? fmt(grossActualRevenue) : '--'}</div></div>
                     </div>
                     <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px;">
                         <div class="rep-metric"><div class="k">毛利额</div><div class="v">¥${fmt(grossProfit)}</div></div>
                         <div class="rep-metric"><div class="k">折前毛利率</div><div class="v">${fmt(grossMarginRate * 100)}%</div></div>
-                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#f59e0b;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
+                        <div class="rep-metric"><div class="k">实收毛利率</div><div class="v" style="color:#E0A6B4;">${grossActualRevenue > 0 ? fmt(grossActualMarginRate * 100) + '%' : '--'}</div></div>
                     </div>
-                    <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.66);">
+                    <div style="margin-top:8px; font-size:11px; color:rgba(151,132,142,0.66);">
                         未配置毛利产品：${uncoveredProducts.length ? escapeHtml(uncoveredProducts.slice(0, 8).map(x => x.product).join('、')) : '无'}
                     </div>
                 </div>
 
-                <div style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
-                    <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">产品毛利配置（品牌：${escapeHtml(brandName || '-')}; 每行：产品,业务类型(可空),单份毛利）</div>
-                    <textarea id="rep-gross-profile-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;">${escapeHtml(grossProfileText)}</textarea>
+                <div style="margin-top:12px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
+                    <div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.92); margin-bottom:8px;">产品毛利配置（品牌：${escapeHtml(brandName || '-')}; 每行：产品,业务类型(可空),单份毛利）</div>
+                    <textarea id="rep-gross-profile-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff; font-size:12px;">${escapeHtml(grossProfileText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
                         <button class="btn" type="button" data-click="repSaveGrossProfitProfiles" style="padding:8px 12px; border-radius:8px;">保存毛利配置</button>
                         <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新预估结果</button>
                     </div>
                 </div>
 
-                <div style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
-                    <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">自定义模糊名称归类（品牌：${escapeHtml(brandName || '-')}; 每行：标准名 => 别名1、别名2）</div>
-                    <textarea id="rep-product-alias-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; font-size:12px;" placeholder="例如：\n九秒生炒鱼片 => 9秒生炒鱼片、九秒生炒魚片\n白灼虾">${escapeHtml(productAliasText)}</textarea>
+                <div style="margin-top:12px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
+                    <div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.92); margin-bottom:8px;">自定义模糊名称归类（品牌：${escapeHtml(brandName || '-')}; 每行：标准名 => 别名1、别名2）</div>
+                    <textarea id="rep-product-alias-editor" rows="6" style="width:100%; padding:10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff; font-size:12px;" placeholder="例如：\n九秒生炒鱼片 => 9秒生炒鱼片、九秒生炒魚片\n白灼虾">${escapeHtml(productAliasText)}</textarea>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
                         <button class="btn" type="button" data-click="repSaveProductAliasRules" style="padding:8px 12px; border-radius:8px;">保存归类规则</button>
                         <button class="btn btn-secondary" type="button" data-click="loadReportsData" style="padding:8px 12px; border-radius:8px;">刷新规则</button>
@@ -1848,20 +1848,20 @@
                     <div class="rep-metric"><div class="k">20%误差命中率</div><div class="v">${fmt(Number(accuracySummary?.avgHitRate20 || 0) * 100)}%</div></div>
                 </div>
 
-                <div style="margin-top:8px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px; font-size:12px; color:rgba(200,215,230,0.78);">
+                <div style="margin-top:8px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:10px; font-size:12px; color:rgba(151,132,142,0.78);">
                     自校准说明：系统会把每天上传的实际销售与历史预测自动比对，并持续更新校准系数；后续预测会根据误差偏差自动修正。
                 </div>
 
-                <div style="margin-top:12px; display:grid; gap:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
-                    <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.9);">预测条件</div>
+                <div style="margin-top:12px; display:grid; gap:10px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
+                    <div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.9);">预测条件</div>
                     <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px;">
-                        <input id="rep-inv-date" type="date" value="${escapeHtml(state.date || '')}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff; color-scheme:dark;" />
-                        <input id="rep-inv-weather" type="text" placeholder="天气，如：晴/雨" value="${escapeHtml(state.weather || '')}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff;" />
-                        <input id="rep-inv-revenue-takeaway" type="number" min="0" step="0.01" placeholder="外卖预计营收" value="${escapeHtml(String(state.expectedRevenueTakeaway ?? state.expectedRevenue ?? 0))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff;" />
-                        <input id="rep-inv-revenue-dinein" type="number" min="0" step="0.01" placeholder="堂食预计营收" value="${escapeHtml(String(state.expectedRevenueDinein ?? state.expectedRevenue ?? 0))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff;" />
+                        <input id="rep-inv-date" type="date" value="${escapeHtml(state.date || '')}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff; color-scheme:dark;" />
+                        <input id="rep-inv-weather" type="text" placeholder="天气，如：晴/雨" value="${escapeHtml(state.weather || '')}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff;" />
+                        <input id="rep-inv-revenue-takeaway" type="number" min="0" step="0.01" placeholder="外卖预计营收" value="${escapeHtml(String(state.expectedRevenueTakeaway ?? state.expectedRevenue ?? 0))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff;" />
+                        <input id="rep-inv-revenue-dinein" type="number" min="0" step="0.01" placeholder="堂食预计营收" value="${escapeHtml(String(state.expectedRevenueDinein ?? state.expectedRevenue ?? 0))}" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff;" />
                         <input id="rep-inv-topn" type="hidden" value="${escapeHtml(String(state.topN || 20))}" />
                     </div>
-                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:rgba(226,232,240,0.9);">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:rgba(242,234,238,0.9);">
                         <input id="rep-inv-holiday" type="checkbox" ${state.isHoliday ? 'checked' : ''} /> 是否假日
                     </label>
                     <div style="display:flex; gap:8px;">
@@ -1870,7 +1870,7 @@
                 </div>
 
                 <div style="display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;">
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
+                    <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
                         <div style="font-weight:900; margin-bottom:10px;">🛵 外卖模块</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
                             ${renderPredBlock('takeaway', 'lunch')}
@@ -1878,7 +1878,7 @@
                             ${renderPredBlock('takeaway', 'dinner')}
                         </div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
+                    <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
                         <div style="font-weight:900; margin-bottom:10px;">🍽 堂食模块</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;">
                             ${renderPredBlock('dinein', 'lunch')}
@@ -1888,7 +1888,7 @@
                     </div>
                 </div>
 
-                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(226,232,240,0.92);">预测备货明细（产品销量）</div>
+                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(242,234,238,0.92);">预测备货明细（产品销量）</div>
                 <div class="rep-table" style="margin-top:8px; overflow-x:auto;">
                     <table>
                         <thead>
@@ -1922,16 +1922,16 @@
                                         `);
                                     });
                                 });
-                                return rows.length ? rows.join('') : '<tr><td colspan="6" style="text-align:center; color:rgba(200,215,230,0.6); padding:14px 0;">暂无预测明细（当前按销售明细自动汇总，可先检查 pos_sales_detail 是否已入库）</td></tr>';
+                                return rows.length ? rows.join('') : '<tr><td colspan="6" style="text-align:center; color:rgba(151,132,142,0.6); padding:14px 0;">暂无预测明细（当前按销售明细自动汇总，可先检查 pos_sales_detail 是否已入库）</td></tr>';
                             })()}
                         </tbody>
                     </table>
                 </div>
 
-                ${isAdminUser() ? `<div style="margin-top:12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px;">
-                    <div style="font-size:12px; font-weight:800; color:rgba(226,232,240,0.92); margin-bottom:8px;">历史销售样本（自动读取）</div>
+                ${isAdminUser() ? `<div style="margin-top:12px; background:rgba(242,234,238,0.03); border:1px solid rgba(242,234,238,0.08); border-radius:12px; padding:12px;">
+                    <div style="font-size:12px; font-weight:800; color:rgba(242,234,238,0.92); margin-bottom:8px;">历史销售样本（自动读取）</div>
                     <div style="display:grid; grid-template-columns:1fr; gap:8px; margin-bottom:8px;">
-                        <select id="rep-inv-history-biz" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#fff;">
+                        <select id="rep-inv-history-biz" style="width:100%; padding:9px 10px; border-radius:8px; border:1px solid rgba(242,234,238,0.16); background:rgba(242,234,238,0.08); color:#fff;">
                             <option value="takeaway" ${historyBizType === 'takeaway' ? 'selected' : ''}>外卖模块</option>
                             <option value="dinein" ${historyBizType === 'dinein' ? 'selected' : ''}>堂食模块</option>
                         </select>
@@ -1939,10 +1939,10 @@
                     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                         <button class="btn btn-secondary" type="button" data-click="repInventoryForecastRun" style="padding:8px 12px; border-radius:8px;">刷新销售明细样本</button>
                     </div>
-                    <div style="margin-top:8px; font-size:11px; color:rgba(200,215,230,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总销售明细（pos_sales_detail），不再依赖手工上传第二份历史文件。</div>
+                    <div style="margin-top:8px; font-size:11px; color:rgba(151,132,142,0.62);">智能助手现在直接按所选门店、业态与日期范围汇总销售明细（pos_sales_detail），不再依赖手工上传第二份历史文件。</div>
                 </div>` : ''}
 
-                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(226,232,240,0.92);">历史样本（${bizLabel(historyBizType)}）</div>
+                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(242,234,238,0.92);">历史样本（${bizLabel(historyBizType)}）</div>
                 <div class="rep-table" style="margin-top:8px; overflow-x:auto;">
                     <table>
                         <thead>
@@ -1970,12 +1970,12 @@
                                     </tr>
                                 `;
                             }).join('')}
-                            ${historyRows.length ? '' : '<tr><td colspan="6" style="text-align:center; color:rgba(200,215,230,0.6); padding:14px 0;">暂无历史样本</td></tr>'}
+                            ${historyRows.length ? '' : '<tr><td colspan="6" style="text-align:center; color:rgba(151,132,142,0.6); padding:14px 0;">暂无历史样本</td></tr>'}
                         </tbody>
                     </table>
                 </div>
 
-                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(226,232,240,0.92);">预测 vs 实际 对比（最近）</div>
+                <div style="margin-top:12px; font-size:12px; font-weight:800; color:rgba(242,234,238,0.92);">预测 vs 实际 对比（最近）</div>
                 <div class="rep-table" style="margin-top:8px; overflow-x:auto;">
                     <table>
                         <thead>
@@ -1994,14 +1994,14 @@
                                 <tr>
                                     <td>${escapeHtml(String(r?.date || ''))}</td>
                                     <td>${bizLabel(String(r?.bizType || ''))} · ${slotLabel(String(r?.slot || ''))}</td>
-                                    <td style="text-align:right; color:#22c55e; font-weight:800;">${fmt(Number(r?.totalAccuracy || 0) * 100)}%</td>
-                                    <td style="text-align:right; color:#f97316;">${fmt(Number(r?.mape || 0) * 100)}%</td>
+                                    <td style="text-align:right; color:#86C9A2; font-weight:800;">${fmt(Number(r?.totalAccuracy || 0) * 100)}%</td>
+                                    <td style="text-align:right; color:#E0A6B4;">${fmt(Number(r?.mape || 0) * 100)}%</td>
                                     <td style="text-align:right;">${fmt(Number(r?.hitRate20 || 0) * 100)}%</td>
                                     <td style="text-align:right;">${fmt(r?.totalPredQty || 0)}</td>
                                     <td style="text-align:right;">${fmt(r?.totalActualQty || 0)}</td>
                                 </tr>
                             `).join('')}
-                            ${accuracyItems.length ? '' : '<tr><td colspan="7" style="text-align:center; color:rgba(200,215,230,0.6); padding:14px 0;">暂无对比数据（上传实际销售后自动生成）</td></tr>'}
+                            ${accuracyItems.length ? '' : '<tr><td colspan="7" style="text-align:center; color:rgba(151,132,142,0.6); padding:14px 0;">暂无对比数据（上传实际销售后自动生成）</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -2034,7 +2034,7 @@
             const box = document.getElementById('rep-dashboard-box');
             if (!box) return;
             const data = window.__REP_LAST_BUSINESS;
-            if (!data) { box.innerHTML = '<div style="color:rgba(200,215,230,0.6); padding:20px; text-align:center;">请先加载业务分析数据</div>'; return; }
+            if (!data) { box.innerHTML = '<div style="color:rgba(151,132,142,0.6); padding:20px; text-align:center;">请先加载业务分析数据</div>'; return; }
             const { store, start, end, rows, total, budgetExecution, lastMonth, lastMonthRange } = data;
             const s = (() => {
                 if (store) {
@@ -2052,12 +2052,12 @@
             const pct = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? (v * 100).toFixed(1) + '%' : '0.0%'; };
             const pctRaw = (a, b) => b > 0 ? pct(a / b) : '0.0%';
 
-            const blue = '#2563eb'; const green = '#059669'; const red = '#dc2626'; const orange = '#ea580c'; const purple = '#7c3aed'; const cyan = '#0891b2';
+            const blue = '#D18FA0'; const green = '#6FAF89'; const red = '#C97686'; const orange = '#CFA14A'; const purple = '#B87B8C'; const cyan = '#4C7E60';
 
             const yoyBadge = (cur, prev) => {
                 if (!hasLm || prev == null) return '';
                 const c = Number(cur || 0), p = Number(prev || 0);
-                if (p === 0 && c === 0) return '<span style="font-size:10px; color:rgba(200,215,230,0.5); margin-left:4px;">同比 -</span>';
+                if (p === 0 && c === 0) return '<span style="font-size:10px; color:rgba(151,132,142,0.5); margin-left:4px;">同比 -</span>';
                 if (p === 0) return '<span style="font-size:10px; color:' + green + '; margin-left:4px;">同比 +∞</span>';
                 const rate = ((c - p) / Math.abs(p) * 100).toFixed(1);
                 const up = c >= p;
@@ -2068,7 +2068,7 @@
             const yoyBadgeInverse = (cur, prev) => {
                 if (!hasLm || prev == null) return '';
                 const c = Number(cur || 0), p = Number(prev || 0);
-                if (p === 0 && c === 0) return '<span style="font-size:10px; color:rgba(200,215,230,0.5); margin-left:4px;">同比 -</span>';
+                if (p === 0 && c === 0) return '<span style="font-size:10px; color:rgba(151,132,142,0.5); margin-left:4px;">同比 -</span>';
                 if (p === 0) return '<span style="font-size:10px; color:' + red + '; margin-left:4px;">同比 +∞</span>';
                 const rate = ((c - p) / Math.abs(p) * 100).toFixed(1);
                 const up = c >= p;
@@ -2078,13 +2078,13 @@
             };
 
             const kpiCard = (label, value, sub, color, icon, yoyHtml) => `
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px; min-width:0;">
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px; min-width:0;">
                     <div style="display:flex; align-items:center; gap:8px;">
                         <div style="width:36px; height:36px; border-radius:10px; background:${color}18; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">${icon}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${label}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${label}</div>
                     </div>
                     <div style="font-size:20px; font-weight:900; color:${color}; margin-top:4px;">${value}${yoyHtml || ''}</div>
-                    <div style="font-size:11px; color:rgba(200,215,230,0.55);">${sub}</div>
+                    <div style="font-size:11px; color:rgba(151,132,142,0.55);">${sub}</div>
                 </div>`;
 
             const gaugeRing = (label, rate, color, size) => {
@@ -2095,14 +2095,14 @@
                 const offset = circ * (1 - val);
                 return `<div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
                     <svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
-                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/>
+                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(242,234,238,0.08)" stroke-width="8"/>
                         <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="${color}" stroke-width="8"
                             stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
                             stroke-linecap="round" transform="rotate(-90 ${sz/2} ${sz/2})" style="transition:stroke-dashoffset 0.6s;"/>
                         <text x="${sz/2}" y="${sz/2}" text-anchor="middle" dominant-baseline="central"
                             fill="${color}" font-size="14" font-weight="900">${pct(val)}</text>
                     </svg>
-                    <div style="font-size:11px; color:rgba(200,215,230,0.75); font-weight:700; text-align:center;">${label}</div>
+                    <div style="font-size:11px; color:rgba(151,132,142,0.75); font-weight:700; text-align:center;">${label}</div>
                 </div>`;
             };
 
@@ -2111,21 +2111,21 @@
                 const lmW = (hasLm && maxVal > 0) ? Math.min(100, (Number(lmValue || 0) / maxVal) * 100) : 0;
                 return `<div style="margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:3px;">
-                        <span style="color:rgba(200,215,230,0.75);">${label}</span>
+                        <span style="color:rgba(151,132,142,0.75);">${label}</span>
                         <span style="font-weight:800; color:${color};">¥${fmt(value)} ${yoyBadge(value, lmValue)}</span>
                     </div>
-                    <div style="height:8px; border-radius:99px; background:rgba(255,255,255,0.08); overflow:hidden; position:relative;">
+                    <div style="height:8px; border-radius:99px; background:rgba(242,234,238,0.08); overflow:hidden; position:relative;">
                         <div style="height:100%; width:${w}%; background:${color}; border-radius:99px; transition:width 0.5s;"></div>
                     </div>
-                    ${hasLm ? '<div style="height:5px; border-radius:99px; background:rgba(255,255,255,0.05); overflow:hidden; margin-top:2px;"><div style="height:100%; width:' + lmW + '%; background:' + color + '44; border-radius:99px;"></div></div><div style="font-size:9px; color:rgba(200,215,230,0.4); text-align:right;">上月同期 ¥' + fmt(lmValue) + '</div>' : ''}
+                    ${hasLm ? '<div style="height:5px; border-radius:99px; background:rgba(242,234,238,0.05); overflow:hidden; margin-top:2px;"><div style="height:100%; width:' + lmW + '%; background:' + color + '44; border-radius:99px;"></div></div><div style="font-size:9px; color:rgba(151,132,142,0.4); text-align:right;">上月同期 ¥' + fmt(lmValue) + '</div>' : ''}
                 </div>`;
             };
 
             const scoreCard = (label, value, unit, color, lmVal) => `
                 <div style="background:${color}10; border:1px solid ${color}22; border-radius:12px; padding:12px 14px; text-align:center;">
                     <div style="font-size:24px; font-weight:900; color:${color};">${value}</div>
-                    <div style="font-size:10px; color:rgba(200,215,230,0.6); margin-top:2px;">${unit}</div>
-                    <div style="font-size:11px; color:rgba(200,215,230,0.75); font-weight:700; margin-top:4px;">${label}</div>
+                    <div style="font-size:10px; color:rgba(151,132,142,0.6); margin-top:2px;">${unit}</div>
+                    <div style="font-size:11px; color:rgba(151,132,142,0.75); font-weight:700; margin-top:4px;">${label}</div>
                     ${hasLm ? '<div style="margin-top:3px;">' + yoyBadgeInverse(Number(String(value).replace(/,/g,'')) || 0, Number(lmVal || 0)) + '</div>' : ''}
                 </div>`;
 
@@ -2181,8 +2181,8 @@
 
             box.innerHTML = `
                 <div style="margin-bottom:16px;">
-                    <div style="font-size:18px; font-weight:900; color:rgba(226,232,240,0.95);">📊 ${escapeHtml(titleStore)} 业务仪表盘</div>
-                    <div style="font-size:12px; color:rgba(200,215,230,0.6); margin-top:4px;">${escapeHtml(start)} 至 ${escapeHtml(end)}（共${days}天）${hasLm ? ' · <span style="color:rgba(200,215,230,0.45);">同比：' + escapeHtml(lmLabel) + '</span>' : ''}</div>
+                    <div style="font-size:18px; font-weight:900; color:rgba(242,234,238,0.95);">📊 ${escapeHtml(titleStore)} 业务仪表盘</div>
+                    <div style="font-size:12px; color:rgba(151,132,142,0.6); margin-top:4px;">${escapeHtml(start)} 至 ${escapeHtml(end)}（共${days}天）${hasLm ? ' · <span style="color:rgba(151,132,142,0.45);">同比：' + escapeHtml(lmLabel) + '</span>' : ''}</div>
                 </div>
 
                 <!-- KPI Cards -->
@@ -2194,8 +2194,8 @@
                 </div>
 
                 <!-- Gauge Rings Row -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${blue}; padding-left:10px;">达成率总览</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${blue}; padding-left:10px;">达成率总览</div>
                     <div style="display:flex; justify-content:space-around; flex-wrap:wrap; gap:12px;">
                         ${gaugeRing('营业额', actual / Math.max(Number(s.budget || 0), 1), blue, 90)}
                         ${gaugeRing('堂食客流', dineTraffic / Math.max(Number(s.dineTraffic || 0) > 0 ? dineTraffic * 1.2 : 1, 1), green, 90)}
@@ -2206,20 +2206,20 @@
                 </div>
 
                 <!-- Time Segment Analysis -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${orange}; padding-left:10px;">时段营业额</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${orange}; padding-left:10px;">时段营业额</div>
                     ${barH('午市', segNoon, Math.max(segNoon, segAfternoon, segNight, lmSegNoon, lmSegAfternoon, lmSegNight, 1), blue, lmSegNoon)}
                     ${barH('下午茶', segAfternoon, Math.max(segNoon, segAfternoon, segNight, lmSegNoon, lmSegAfternoon, lmSegNight, 1), green, lmSegAfternoon)}
                     ${barH('晚市', segNight, Math.max(segNoon, segAfternoon, segNight, lmSegNoon, lmSegAfternoon, lmSegNight, 1), orange, lmSegNight)}
                     <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:12px;">
-                        <span style="color:rgba(200,215,230,0.6);">合计</span>
+                        <span style="color:rgba(151,132,142,0.6);">合计</span>
                         <span style="font-weight:900; color:${blue};">¥${fmt(segTotal)} ${yoyBadge(segTotal, lmSegNoon + lmSegAfternoon + lmSegNight)}</span>
                     </div>
                 </div>
 
                 <!-- Category Sales -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${green}; padding-left:10px;">品类销售占比</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${green}; padding-left:10px;">品类销售占比</div>
                     <div style="display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
                         ${[['水吧', catWater, blue, Number(lm.catWaterAmt||0)], ['汤档', catSoup, green, Number(lm.catSoupAmt||0)], ['烧味', catRoast, orange, Number(lm.catRoastAmt||0)], ['炒锅', catWok, purple, Number(lm.catWokAmt||0)]].map(([name, amt, color, lmAmt]) => {
                             const ratio = catTotal > 0 ? amt / catTotal : 0;
@@ -2227,7 +2227,7 @@
                         }).join('')}
                     </div>
                     <div style="display:flex; justify-content:space-between; font-size:12px;">
-                        <span style="color:rgba(200,215,230,0.6);">品类合计</span>
+                        <span style="color:rgba(151,132,142,0.6);">品类合计</span>
                         <span style="font-weight:900; color:${blue};">¥${fmt(catTotal)} ${yoyBadge(catTotal, Number(lm.catWaterAmt||0)+Number(lm.catSoupAmt||0)+Number(lm.catRoastAmt||0)+Number(lm.catWokAmt||0))}</span>
                     </div>
                 </div>
@@ -2237,22 +2237,22 @@
                     <div style="background:${blue}08; border:1px solid ${blue}18; border-radius:14px; padding:16px;">
                         <div style="font-weight:900; font-size:13px; color:${blue}; margin-bottom:10px;">🛵 饿了么</div>
                         <div style="font-size:22px; font-weight:900; color:${blue};">¥${fmt(elemeRevenue)}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.6); margin-top:4px;">${fmtInt(elemeOrders)}单 · 实收 ¥${fmt(elemeActual)}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.6);">实收率 ${pctRaw(elemeActual, elemeRevenue)}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.6); margin-top:4px;">${fmtInt(elemeOrders)}单 · 实收 ¥${fmt(elemeActual)}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.6);">实收率 ${pctRaw(elemeActual, elemeRevenue)}</div>
                         <div style="margin-top:6px;">${yoyBadge(elemeRevenue, lmElemeRevenue)}</div>
                     </div>
                     <div style="background:${orange}08; border:1px solid ${orange}18; border-radius:14px; padding:16px;">
                         <div style="font-weight:900; font-size:13px; color:${orange}; margin-bottom:10px;">🛵 美团外卖</div>
                         <div style="font-size:22px; font-weight:900; color:${orange};">¥${fmt(meituanRevenue)}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.6); margin-top:4px;">${fmtInt(meituanOrders)}单 · 实收 ¥${fmt(meituanActual)}</div>
-                        <div style="font-size:11px; color:rgba(200,215,230,0.6);">实收率 ${pctRaw(meituanActual, meituanRevenue)}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.6); margin-top:4px;">${fmtInt(meituanOrders)}单 · 实收 ¥${fmt(meituanActual)}</div>
+                        <div style="font-size:11px; color:rgba(151,132,142,0.6);">实收率 ${pctRaw(meituanActual, meituanRevenue)}</div>
                         <div style="margin-top:6px;">${yoyBadge(meituanRevenue, lmMeituanRevenue)}</div>
                     </div>
                 </div>
 
                 <!-- Score Cards Row -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${red}; padding-left:10px;">差评与评分</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${red}; padding-left:10px;">差评与评分</div>
                     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:10px;">
                         ${scoreCard('总差评', fmtInt(badTotal), '条', red, lmBadTotal)}
                         ${scoreCard('大众点评', fmtInt(badDianping), '条', orange, lmBadDianping)}
@@ -2262,16 +2262,16 @@
                 </div>
 
                 <!-- Recharge Stats -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${purple}; padding-left:10px;">充值统计</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${purple}; padding-left:10px;">充值统计</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                         <div style="background:${purple}10; border:1px solid ${purple}22; border-radius:12px; padding:14px; text-align:center;">
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7);">累计充值</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7);">累计充值</div>
                             <div style="font-size:22px; font-weight:900; color:${purple}; margin-top:4px;">¥${fmt(rechargeAmt)}</div>
                             <div style="margin-top:4px;">${yoyBadge(rechargeAmt, lmRechargeAmt)}</div>
                         </div>
                         <div style="background:${cyan}10; border:1px solid ${cyan}22; border-radius:12px; padding:14px; text-align:center;">
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7);">充值笔数</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7);">充值笔数</div>
                             <div style="font-size:22px; font-weight:900; color:${cyan}; margin-top:4px;">${fmtInt(rechargeCnt)}笔</div>
                             <div style="margin-top:4px;">${yoyBadge(rechargeCnt, lmRechargeCnt)}</div>
                         </div>
@@ -2279,21 +2279,21 @@
                 </div>
 
                 <!-- Discount -->
-                <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:14px; border-left:3px solid ${red}; padding-left:10px;">折扣分析</div>
+                <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:18px; margin-bottom:16px;">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:14px; border-left:3px solid ${red}; padding-left:10px;">折扣分析</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
                         <div style="text-align:center;">
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7);">应收总额</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7);">应收总额</div>
                             <div style="font-size:16px; font-weight:900; color:${blue};">¥${fmt(gross)}</div>
                             <div style="margin-top:3px;">${yoyBadge(gross, lmGross)}</div>
                         </div>
                         <div style="text-align:center;">
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7);">折扣金额</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7);">折扣金额</div>
                             <div style="font-size:16px; font-weight:900; color:${red};">¥${fmt(discount)}</div>
                             <div style="margin-top:3px;">${yoyBadgeInverse(discount, lmDiscount)}</div>
                         </div>
                         <div style="text-align:center;">
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7);">折扣率</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7);">折扣率</div>
                             <div style="font-size:16px; font-weight:900; color:${orange};">${pctRaw(discount, gross)}</div>
                             <div style="margin-top:3px;">${yoyBadgeInverse(gross > 0 ? discount/gross : 0, lmGross > 0 ? lmDiscount/lmGross : 0)}</div>
                         </div>
@@ -2490,49 +2490,49 @@
                         const catWaterLabor = Number(s.catWaterQty || 0) > 0 ? (catLabor > 0 ? (Number(s.catWaterAmt||0) > 0 ? Math.round(catLabor * Number(s.catWaterAmt||0) / (catTotal || 1)) : 0) : 0) : 0;
 
                         const sc = (cls) => `style="color:${cls}; font-weight:900;"`;
-                        const blue = '#2563eb';
-                        const red = '#dc2626';
-                        const green = '#059669';
-                        const orange = '#ea580c';
-                        const purple = '#7c3aed';
+                        const blue = '#D18FA0';
+                        const red = '#C97686';
+                        const green = '#6FAF89';
+                        const orange = '#CFA14A';
+                        const purple = '#B87B8C';
 
                         const section = (title, content) => `
-                            <div style="background:rgba(255,255,255,0.04); border-radius:14px; border:1px solid rgba(255,255,255,0.08); padding:16px; margin-bottom:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);">
-                                <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:12px; border-left:3px solid ${blue}; padding-left:10px;">${title}</div>
+                            <div style="background:rgba(242,234,238,0.04); border-radius:14px; border:1px solid rgba(242,234,238,0.08); padding:16px; margin-bottom:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);">
+                                <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:12px; border-left:3px solid ${blue}; padding-left:10px;">${title}</div>
                                 ${content}
                             </div>`;
 
                         const kv = (label, value, color) => `
-                            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
-                                <span style="color:rgba(200,215,230,0.75); font-size:13px;">${label}</span>
-                                <span style="font-weight:800; font-size:13px; ${color ? 'color:'+color : 'color:rgba(226,232,240,0.95)'}">${value}</span>
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(242,234,238,0.06);">
+                                <span style="color:rgba(151,132,142,0.75); font-size:13px;">${label}</span>
+                                <span style="font-weight:800; font-size:13px; ${color ? 'color:'+color : 'color:rgba(242,234,238,0.95)'}">${value}</span>
                             </div>`;
 
                         const bigNum = (label, value, color) => `
                             <div style="background:${color || blue}10; border:1px solid ${color || blue}22; border-radius:10px; padding:10px 14px; margin-bottom:8px;">
-                                <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">${label}</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">${label}</div>
                                 <div style="font-size:22px; font-weight:900; color:${color || blue}; margin-top:2px;">¥${fmt(value)}</div>
                             </div>`;
 
                         const progressBar = (rate, color) => {
                             const w = Math.max(0, Math.min(100, (Number(rate||0)*100)));
-                            return `<div style="height:6px; border-radius:99px; background:rgba(255,255,255,0.1); overflow:hidden; margin-top:4px;">
+                            return `<div style="height:6px; border-radius:99px; background:rgba(242,234,238,0.1); overflow:hidden; margin-top:4px;">
                                 <div style="height:100%; width:${w}%; background:${color || blue}; border-radius:99px;"></div>
                             </div>`;
                         };
 
                         const html = `
-                            <div style="font-size:12px; color:rgba(200,215,230,0.7); margin-bottom:10px;">查询日期范围：${escapeHtml(start)} 至 ${escapeHtml(end)}</div>
+                            <div style="font-size:12px; color:rgba(151,132,142,0.7); margin-bottom:10px;">查询日期范围：${escapeHtml(start)} 至 ${escapeHtml(end)}</div>
 
                             ${section('目标进度', `
                                 <div style="display:flex; gap:16px; margin-bottom:8px;">
                                     <div style="flex:1;">
-                                        <div style="font-size:12px; color:rgba(200,215,230,0.7);">实际进度</div>
+                                        <div style="font-size:12px; color:rgba(151,132,142,0.7);">实际进度</div>
                                         <div style="font-size:18px; font-weight:900; color:${blue};">${pct(actualRate)}</div>
                                         ${progressBar(actualRate, blue)}
                                     </div>
                                     <div style="flex:1;">
-                                        <div style="font-size:12px; color:rgba(200,215,230,0.7);">理论进度</div>
+                                        <div style="font-size:12px; color:rgba(151,132,142,0.7);">理论进度</div>
                                         <div style="font-size:18px; font-weight:900; color:${orange};">${pct(theoreticalRate)}</div>
                                         ${progressBar(theoreticalRate, orange)}
                                     </div>
@@ -2541,19 +2541,19 @@
                                 ${kv('理论应完成', '¥' + fmt(theoreticalAmount), orange)}
                                 ${kv('月度目标', '¥' + fmt(monthBudget), null)}
                                 ${kv('进度差距', (progressDiff >= 0 ? '+' : '') + fmt(progressDiff) + ' <span style="font-size:11px; color:' + (progressDiffPct >= 0 ? green : red) + ';">' + (progressDiffPct >= 0 ? '超前' : '落后') + '</span>', progressDiff >= 0 ? green : red)}
-                                <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:6px;">已过 ${elapsedDays} 天 / 本月共 ${daysInMonth} 天</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:6px;">已过 ${elapsedDays} 天 / 本月共 ${daysInMonth} 天</div>
                             `)}
 
                             ${section('堂食达成数据', `
                                 ${kv('堂食客流量', '')}
                                 ${kv('目标：' + fmtInt(targetDineTraffic) + '人', '累计：' + fmtInt(s.dineTraffic) + '人', null)}
-                                <div style="font-size:12px; color:rgba(200,215,230,0.7); margin-bottom:4px;">达成率</div>
+                                <div style="font-size:12px; color:rgba(151,132,142,0.7); margin-bottom:4px;">达成率</div>
                                 <div style="font-size:18px; font-weight:900; color:${blue}; margin-bottom:8px;">${pctRaw(s.dineTraffic, targetDineTraffic)}</div>
                                 ${progressBar(targetDineTraffic > 0 ? s.dineTraffic / targetDineTraffic : 0, blue)}
                                 <div style="height:12px;"></div>
                                 ${kv('堂食订单数', '')}
                                 ${kv('目标：' + fmtInt(targetDineOrders) + '单', '累计：' + fmtInt(s.dineOrders) + '单', null)}
-                                <div style="font-size:12px; color:rgba(200,215,230,0.7); margin-bottom:4px;">达成率</div>
+                                <div style="font-size:12px; color:rgba(151,132,142,0.7); margin-bottom:4px;">达成率</div>
                                 <div style="font-size:18px; font-weight:900; color:${blue}; margin-bottom:8px;">${pctRaw(s.dineOrders, targetDineOrders)}</div>
                                 ${progressBar(targetDineOrders > 0 ? s.dineOrders / targetDineOrders : 0, blue)}
                                 <div style="height:8px;"></div>
@@ -2561,7 +2561,7 @@
                                     <div>${kv('本月平均桌单价', '¥' + fmt(s.dineAvgTable), blue)}</div>
                                     <div>${kv('本月平均人均', '¥' + fmt(s.dineAvgPerson), blue)}</div>
                                 </div>
-                                <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:4px;">统计${reportDays}天，共${fmtInt(s.dineTraffic)}人次</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:4px;">统计${reportDays}天，共${fmtInt(s.dineTraffic)}人次</div>
                             `)}
 
                             ${section('统计周期', `
@@ -2570,11 +2570,11 @@
                                     ${bigNum('日均实收', dailyActual, green)}
                                     ${bigNum('累计折扣', s.discount, red)}
                                     <div style="background:${purple}10; border:1px solid ${purple}22; border-radius:10px; padding:10px 14px; margin-bottom:8px;">
-                                        <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">平均折扣率</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">平均折扣率</div>
                                         <div style="font-size:22px; font-weight:900; color:${purple}; margin-top:2px;">${pctRaw(s.discount, s.gross)}</div>
                                     </div>
                                 </div>
-                                <div style="font-size:11px; color:rgba(200,215,230,0.5);">统计周期：${escapeHtml(start)} 至 ${escapeHtml(end)}（共${reportDays}天）</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.5);">统计周期：${escapeHtml(start)} 至 ${escapeHtml(end)}（共${reportDays}天）</div>
                             `)}
 
                             ${section('人效分析', `
@@ -2584,7 +2584,7 @@
                                     <div>${kv('差距', diffStr(Number(s.efficiency||0), targetEfficiency), Number(s.efficiency||0) >= targetEfficiency ? green : red)}</div>
                                 </div>
                                 ${kv('完成率', pctRaw(s.efficiency, targetEfficiency), Number(s.efficiency||0) >= targetEfficiency ? green : red)}
-                                <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:4px;">超出目标 ${pct(Math.max(0, (Number(s.efficiency||0) / (targetEfficiency||1)) - 1))}</div>
+                                <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:4px;">超出目标 ${pct(Math.max(0, (Number(s.efficiency||0) / (targetEfficiency||1)) - 1))}</div>
                             `)}
 
                             ${section('档口人均产值', `
@@ -2595,10 +2595,10 @@
                                     ['炒锅', s.catWokAmt, s.catWokQty, purple]
                                 ].map(([name, amt, qty, color]) => {
                                     const perCapita = Number(qty||0) > 0 ? (Number(amt||0) / Number(qty||0)) : 0;
-                                    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                                    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(242,234,238,0.06);">
                                         <div>
-                                            <div style="font-weight:800; font-size:13px; color:rgba(226,232,240,0.95);">${name}</div>
-                                            <div style="font-size:11px; color:rgba(200,215,230,0.6);">销售额：¥${fmt(amt)} &nbsp; 人：${fmtInt(qty)}人</div>
+                                            <div style="font-weight:800; font-size:13px; color:rgba(242,234,238,0.95);">${name}</div>
+                                            <div style="font-size:11px; color:rgba(151,132,142,0.6);">销售额：¥${fmt(amt)} &nbsp; 人：${fmtInt(qty)}人</div>
                                         </div>
                                         <div style="font-size:18px; font-weight:900; color:${color};">¥${fmtInt(perCapita)}</div>
                                     </div>`;
@@ -2613,12 +2613,12 @@
                                 ].map(([name, amt, color]) => {
                                     const ratio = Number(s.gross||0) > 0 ? (Number(amt||0) / Number(s.gross||0)) : 0;
                                     const dailyAvg = reportDays > 0 ? (Number(amt||0) / reportDays) : 0;
-                                    return `<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                                    return `<div style="padding:8px 0; border-bottom:1px solid rgba(242,234,238,0.06);">
                                         <div style="display:flex; justify-content:space-between; align-items:center;">
                                             <span style="font-weight:800; font-size:13px;">${name}</span>
                                             <span style="font-weight:900; color:${color};">¥${fmt(amt)} (${pct(ratio)})</span>
                                         </div>
-                                        <div style="font-size:11px; color:rgba(200,215,230,0.6); margin-top:2px;">日均营业额 ¥${fmt(dailyAvg)}</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.6); margin-top:2px;">日均营业额 ¥${fmt(dailyAvg)}</div>
                                     </div>`;
                                 }).join('')}
                                 ${kv('时段营业额合计', '¥' + fmt(segTotal), blue)}
@@ -2634,12 +2634,12 @@
                                     const ratio = catTotal > 0 ? (Number(amt||0) / catTotal) : 0;
                                     const perCapita = Number(qty||0) > 0 ? (Number(amt||0) / Number(qty||0)) : 0;
                                     const qtyRatio = catQtyTotal > 0 ? (Number(qty||0) / catQtyTotal) : 0;
-                                    return `<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+                                    return `<div style="padding:8px 0; border-bottom:1px solid rgba(242,234,238,0.06);">
                                         <div style="display:flex; justify-content:space-between; align-items:center;">
                                             <span style="font-weight:800; font-size:13px;">${name}</span>
                                             <span style="font-weight:900; color:${blue};">¥${fmt(amt)} (${pct(ratio)})</span>
                                         </div>
-                                        <div style="font-size:11px; color:rgba(200,215,230,0.6); margin-top:2px;">人均产值 ¥${fmt(perCapita)} &nbsp; 人均产品件数 ${fmtInt(qty)}件(${pct(qtyRatio)})</div>
+                                        <div style="font-size:11px; color:rgba(151,132,142,0.6); margin-top:2px;">人均产值 ¥${fmt(perCapita)} &nbsp; 人均产品件数 ${fmtInt(qty)}件(${pct(qtyRatio)})</div>
                                     </div>`;
                                 }).join('')}
                             `)}
@@ -2667,7 +2667,7 @@
 
                             ${section('差评统计', `
                                 <div style="background:${red}08; border:1px solid ${red}18; border-radius:10px; padding:10px 14px; margin-bottom:8px;">
-                                    <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">总差评数</div>
+                                    <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">总差评数</div>
                                     <div style="font-size:24px; font-weight:900; color:${red}; margin-top:2px;">${fmtInt(badTotal)}条</div>
                                 </div>
                                 ${kv('大众点评星级（有填报日期的均值）', avgDianpingStars != null ? avgDianpingStars.toFixed(2) + ' 星' : '—', blue)}
@@ -2680,7 +2680,7 @@
 
                             ${section('充值统计', `
                                 <div style="background:${purple}08; border:1px solid ${purple}18; border-radius:10px; padding:10px 14px; margin-bottom:8px;">
-                                    <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">累计充值金额</div>
+                                    <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">累计充值金额</div>
                                     <div style="font-size:24px; font-weight:900; color:${purple}; margin-top:2px;">¥${fmt(s.rechargeAmount)}</div>
                                 </div>
                                 ${kv('充值笔数', fmtInt(s.rechargeCount) + '笔', null)}
@@ -2700,19 +2700,19 @@
                                         <div style="font-weight:900; font-size:13px; color:${blue}; margin-bottom:10px;">总体预算</div>
                                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px 16px;">
                                             <div>
-                                                <div style="font-size:11px; color:rgba(200,215,230,0.7);">总预算</div>
+                                                <div style="font-size:11px; color:rgba(151,132,142,0.7);">总预算</div>
                                                 <div style="font-size:18px; font-weight:900; color:${blue};">¥${fmt(totalBudget)}</div>
                                             </div>
                                             <div>
-                                                <div style="font-size:11px; color:rgba(200,215,230,0.7);">已使用</div>
+                                                <div style="font-size:11px; color:rgba(151,132,142,0.7);">已使用</div>
                                                 <div style="font-size:18px; font-weight:900; color:${red};">¥${fmt(totalUsed)}</div>
                                             </div>
                                             <div>
-                                                <div style="font-size:11px; color:rgba(200,215,230,0.7);">剩余预算</div>
+                                                <div style="font-size:11px; color:rgba(151,132,142,0.7);">剩余预算</div>
                                                 <div style="font-size:18px; font-weight:900; color:${green};">¥${fmt(totalRemaining)}</div>
                                             </div>
                                             <div>
-                                                <div style="font-size:11px; color:rgba(200,215,230,0.7);">总执行率</div>
+                                                <div style="font-size:11px; color:rgba(151,132,142,0.7);">总执行率</div>
                                                 <div style="font-size:18px; font-weight:900; color:${orange};">${pct(totalRate)}</div>
                                             </div>
                                         </div>
@@ -2724,19 +2724,19 @@
                                         const rAmt = Number(b.remaining || 0);
                                         const rateVal = Number(b.rate || 0);
                                         const rateColor = rateVal > 0.8 ? red : (rateVal > 0.5 ? orange : green);
-                                        return '<div style="padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">' +
+                                        return '<div style="padding:12px 0; border-bottom:1px solid rgba(242,234,238,0.08);">' +
                                             '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
-                                                '<span style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95);">' + escapeHtml(cat) + '</span>' +
+                                                '<span style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95);">' + escapeHtml(cat) + '</span>' +
                                                 '<span style="font-weight:900; font-size:14px; color:' + rateColor + ';">' + pct(rateVal) + '</span>' +
                                             '</div>' +
                                             '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; font-size:12px;">' +
-                                                '<div><span style="color:rgba(200,215,230,0.7);">预算</span><span style="font-weight:800; color:' + blue + ';"> ¥' + fmt(bAmt) + '</span></div>' +
-                                                '<div><span style="color:rgba(200,215,230,0.7);">已用</span><span style="font-weight:800; color:' + red + ';"> ¥' + fmt(uAmt) + '</span></div>' +
-                                                '<div><span style="color:rgba(200,215,230,0.7);">剩余</span><span style="font-weight:800; color:' + green + ';"> ¥' + fmt(rAmt) + '</span></div>' +
+                                                '<div><span style="color:rgba(151,132,142,0.7);">预算</span><span style="font-weight:800; color:' + blue + ';"> ¥' + fmt(bAmt) + '</span></div>' +
+                                                '<div><span style="color:rgba(151,132,142,0.7);">已用</span><span style="font-weight:800; color:' + red + ';"> ¥' + fmt(uAmt) + '</span></div>' +
+                                                '<div><span style="color:rgba(151,132,142,0.7);">剩余</span><span style="font-weight:800; color:' + green + ';"> ¥' + fmt(rAmt) + '</span></div>' +
                                             '</div>' +
                                         '</div>';
                                     }).join('')}
-                                    <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:8px;">统计月份：${escapeHtml(ym)}（只统计已审批和已付款的请款单）</div>
+                                    <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:8px;">统计月份：${escapeHtml(ym)}（只统计已审批和已付款的请款单）</div>
                                 `);
                             })()}
                         `;
@@ -2753,7 +2753,7 @@
                 const box = document.getElementById('rep-promotions-box');
                 if (box) box.innerHTML = '加载中...';
                 if (!repRoleCanViewPromotionRecords()) {
-                    if (box) box.innerHTML = '<div style="color:#c2410c; padding:12px 0;">仅总部人事/总部运营/管理员可查看</div>';
+                    if (box) box.innerHTML = '<div style="color:#97848E; padding:12px 0;">仅总部人事/总部运营/管理员可查看</div>';
                     return;
                 }
                 HRMS_API.getPromotionRecordsReport({ store, month, limit: 500 })
@@ -2767,7 +2767,7 @@
                                 : '-';
                         };
                         const html = `
-                            <div class="rep-hero" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">
+                            <div class="rep-hero" style="background: radial-gradient(800px 280px at 0% 0%, rgba(224,166,180,0.16), transparent 55%), linear-gradient(155deg, rgba(28,24,28,0.95), rgba(24,20,24,0.98)); border: 1px solid rgba(224,166,180,0.2);">
                                 <div style="font-weight:900; font-size:16px;">晋升记录汇总</div>
                                 <div class="meta" style="margin-top:6px;">范围：${escapeHtml(store || '全部门店')} · 月份：${escapeHtml(month || '全部')}</div>
                                 <div class="rep-grid" style="margin-top:10px;">
@@ -2796,11 +2796,11 @@
                                                 <td>${escapeHtml(String(r?.applicantName || r?.applicantUsername || '-'))}</td>
                                                 <td>${escapeHtml(String(r?.fromPosition || '-'))} / ${escapeHtml(String(r?.fromLevel || '-'))}</td>
                                                 <td>${escapeHtml(String(r?.toPosition || '-'))} / ${escapeHtml(String(r?.toLevel || '-'))}</td>
-                                                <td style="text-align:right; font-weight:800; color:#22c55e;">${escapeHtml(fmtMoney(r?.promotedSalary))}</td>
+                                                <td style="text-align:right; font-weight:800; color:#86C9A2;">${escapeHtml(fmtMoney(r?.promotedSalary))}</td>
                                                 <td>${escapeHtml(hrmsDisplayName(String(r?.approvedBy || '')) || '-')}</td>
                                             </tr>
                                         `).join('')}
-                                        ${!rows.length ? '<tr><td colspan="7" style="text-align:center; color:rgba(200,215,230,0.6); padding:16px 0;">暂无晋升记录</td></tr>' : ''}
+                                        ${!rows.length ? '<tr><td colspan="7" style="text-align:center; color:rgba(151,132,142,0.6); padding:16px 0;">暂无晋升记录</td></tr>' : ''}
                                     </tbody>
                                 </table>
                             </div>
@@ -2857,31 +2857,31 @@
                         const notifyDateVal = end; // 默认通知最后一天的异常
 
                         let html = `
-                            <div class="rep-hero" style="background: linear-gradient(135deg, #1d4ed8, #6366f1);">
+                            <div class="rep-hero" style="background: radial-gradient(800px 280px at 0% 0%, rgba(224,166,180,0.16), transparent 55%), linear-gradient(155deg, rgba(28,24,28,0.95), rgba(24,20,24,0.98)); border: 1px solid rgba(224,166,180,0.2);">
                                 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                                     <div style="font-weight: 900; font-size: 16px;flex:1;">出勤表（营业日报核对）</div>
-                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(251,146,60,0.2);border:1px solid rgba(251,146,60,0.4);color:#fdba74;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
+                                    ${isAdminUser() && totalAnomalies > 0 ? `<button data-click="notifyAttendanceAnomalies" data-arg="${escapeHtml(notifyDateVal)}" style="padding:6px 14px;border-radius:10px;background:rgba(207,161,74,0.2);border:1px solid rgba(207,161,74,0.4);color:#CFA14A;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📣 通知异常员工 (${totalAnomalies})</button>` : ''}
                                 </div>
                                 <div class="meta" style="margin-top: 8px;">数据来源：<strong>正式提交</strong>营业日报。在职人员与打卡、已通过休假比对；<strong>休息</strong>以日报为准（本休/调休不要求休假流程）。门店名册中未列入出勤/休息且无已通过休假者标为<strong>缺勤</strong>。</div>
                                 <div class="meta" style="margin-top: 6px;">统计周期：${escapeHtml(start)} - ${escapeHtml(end)} · 每日默认折叠，点击标题展开明细</div>`;
                         if (darEmp && es) {
                             html += `
-                                <div style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(15,23,42,0.55);border:1px solid rgba(129,140,248,0.45);text-align:left;">
-                                    <div style="font-weight:900;font-size:14px;color:#e0e7ff;">员工筛选「${escapeHtml(es.employee_query || darEmp)}」· 区间内汇总</div>
-                                    <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px 22px;font-size:13px;color:rgba(226,232,240,0.95);">
-                                        <span><strong style="color:#86efac;">出勤天数</strong>（有在职记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.attendance_days ?? 0))}</strong></span>
-                                        <span><strong style="color:#fde047;">休息天数</strong>（有休息记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.rest_days ?? 0))}</strong></span>
+                                <div style="margin-top:14px;padding:12px 14px;border-radius:12px;background:rgba(28,24,28,0.55);border:1px solid rgba(224,166,180,0.45);text-align:left;">
+                                    <div style="font-weight:900;font-size:14px;color:#F2D3DA;">员工筛选「${escapeHtml(es.employee_query || darEmp)}」· 区间内汇总</div>
+                                    <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:14px 22px;font-size:13px;color:rgba(242,234,238,0.95);">
+                                        <span><strong style="color:#BEE6CE;">出勤天数</strong>（有在职记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.attendance_days ?? 0))}</strong></span>
+                                        <span><strong style="color:#CFA14A;">休息天数</strong>（有休息记录的自然日）　<strong style="font-size:15px;">${escapeHtml(String(es.rest_days ?? 0))}</strong></span>
                                         <span>出勤人日累计　<strong>${escapeHtml(String(es.attendance_person_days ?? 0))}</strong></span>
                                         <span>休息人日累计　<strong>${escapeHtml(String(es.rest_person_days ?? 0))}</strong></span>
                                     </div>
-                                    <div style="margin-top:8px;font-size:11px;color:rgba(199,210,254,0.75);">姓名支持模糊匹配显示名或账号；天数按自然日去重；人日为明细申报人日之和。</div>
+                                    <div style="margin-top:8px;font-size:11px;color:rgba(242,211,218,0.75);">姓名支持模糊匹配显示名或账号；天数按自然日去重；人日为明细申报人日之和。</div>
                                 </div>`;
                         }
                         html += '</div>';
                         if (!rows.length) {
                             html += darEmp
-                                ? '<div style="color:rgba(200,215,230,0.55); padding:20px; text-align:center;">所选区间<strong>无匹配该姓名</strong>的出勤表明细；请尝试更换关键词、扩大日期或确认门店范围。</div>'
-                                : '<div style="color:rgba(200,215,230,0.5); padding:20px; text-align:center;">暂无台账：仅统计<strong>已正式提交</strong>且写入数据库的营业日报；上线前的历史日报需由系统自动补缺（重启服务后最多补约 2500 条）。请确认日期范围包含提交日，门店筛选为「所有门店」；仍无数据则说明所选时间内 PostgreSQL 中尚无日报记录。</div>';
+                                ? '<div style="color:rgba(151,132,142,0.55); padding:20px; text-align:center;">所选区间<strong>无匹配该姓名</strong>的出勤表明细；请尝试更换关键词、扩大日期或确认门店范围。</div>'
+                                : '<div style="color:rgba(151,132,142,0.5); padding:20px; text-align:center;">暂无台账：仅统计<strong>已正式提交</strong>且写入数据库的营业日报；上线前的历史日报需由系统自动补缺（重启服务后最多补约 2500 条）。请确认日期范围包含提交日，门店筛选为「所有门店」；仍无数据则说明所选时间内 PostgreSQL 中尚无日报记录。</div>';
                             if (box) box.innerHTML = html;
                             return;
                         }
@@ -2893,33 +2893,33 @@
                             const anomCount = anomLines.length;
                             const ok = anomCount === 0;
                             const dateStr = String(row.report_date || '').slice(0, 10);
-                            html += `<details class="rep-dar-day" style="border:1px solid ${ok ? 'rgba(34,197,94,0.15)' : 'rgba(249,115,22,0.25)'};border-radius:14px;background:${ok ? 'rgba(15,23,42,0.28)' : 'rgba(30,15,5,0.45)'};overflow:hidden;">
+                            html += `<details class="rep-dar-day" style="border:1px solid ${ok ? 'rgba(134,201,162,0.15)' : 'rgba(207,161,74,0.25)'};border-radius:14px;background:${ok ? 'rgba(28,24,28,0.28)' : 'rgba(30,15,5,0.45)'};overflow:hidden;">
 <summary style="cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:10px;user-select:none;">
-<span class="rep-dar-chev" style="display:inline-block;transition:transform .15s;color:rgba(148,163,184,0.8);font-size:12px;">▸</span>
+<span class="rep-dar-chev" style="display:inline-block;transition:transform .15s;color:rgba(151,132,142,0.8);font-size:12px;">▸</span>
 <div style="flex:1;min-width:0;">
-  <div style="font-size:13px;font-weight:800;color:#e2e8f0;">${escapeHtml(String(row.store || ''))}</div>
-  <div style="font-size:11px;color:rgba(148,163,184,0.8);margin-top:2px;">${escapeHtml(dateStr)}</div>
+  <div style="font-size:13px;font-weight:800;color:#F2EAEE;">${escapeHtml(String(row.store || ''))}</div>
+  <div style="font-size:11px;color:rgba(151,132,142,0.8);margin-top:2px;">${escapeHtml(dateStr)}</div>
 </div>
 ${ok
-    ? '<span style="padding:3px 10px;border-radius:999px;background:rgba(34,197,94,0.15);color:#86efac;font-size:11px;font-weight:800;">✓ 全部核实</span>'
-    : `<span style="padding:3px 10px;border-radius:999px;background:rgba(249,115,22,0.18);color:#fdba74;font-size:11px;font-weight:800;">⚠ 异常 ${escapeHtml(String(anomCount))} 人</span>`}
+    ? '<span style="padding:3px 10px;border-radius:999px;background:rgba(134,201,162,0.15);color:#BEE6CE;font-size:11px;font-weight:800;">✓ 全部核实</span>'
+    : `<span style="padding:3px 10px;border-radius:999px;background:rgba(207,161,74,0.18);color:#CFA14A;font-size:11px;font-weight:800;">⚠ 异常 ${escapeHtml(String(anomCount))} 人</span>`}
 </summary>`;
                             if (!ok) {
                                 html += `<div style="padding:0 14px 14px;border-top:1px solid var(--pf-line);margin-top:0;">`;
                                 for (const ln of anomLines) {
                                     const rs = Array.isArray(ln.reasons) && ln.reasons.length ? ln.reasons.join('；') : (ln.has_clock_in ? '状态异常' : '无打卡记录');
-                                    html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
-<div style="width:6px;height:6px;border-radius:50%;background:#f97316;flex-shrink:0;"></div>
+                                    html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(242,234,238,0.04);">
+<div style="width:6px;height:6px;border-radius:50%;background:#CFA14A;flex-shrink:0;"></div>
 <div style="flex:1;min-width:0;">
-  <div style="font-size:12px;font-weight:700;color:#e2e8f0;">${escapeHtml(String(ln.display_name || ln.username || '—'))}</div>
-  <div style="font-size:11px;color:rgba(251,146,60,0.8);margin-top:2px;">${escapeHtml(rs)}</div>
+  <div style="font-size:12px;font-weight:700;color:#F2EAEE;">${escapeHtml(String(ln.display_name || ln.username || '—'))}</div>
+  <div style="font-size:11px;color:rgba(207,161,74,0.8);margin-top:2px;">${escapeHtml(rs)}</div>
 </div>
-<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(251,146,60,0.12);color:#fdba74;">${escapeHtml(ln.has_clock_in ? '有打卡' : '无打卡')}</span>
+<span style="font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(207,161,74,0.12);color:#CFA14A;">${escapeHtml(ln.has_clock_in ? '有打卡' : '无打卡')}</span>
 </div>`;
                                 }
                                 html += `</div>`;
                             } else {
-                                html += `<div style="padding:10px 14px 12px;font-size:12px;color:rgba(134,239,172,0.7);">当日所有员工出勤状态均已核实 ✓</div>`;
+                                html += `<div style="padding:10px 14px 12px;font-size:12px;color:rgba(190,230,206,0.7);">当日所有员工出勤状态均已核实 ✓</div>`;
                             }
                             html += `</details>`;
                         }
@@ -3115,7 +3115,7 @@ ${ok
                                 <div class="rep-pay-total__row"><span>实际出勤合计</span><span>${totalAttDays.toFixed(1)} 天</span></div>
                                 <div class="rep-pay-total__row"><span>假期抵扣合计</span><span>${totalLeaveOffsetDays.toFixed(1)} 天</span></div>
                                 <div class="rep-pay-total__row"><span>计薪出勤合计</span><span>${totalPayableDays.toFixed(1)} 天</span></div>
-                                <div class="rep-pay-total__row" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);"><span>应发总额</span><span class="rep-pay-total__amt">¥${fmt(totalAmount)}</span></div>
+                                <div class="rep-pay-total__row" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(242,234,238,0.1);"><span>应发总额</span><span class="rep-pay-total__amt">¥${fmt(totalAmount)}</span></div>
                             </div>
                         `;
                         if (box) box.innerHTML = html;
@@ -3135,7 +3135,7 @@ ${ok
                 const invState = repCollectInventoryForecastState();
                 const storeVal = String(store || '').trim();
                 if (!storeVal && !brandId) {
-                    if (box) box.innerHTML = '<div style="color:#c2410c; padding:12px 0;">请先选择品牌（可选门店）后再进行预测</div>';
+                    if (box) box.innerHTML = '<div style="color:#97848E; padding:12px 0;">请先选择品牌（可选门店）后再进行预测</div>';
                     return;
                 }
                 const combos = [
@@ -3460,7 +3460,7 @@ ${ok
                                 </div>
                                 <div style="text-align:right; flex-shrink:0;">
                                     <div style="font-size:11px; color:var(--rep-muted); font-weight:700;">累计假期</div>
-                                    <div style="font-size:16px; font-weight:900; color:#fbbf24; font-family:var(--rep-mono);">${fmt(r?.cumulativeLeaveDays || 0, 2)}</div>
+                                    <div style="font-size:16px; font-weight:900; color:#CFA14A; font-family:var(--rep-mono);">${fmt(r?.cumulativeLeaveDays || 0, 2)}</div>
                                 </div>
                                 <span class="rep-row-details__chev" aria-hidden="true">▼</span>
                             </summary>
@@ -3470,13 +3470,13 @@ ${ok
                                     <div class="rep-pay-cell"><span class="k">当月实际休息</span><span class="v">${fmt(latestActualRest, 2)}</span></div>
                                     <div class="rep-pay-cell"><span class="k">当月假期天数</span><span class="v">${fmt(latestHolidayDays, 2)}</span></div>
                                     <div style="grid-column:1/-1;margin-top:8px;border-top:1px solid var(--pf-line);padding-top:8px;">
-                                        <div style="font-size:11px;color:rgba(200,215,230,0.6);margin-bottom:6px;">明细</div>
+                                        <div style="font-size:11px;color:rgba(151,132,142,0.6);margin-bottom:6px;">明细</div>
                                         ${restDetails.length ? restDetails.map(function(d) {
-                                            return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:rgba(200,215,230,0.8);">'
+                                            return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:rgba(151,132,142,0.8);">'
                                                 + '<span>' + escapeHtml(d.type) + ' · ' + escapeHtml(d.date || '') + '</span>'
                                                 + '<span>' + (d.days || 0) + '天</span>'
                                                 + '</div>';
-                                        }).join('') : '<div style="font-size:11px;color:rgba(200,215,230,0.4);">暂无明细</div>'}
+                                        }).join('') : '<div style="font-size:11px;color:rgba(151,132,142,0.4);">暂无明细</div>'}
                                     </div>
                                     <div class="rep-pay-cell rep-pay-cell--warn" style="grid-column:1/-1;"><span class="k">累计假期（首页同口径）</span><span class="v">${fmt(r?.cumulativeLeaveDays || 0, 2)}</span></div>
                                     <div class="rep-pay-cell" style="grid-column:1/-1;"><span class="k">最近调整</span><span class="v" style="font-size:12px;font-weight:600;line-height:1.45;">${adjText}</span></div>
@@ -3516,7 +3516,7 @@ ${ok
             const pct = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? (v * 100).toFixed(1) + '%' : '0.0%'; };
             const fmtInt = (n) => { const v = Number(n || 0); return Number.isFinite(v) ? v.toLocaleString('zh-CN') : '0'; };
 
-            const blue = '#2563eb', green = '#059669', red = '#dc2626', orange = '#ea580c', purple = '#7c3aed', cyan = '#0891b2';
+            const blue = '#D18FA0', green = '#6FAF89', red = '#C97686', orange = '#CFA14A', purple = '#B87B8C', cyan = '#4C7E60';
 
             const titleStore = data.store || '全部门店';
             const ct = data.criticalTalent || {};
@@ -3533,33 +3533,33 @@ ${ok
                 const offset = circ * (1 - val);
                 return `<div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
                     <svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
-                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8"/>
+                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(242,234,238,0.08)" stroke-width="8"/>
                         <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="${color}" stroke-width="8"
                             stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
                             stroke-linecap="round" transform="rotate(-90 ${sz/2} ${sz/2})" style="transition:stroke-dashoffset 0.6s;"/>
                         <text x="${sz/2}" y="${sz/2}" text-anchor="middle" dominant-baseline="central"
                             fill="${color}" font-size="14" font-weight="900">${pct(val)}</text>
                     </svg>
-                    <div style="font-size:11px; color:rgba(200,215,230,0.75); font-weight:700; text-align:center;">${label}</div>
+                    <div style="font-size:11px; color:rgba(151,132,142,0.75); font-weight:700; text-align:center;">${label}</div>
                 </div>`;
             };
 
             const section = (title, borderColor, content) => `
-                <div style="background:rgba(255,255,255,0.04); border-radius:14px; border:1px solid rgba(255,255,255,0.08); padding:16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">
-                    <div style="font-weight:900; font-size:14px; color:rgba(226,232,240,0.95); margin-bottom:12px; border-left:3px solid ${borderColor}; padding-left:10px;">${title}</div>
+                <div style="background:rgba(242,234,238,0.04); border-radius:14px; border:1px solid rgba(242,234,238,0.08); padding:16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,0.15);">
+                    <div style="font-weight:900; font-size:14px; color:rgba(242,234,238,0.95); margin-bottom:12px; border-left:3px solid ${borderColor}; padding-left:10px;">${title}</div>
                     ${content}
                 </div>`;
 
             const kv = (label, value, color) => `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
-                    <span style="color:rgba(200,215,230,0.75); font-size:13px;">${label}</span>
-                    <span style="font-weight:800; font-size:13px; ${color ? 'color:'+color : 'color:rgba(226,232,240,0.95)'}">${value}</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(242,234,238,0.06);">
+                    <span style="color:rgba(151,132,142,0.75); font-size:13px;">${label}</span>
+                    <span style="font-weight:800; font-size:13px; ${color ? 'color:'+color : 'color:rgba(242,234,238,0.95)'}">${value}</span>
                 </div>`;
 
             // Donut chart for voluntary vs involuntary
             const donut = (vol, invol) => {
                 const total = vol + invol;
-                if (total === 0) return '<div style="text-align:center; color:rgba(200,215,230,0.5); padding:12px;">暂无离职数据</div>';
+                if (total === 0) return '<div style="text-align:center; color:rgba(151,132,142,0.5); padding:12px;">暂无离职数据</div>';
                 const volPct = total > 0 ? vol / total : 0;
                 const involPct = total > 0 ? invol / total : 0;
                 const sz = 120, r = 42, circ = 2 * Math.PI * r;
@@ -3567,7 +3567,7 @@ ${ok
                 const involLen = circ * involPct;
                 return `<div style="display:flex; align-items:center; justify-content:center; gap:24px; flex-wrap:wrap;">
                     <svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">
-                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="12"/>
+                        <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="rgba(242,234,238,0.08)" stroke-width="12"/>
                         <circle cx="${sz/2}" cy="${sz/2}" r="${r}" fill="none" stroke="${orange}" stroke-width="12"
                             stroke-dasharray="${volLen} ${circ - volLen}"
                             stroke-linecap="round" transform="rotate(-90 ${sz/2} ${sz/2})" style="transition:stroke-dasharray 0.6s;"/>
@@ -3576,22 +3576,22 @@ ${ok
                             stroke-dashoffset="${-volLen}"
                             stroke-linecap="round" transform="rotate(-90 ${sz/2} ${sz/2})" style="transition:stroke-dasharray 0.6s;"/>
                         <text x="${sz/2}" y="${sz/2}" text-anchor="middle" dominant-baseline="central"
-                            fill="rgba(226,232,240,0.95)" font-size="16" font-weight="900">${total}</text>
+                            fill="rgba(242,234,238,0.95)" font-size="16" font-weight="900">${total}</text>
                         <text x="${sz/2}" y="${sz/2 + 14}" text-anchor="middle" dominant-baseline="central"
-                            fill="rgba(200,215,230,0.6)" font-size="10">离职总数</text>
+                            fill="rgba(151,132,142,0.6)" font-size="10">离职总数</text>
                     </svg>
                     <div style="display:flex; flex-direction:column; gap:10px;">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div style="width:12px; height:12px; border-radius:3px; background:${orange};"></div>
                             <div>
-                                <div style="font-size:12px; color:rgba(200,215,230,0.75);">主动离职（辞职）</div>
+                                <div style="font-size:12px; color:rgba(151,132,142,0.75);">主动离职（辞职）</div>
                                 <div style="font-size:18px; font-weight:900; color:${orange};">${vol}人 <span style="font-size:12px; font-weight:700;">${pct(volPct)}</span></div>
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div style="width:12px; height:12px; border-radius:3px; background:${purple};"></div>
                             <div>
-                                <div style="font-size:12px; color:rgba(200,215,230,0.75);">被动离职（劝退/裁员）</div>
+                                <div style="font-size:12px; color:rgba(151,132,142,0.75);">被动离职（劝退/裁员）</div>
                                 <div style="font-size:18px; font-weight:900; color:${purple};">${invol}人 <span style="font-size:12px; font-weight:700;">${pct(involPct)}</span></div>
                             </div>
                         </div>
@@ -3602,30 +3602,30 @@ ${ok
             const html = `
                 <!-- Header -->
                 <div style="margin-bottom:16px;">
-                    <div style="font-size:18px; font-weight:900; color:rgba(226,232,240,0.95);">📊 ${escapeHtml(titleStore)} 员工离职率分析</div>
-                    <div style="font-size:12px; color:rgba(200,215,230,0.6); margin-top:4px;">统计月份：${escapeHtml(data.month || '')} · 在册人数 ${fmtInt(data.totalHeadcount)} · 本月离职 ${fmtInt(data.totalDeparted)}</div>
+                    <div style="font-size:18px; font-weight:900; color:rgba(242,234,238,0.95);">📊 ${escapeHtml(titleStore)} 员工离职率分析</div>
+                    <div style="font-size:12px; color:rgba(151,132,142,0.6); margin-top:4px;">统计月份：${escapeHtml(data.month || '')} · 在册人数 ${fmtInt(data.totalHeadcount)} · 本月离职 ${fmtInt(data.totalDeparted)}</div>
                 </div>
 
                 <!-- Overview KPI Cards -->
                 <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; margin-bottom:16px;">
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
+                    <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div style="width:36px; height:36px; border-radius:10px; background:${blue}18; display:flex; align-items:center; justify-content:center; font-size:18px;">👥</div>
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">在册人数</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">在册人数</div>
                         </div>
                         <div style="font-size:20px; font-weight:900; color:${blue}; margin-top:4px;">${fmtInt(data.totalHeadcount)}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
+                    <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div style="width:36px; height:36px; border-radius:10px; background:${red}18; display:flex; align-items:center; justify-content:center; font-size:18px;">📤</div>
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">本月离职</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">本月离职</div>
                         </div>
                         <div style="font-size:20px; font-weight:900; color:${red}; margin-top:4px;">${fmtInt(data.totalDeparted)}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
+                    <div style="background:rgba(242,234,238,0.04); border:1px solid rgba(242,234,238,0.08); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:4px;">
                         <div style="display:flex; align-items:center; gap:8px;">
                             <div style="width:36px; height:36px; border-radius:10px; background:${orange}18; display:flex; align-items:center; justify-content:center; font-size:18px;">📉</div>
-                            <div style="font-size:11px; color:rgba(200,215,230,0.7); font-weight:700;">总离职率</div>
+                            <div style="font-size:11px; color:rgba(151,132,142,0.7); font-weight:700;">总离职率</div>
                         </div>
                         <div style="font-size:20px; font-weight:900; color:${orange}; margin-top:4px;">${pct(data.overallTurnoverRate)}</div>
                     </div>
@@ -3633,14 +3633,14 @@ ${ok
 
                 <!-- A. Critical Talent Turnover -->
                 ${section('A. 关键人才流失率', red, `
-                    <div style="font-size:12px; color:rgba(200,215,230,0.6); margin-bottom:12px;">核心人才：员工档案勾选「核心人才」<b>或</b>职级≥3 / 管理岗位（经理、主管、店长等）</div>
+                    <div style="font-size:12px; color:rgba(151,132,142,0.6); margin-bottom:12px;">核心人才：员工档案勾选「核心人才」<b>或</b>职级≥3 / 管理岗位（经理、主管、店长等）</div>
                     <div style="display:flex; justify-content:center; margin-bottom:14px;">
                         ${gaugeRing('关键人才流失率', ct.rate || 0, ct.rate > 0.1 ? red : (ct.rate > 0.05 ? orange : green), 120)}
                     </div>
                     ${kv('核心人才总数', fmtInt(ct.total) + '人', blue)}
                     ${kv('核心人才离职', fmtInt(ct.departed) + '人', ct.departed > 0 ? red : green)}
                     ${kv('流失率', pct(ct.rate), ct.rate > 0.1 ? red : (ct.rate > 0.05 ? orange : green))}
-                    <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                    <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:8px; padding:8px; background:rgba(242,234,238,0.03); border-radius:8px;">
                         💡 <b>计算公式：</b>核心人才离职人数 ÷ 本门店核心人才总数 × 100%<br>
                         <span style="color:${green};">● &lt;5% 健康</span> &nbsp;
                         <span style="color:${orange};">● 5%-10% 需关注</span> &nbsp;
@@ -3650,7 +3650,7 @@ ${ok
 
                 <!-- B. New Hire Retention -->
                 ${section('B. 新人留存率（入职3个月内）', blue, `
-                    <div style="font-size:12px; color:rgba(200,215,230,0.6); margin-bottom:12px;">新人定义：入职3个月内的员工</div>
+                    <div style="font-size:12px; color:rgba(151,132,142,0.6); margin-bottom:12px;">新人定义：入职3个月内的员工</div>
                     <div style="display:flex; justify-content:center; margin-bottom:14px;">
                         ${gaugeRing('新人留存率', nh.retentionRate || 0, nh.retentionRate >= 0.8 ? green : (nh.retentionRate >= 0.6 ? orange : red), 120)}
                     </div>
@@ -3658,7 +3658,7 @@ ${ok
                     ${kv('新人离职', fmtInt(nh.departed) + '人', nh.departed > 0 ? red : green)}
                     ${kv('新人离职率', pct(nh.turnoverRate), nh.turnoverRate > 0.2 ? red : (nh.turnoverRate > 0.1 ? orange : green))}
                     ${kv('新人留存率', pct(nh.retentionRate), nh.retentionRate >= 0.8 ? green : (nh.retentionRate >= 0.6 ? orange : red))}
-                    <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                    <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:8px; padding:8px; background:rgba(242,234,238,0.03); border-radius:8px;">
                         💡 <b>计算公式：</b>新人离职人数 ÷ 本门店新人总数 × 100%<br>
                         <span style="color:${green};">● 留存率≥80% 优秀</span> &nbsp;
                         <span style="color:${orange};">● 60%-80% 需改善</span> &nbsp;
@@ -3668,7 +3668,7 @@ ${ok
 
                 <!-- C. Voluntary vs Involuntary -->
                 ${section('C. 主动 vs 被动离职率', orange, `
-                    <div style="font-size:12px; color:rgba(200,215,230,0.6); margin-bottom:12px;">
+                    <div style="font-size:12px; color:rgba(151,132,142,0.6); margin-bottom:12px;">
                         主动离职：员工辞职（反映薪酬、氛围、发展问题）<br>
                         被动离职：劝退、裁员（反映招聘失误或业务调整）
                     </div>
@@ -3677,7 +3677,7 @@ ${ok
                         ${kv('主动离职率', pct(vi.voluntaryRate), orange)}
                         ${kv('被动离职率', pct(vi.involuntaryRate), purple)}
                     </div>
-                    <div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px;">
+                    <div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:8px; padding:8px; background:rgba(242,234,238,0.03); border-radius:8px;">
                         💡 <b>计算公式：</b>主动/被动离职人数 ÷ 本月离职总人数 × 100%
                     </div>
                 `)}
@@ -3687,15 +3687,15 @@ ${ok
                     <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
                         <table style="width:100%; border-collapse:collapse; font-size:12px;">
                             <thead>
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">姓名</th>
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">门店</th>
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">岗位</th>
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">入职日期</th>
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">离职日期</th>
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">原因</th>
-                                    <th style="padding:8px 6px; text-align:center; color:rgba(200,215,230,0.7); font-weight:700;">类型</th>
-                                    <th style="padding:8px 6px; text-align:center; color:rgba(200,215,230,0.7); font-weight:700;">标签</th>
+                                <tr style="border-bottom:1px solid rgba(242,234,238,0.1);">
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">姓名</th>
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">门店</th>
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">岗位</th>
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">入职日期</th>
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">离职日期</th>
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">原因</th>
+                                    <th style="padding:8px 6px; text-align:center; color:rgba(151,132,142,0.7); font-weight:700;">类型</th>
+                                    <th style="padding:8px 6px; text-align:center; color:rgba(151,132,142,0.7); font-weight:700;">标签</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -3705,13 +3705,13 @@ ${ok
                                     const tags = [];
                                     if (d.isCoreTalent) tags.push('<span style="background:' + red + '22; color:' + red + '; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700;">核心</span>');
                                     if (d.isNewHire) tags.push('<span style="background:' + blue + '22; color:' + blue + '; padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700;">新人</span>');
-                                    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">' +
-                                        '<td style="padding:8px 6px; color:rgba(226,232,240,0.9);">' + escapeHtml(d.name || d.username) + '</td>' +
-                                        '<td style="padding:8px 6px; color:rgba(200,215,230,0.7);">' + escapeHtml(d.store) + '</td>' +
-                                        '<td style="padding:8px 6px; color:rgba(200,215,230,0.7);">' + escapeHtml(d.position) + '</td>' +
-                                        '<td style="padding:8px 6px; color:rgba(200,215,230,0.7);">' + escapeHtml(d.joinDate) + '</td>' +
-                                        '<td style="padding:8px 6px; color:rgba(200,215,230,0.7);">' + escapeHtml(d.departureDate) + '</td>' +
-                                        '<td style="padding:8px 6px; color:rgba(200,215,230,0.7);">' + escapeHtml(d.reason) + '</td>' +
+                                    return '<tr style="border-bottom:1px solid rgba(242,234,238,0.05);">' +
+                                        '<td style="padding:8px 6px; color:rgba(242,234,238,0.9);">' + escapeHtml(d.name || d.username) + '</td>' +
+                                        '<td style="padding:8px 6px; color:rgba(151,132,142,0.7);">' + escapeHtml(d.store) + '</td>' +
+                                        '<td style="padding:8px 6px; color:rgba(151,132,142,0.7);">' + escapeHtml(d.position) + '</td>' +
+                                        '<td style="padding:8px 6px; color:rgba(151,132,142,0.7);">' + escapeHtml(d.joinDate) + '</td>' +
+                                        '<td style="padding:8px 6px; color:rgba(151,132,142,0.7);">' + escapeHtml(d.departureDate) + '</td>' +
+                                        '<td style="padding:8px 6px; color:rgba(151,132,142,0.7);">' + escapeHtml(d.reason) + '</td>' +
                                         '<td style="padding:8px 6px; text-align:center;"><span style="color:' + typeColor + '; font-weight:800;">' + typeLabel + '</span></td>' +
                                         '<td style="padding:8px 6px; text-align:center;">' + (tags.length ? tags.join(' ') : '-') + '</td>' +
                                     '</tr>';
@@ -3726,21 +3726,21 @@ ${ok
                     <div style="overflow-x:auto;">
                         <table style="width:100%; border-collapse:collapse; font-size:12px;">
                             <thead>
-                                <tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
-                                    <th style="padding:8px 6px; text-align:left; color:rgba(200,215,230,0.7); font-weight:700;">门店</th>
-                                    <th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">在册</th>
-                                    <th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">离职</th>
-                                    <th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">离职率</th>
-                                    <th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">核心流失</th>
-                                    <th style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7); font-weight:700;">新人留存</th>
+                                <tr style="border-bottom:1px solid rgba(242,234,238,0.1);">
+                                    <th style="padding:8px 6px; text-align:left; color:rgba(151,132,142,0.7); font-weight:700;">门店</th>
+                                    <th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">在册</th>
+                                    <th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">离职</th>
+                                    <th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">离职率</th>
+                                    <th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">核心流失</th>
+                                    <th style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7); font-weight:700;">新人留存</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${breakdown.map(s => {
                                     const trColor = s.turnoverRate > 0.15 ? red : (s.turnoverRate > 0.08 ? orange : green);
-                                    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">' +
-                                        '<td style="padding:8px 6px; font-weight:800; color:rgba(226,232,240,0.9);">' + escapeHtml(s.store) + '</td>' +
-                                        '<td style="padding:8px 6px; text-align:right; color:rgba(200,215,230,0.7);">' + s.headcount + '</td>' +
+                                    return '<tr style="border-bottom:1px solid rgba(242,234,238,0.05);">' +
+                                        '<td style="padding:8px 6px; font-weight:800; color:rgba(242,234,238,0.9);">' + escapeHtml(s.store) + '</td>' +
+                                        '<td style="padding:8px 6px; text-align:right; color:rgba(151,132,142,0.7);">' + s.headcount + '</td>' +
                                         '<td style="padding:8px 6px; text-align:right; color:' + (s.departed > 0 ? red : green) + '; font-weight:800;">' + s.departed + '</td>' +
                                         '<td style="padding:8px 6px; text-align:right; color:' + trColor + '; font-weight:800;">' + pct(s.turnoverRate) + '</td>' +
                                         '<td style="padding:8px 6px; text-align:right; color:' + (s.criticalRate > 0 ? red : green) + ';">' + s.coreTalentDeparted + '/' + s.coreTalentTotal + ' (' + pct(s.criticalRate) + ')</td>' +
@@ -3752,7 +3752,7 @@ ${ok
                     </div>
                 `) : ''}
 
-                ${!data.totalDeparted && !details.length ? '<div style="text-align:center; padding:40px 20px; color:rgba(200,215,230,0.5);"><div style="font-size:48px; margin-bottom:12px;">🎉</div><div style="font-size:14px; font-weight:700;">本月暂无离职记录</div><div style="font-size:12px; margin-top:4px;">团队稳定，继续保持！</div></div>' : ''}
+                ${!data.totalDeparted && !details.length ? '<div style="text-align:center; padding:40px 20px; color:rgba(151,132,142,0.5);"><div style="font-size:48px; margin-bottom:12px;">🎉</div><div style="font-size:14px; font-weight:700;">本月暂无离职记录</div><div style="font-size:12px; margin-top:4px;">团队稳定，继续保持！</div></div>' : ''}
             `;
             box.innerHTML = html;
         }
@@ -3846,15 +3846,15 @@ ${ok
                 document.body.appendChild(overlay);
             }
             overlay.innerHTML = `
-                <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0;">
-                    <button data-click="hrmsHideById" data-arg="rep-pdf-overlay" style="padding:8px 16px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
-                    <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
+                <div style="position:sticky;top:0;z-index:10;background:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #F2EAEE;">
+                    <button data-click="hrmsHideById" data-arg="rep-pdf-overlay" style="padding:8px 16px;border-radius:8px;border:1px solid #F2EAEE;background:#F2EAEE;font-size:14px;font-weight:700;cursor:pointer;">← 返回</button>
+                    <button data-click="print" style="padding:8px 16px;border-radius:8px;border:none;background:#D18FA0;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖨 打印/PDF</button>
                 </div>
                 <style>@media print{#rep-pdf-overlay>div:first-child{display:none!important;}}</style>
                 <div style="max-width:820px;margin:0 auto;padding:16px;">
                     <style>${css}</style>
                     ${bodyHtml}
-                    <div style="margin-top:14px;color:#64748b;font-size:12px;">提示：点击"打印/PDF"按钮，在打印对话框中选择"另存为 PDF"。</div>
+                    <div style="margin-top:14px;color:#7A6B72;font-size:12px;">提示：点击"打印/PDF"按钮，在打印对话框中选择"另存为 PDF"。</div>
                 </div>
             `;
             overlay.style.display = 'block';
@@ -3870,15 +3870,15 @@ ${ok
                 const month = String(document.getElementById('rep-month')?.value || '').trim();
 
                 const css = `
-                    body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial; color:#0f172a;}
-                    .sec{border:1px solid rgba(15,23,42,0.08); border-radius:12px; padding:14px; margin-bottom:10px;}
-                    .sec-title{font-weight:900; font-size:14px; margin-bottom:10px; border-left:3px solid #2563eb; padding-left:8px;}
-                    .row{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:12px;}
-                    .row .lbl{color:#64748b;} .row .val{font-weight:800;}
+                    body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial; color:#121012;}
+                    .sec{border:1px solid rgba(28,24,28,0.08); border-radius:12px; padding:14px; margin-bottom:10px;}
+                    .sec-title{font-weight:900; font-size:14px; margin-bottom:10px; border-left:3px solid #D18FA0; padding-left:8px;}
+                    .row{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(242,234,238,0.06); font-size:12px;}
+                    .row .lbl{color:#7A6B72;} .row .val{font-weight:800;}
                     .big{font-size:20px; font-weight:900; margin:4px 0;}
                     table{width:100%; border-collapse:collapse; font-size:11px;}
-                    th{background:#f1f5f9; text-align:left; padding:8px 6px; border-bottom:1px solid rgba(15,23,42,0.12);}
-                    td{padding:8px 6px; border-top:1px solid rgba(15,23,42,0.06);}
+                    th{background:#F2EAEE; text-align:left; padding:8px 6px; border-bottom:1px solid rgba(28,24,28,0.12);}
+                    td{padding:8px 6px; border-top:1px solid rgba(28,24,28,0.06);}
                     .right{text-align:right;}
                     @media print{@page{size:A4;margin:12mm;}}
                 `;
@@ -3908,7 +3908,7 @@ ${ok
 
                     body = `
                         <div style="font-size:18px;font-weight:900;margin-bottom:4px;">业务分析表 ${esc(store||'')}</div>
-                        <div style="color:#64748b;font-size:12px;margin-bottom:14px;">统计周期：${esc(start)} 至 ${esc(end)}（共${days}天）</div>
+                        <div style="color:#7A6B72;font-size:12px;margin-bottom:14px;">统计周期：${esc(start)} 至 ${esc(end)}（共${days}天）</div>
 
                         <div class="sec">
                             <div class="sec-title">目标进度</div>
@@ -4010,9 +4010,9 @@ ${ok
                                 '<div style="height:10px;"></div>' +
                                 be.map(b => {
                                     const rateVal = Number(b.rate||0);
-                                    return kvRow(esc(b.category||'')+'<span style="font-size:10px;color:#64748b;"> (预算¥'+fmt2(b.budget)+' / 已用¥'+fmt2(b.used)+' / 剩余¥'+fmt2(b.remaining)+')</span>', pct(rateVal));
+                                    return kvRow(esc(b.category||'')+'<span style="font-size:10px;color:#7A6B72;"> (预算¥'+fmt2(b.budget)+' / 已用¥'+fmt2(b.used)+' / 剩余¥'+fmt2(b.remaining)+')</span>', pct(rateVal));
                                 }).join('') +
-                                '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">只统计已审批和已付款的请款单</div>' +
+                                '<div style="font-size:10px;color:#97848E;margin-top:6px;">只统计已审批和已付款的请款单</div>' +
                             '</div>';
                         })()}
                     `;
@@ -4025,7 +4025,7 @@ ${ok
                     const attTotalDays = rows.reduce((s, r) => s + Number(r?.days || 0), 0);
                     body = `
                         <div style="font-size:18px;font-weight:900;">考勤表 ${esc(store || '')}</div>
-                        <div style="color:#64748b;font-size:12px;margin-bottom:14px;">统计周期：${esc(start)} - ${esc(end)} · 员工 ${attUniqueNames.size} 人 · 出勤 ${attTotalDays.toFixed(1)} 天</div>
+                        <div style="color:#7A6B72;font-size:12px;margin-bottom:14px;">统计周期：${esc(start)} - ${esc(end)} · 员工 ${attUniqueNames.size} 人 · 出勤 ${attTotalDays.toFixed(1)} 天</div>
                         <div class="sec">
                             <table>
                                 <thead><tr><th>日期</th><th>门店</th><th>员工</th><th class="right">出勤</th></tr></thead>
@@ -4049,7 +4049,7 @@ ${ok
                             const pTotalAtt = rows.reduce((s, r) => s + (Number(r?.attendanceDays) || 0), 0);
                             const payBody = `
                                 <div style="font-size:18px;font-weight:900;">薪资表 ${esc(store || '')}</div>
-                                <div style="color:#64748b;font-size:12px;margin-bottom:14px;">月份：${esc(month)} · 状态：${audited?'已审核':'未审核'} · 员工 ${rows.length} 人 · 应发总额 ¥${fmt(pTotalAmt)}</div>
+                                <div style="color:#7A6B72;font-size:12px;margin-bottom:14px;">月份：${esc(month)} · 状态：${audited?'已审核':'未审核'} · 员工 ${rows.length} 人 · 应发总额 ¥${fmt(pTotalAmt)}</div>
                                 <div class="sec">
                                     <table>
                                         <thead><tr><th>门店</th><th>员工</th><th class="right">出勤</th><th class="right">月薪</th><th class="right">日薪</th><th class="right">应发</th></tr></thead>
@@ -4169,10 +4169,10 @@ ${ok
             const date = esc(p.date || '');
             const d = p.data && typeof p.data === 'object' ? p.data : {};
             const tr = (k, v) =>
-                `<tr><th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;background:#f8fafc;width:30%;font-size:12px;">${k}</th><td style="padding:7px 10px;border:1px solid #e5e7eb;font-size:12px;">${v}</td></tr>`;
+                `<tr><th style="text-align:left;padding:7px 10px;border:1px solid #F2EAEE;background:#F2EAEE;width:30%;font-size:12px;">${k}</th><td style="padding:7px 10px;border:1px solid #F2EAEE;font-size:12px;">${v}</td></tr>`;
             const tblOpen = '<table style="width:100%;border-collapse:collapse;margin:0 0 14px;">';
             const tblClose = '</table>';
-            const sec = (title, inner) => `<h2 style="font-size:15px;margin:18px 0 8px;border-bottom:2px solid #111827;padding-bottom:4px;">${title}</h2>${inner}`;
+            const sec = (title, inner) => `<h2 style="font-size:15px;margin:18px 0 8px;border-bottom:2px solid #1C181C;padding-bottom:4px;">${title}</h2>${inner}`;
             const fmtM = (n) => esc(drFmtMoney(n));
             const fmtN = (n) => {
                 const v = Number(n || 0);
@@ -4305,7 +4305,7 @@ ${ok
                     ? `<ol style="margin:0;padding-left:18px;font-size:11px;word-break:break-all;">${photos
                           .map((u) => `<li style="margin:4px 0;"><a href="${esc(u)}">${esc(u)}</a></li>`)
                           .join('')}</ol>`
-                    : '<p style="color:#64748b;font-size:12px;">（无附件图片 URL）</p>';
+                    : '<p style="color:#7A6B72;font-size:12px;">（无附件图片 URL）</p>';
             body += sec('日结照片 / 附件链接', photoBlock);
 
             return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>营业日报 ${store} ${date}</title>
@@ -4313,7 +4313,7 @@ ${ok
   @media print { @page { size: A4; margin: 12mm; } }
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;padding:16px;color:#111;font-size:13px;line-height:1.45;}
   h1{font-size:20px;margin:0 0 12px;}
-  .hint{color:#64748b;font-size:12px;margin-top:16px;}
+  .hint{color:#7A6B72;font-size:12px;margin-top:16px;}
 </style></head><body>
 <h1>营业日报</h1>
 ${body}

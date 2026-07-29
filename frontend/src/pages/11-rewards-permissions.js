@@ -122,7 +122,7 @@
                     };
                 });
             } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#ef4444;padding:40px;">加载失败：' + escapeHtml(String(e?.message || e)) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#E58B98;padding:40px;">加载失败：' + escapeHtml(String(e?.message || e)) + '</td></tr>';
                 if (cardsEl) cardsEl.innerHTML = '';
                 return;
             }
@@ -138,10 +138,10 @@
             } catch (e) {}
             
             if (rewards.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#888;padding:40px;">暂无奖惩记录</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#97848E;padding:40px;">暂无奖惩记录</td></tr>';
                 try {
                     if (cardsEl) {
-                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(200,215,230,0.72);padding:28px 12px;">暂无奖惩记录</div>';
+                        cardsEl.innerHTML = '<div style="text-align:center;color:rgba(151,132,142,0.72);padding:28px 12px;">暂无奖惩记录</div>';
                     }
                 } catch (e) {}
                 return;
@@ -154,15 +154,15 @@
                     <div class="rw-summary-grid">
                         <div class="rw-sum-chip rw-sum-chip--reward">
                             <div class="rw-sum-k">奖励合计</div>
-                            <div class="rw-sum-v" style="color:#86efac;">¥${rewardTotal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div class="rw-sum-v" style="color:#86C9A2;">¥${rewardTotal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         </div>
                         <div class="rw-sum-chip rw-sum-chip--punish">
                             <div class="rw-sum-k">处罚合计</div>
-                            <div class="rw-sum-v" style="color:#fca5a5;">¥${punishTotal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div class="rw-sum-v" style="color:#EDA1AC;">¥${punishTotal.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         </div>
                         <div class="rw-sum-chip rw-sum-chip--total">
                             <div class="rw-sum-k">记录数</div>
-                            <div class="rw-sum-v" style="color:#93c5fd;">${rewards.length}</div>
+                            <div class="rw-sum-v" style="color:#EABBC5;">${rewards.length}</div>
                         </div>
                     </div>
                 `;
@@ -173,10 +173,10 @@
 
             tbody.innerHTML = rewards.map(r => {
                 const typeLabel = r.type === 'reward'
-                    ? '<span style="color:#86efac;font-weight:800;">奖励</span>'
-                    : '<span style="color:#fca5a5;font-weight:800;">处罚</span>';
+                    ? '<span style="color:#86C9A2;font-weight:800;">奖励</span>'
+                    : '<span style="color:#EDA1AC;font-weight:800;">处罚</span>';
                 const empName = empMap.get(r.employee) || r.employee;
-                const amountColor = r.amount >= 0 ? '#86efac' : '#fca5a5';
+                const amountColor = r.amount >= 0 ? '#86C9A2' : '#EDA1AC';
                 const amountText = r.amount >= 0 ? `+${r.amount}` : `${r.amount}`;
                 const statusRaw = String(r?.status || 'pending').trim();
                 const statusText = statusRaw === 'approved' ? '已通过' : (statusRaw === 'rejected' ? '已拒绝' : (statusRaw === 'paid' ? '已生效' : '审批中'));
@@ -442,15 +442,15 @@
                 __attGpsError = !isSecure ? '定位不可用' : '浏览器不支持定位';
                 if (gpsContainer) {
                     gpsContainer.style.display = '';
-                    gpsContainer.style.background = 'rgba(220,38,38,0.1)';
-                    gpsContainer.style.borderColor = 'rgba(220,38,38,0.3)';
+                    gpsContainer.style.background = 'rgba(201,118,134,0.1)';
+                    gpsContainer.style.borderColor = 'rgba(201,118,134,0.3)';
                 }
                 if (gpsText) {
                     gpsText.style.display = '';
                     gpsText.innerHTML = !isSecure
                         ? '⚠️ 当前环境无法使用定位，无法打卡。请使用 HTTPS 访问本站。'
                         : '⚠️ 浏览器不支持定位，无法打卡。';
-                    gpsText.style.color = 'rgba(248,113,113,0.9)';
+                    gpsText.style.color = 'rgba(237,161,172,0.9)';
                     gpsText.style.fontSize = '12px';
                 }
                 return;
@@ -458,18 +458,18 @@
             if (wasDenied) {
                 if (gpsContainer) {
                     gpsContainer.style.display = '';
-                    gpsContainer.style.background = 'rgba(220,38,38,0.1)';
-                    gpsContainer.style.borderColor = 'rgba(220,38,38,0.3)';
+                    gpsContainer.style.background = 'rgba(201,118,134,0.1)';
+                    gpsContainer.style.borderColor = 'rgba(201,118,134,0.3)';
                 }
                 if (gpsText) {
                     gpsText.style.display = '';
                     gpsText.innerHTML = '⚠️ 定位不可用：请在系统设置中允许定位权限并下拉刷新本页，否则无法打卡。';
-                    gpsText.style.color = 'rgba(248,113,113,0.9)';
+                    gpsText.style.color = 'rgba(237,161,172,0.9)';
                     gpsText.style.fontSize = '12px';
                 }
             } else if (gpsText) {
                 gpsText.textContent = '正在获取位置...';
-                gpsText.style.color = 'rgba(234,179,8,0.9)';
+                gpsText.style.color = 'rgba(207,161,74,0.9)';
             }
             try {
                 __attGpsWatchId = navigator.geolocation.watchPosition(
@@ -483,14 +483,14 @@
                         if (gpsText) {
                             gpsText.style.display = '';
                             gpsText.textContent = `已定位 (${__attGpsLat.toFixed(6)}, ${__attGpsLng.toFixed(6)})`;
-                            gpsText.style.color = 'rgba(34,197,94,0.9)';
+                            gpsText.style.color = 'rgba(134,201,162,0.9)';
                         }
                     },
                     (err) => {
                         __attGpsError = err.message || '定位失败';
                         __attNoGps = true;
                         attGeoDeniedSave();
-                        if (gpsContainer) { gpsContainer.style.display = ''; gpsContainer.style.background = 'rgba(220,38,38,0.1)'; gpsContainer.style.borderColor = 'rgba(220,38,38,0.3)'; }
+                        if (gpsContainer) { gpsContainer.style.display = ''; gpsContainer.style.background = 'rgba(201,118,134,0.1)'; gpsContainer.style.borderColor = 'rgba(201,118,134,0.3)'; }
                         if (gpsText) {
                             gpsText.style.display = '';
                             const errCode = err.code;
@@ -501,7 +501,7 @@
                             } else {
                                 gpsText.innerHTML = '⚠️ 定位超时：请稍后重试或检查定位权限，否则无法打卡。';
                             }
-                            gpsText.style.color = 'rgba(248,113,113,0.9)';
+                            gpsText.style.color = 'rgba(237,161,172,0.9)';
                             gpsText.style.fontSize = '12px';
                         }
                     },
@@ -513,13 +513,13 @@
                 __attGpsError = String(e?.message || '定位异常');
                 if (gpsContainer) {
                     gpsContainer.style.display = '';
-                    gpsContainer.style.background = 'rgba(220,38,38,0.1)';
-                    gpsContainer.style.borderColor = 'rgba(220,38,38,0.3)';
+                    gpsContainer.style.background = 'rgba(201,118,134,0.1)';
+                    gpsContainer.style.borderColor = 'rgba(201,118,134,0.3)';
                 }
                 if (gpsText) {
                     gpsText.style.display = '';
                     gpsText.innerHTML = '⚠️ 定位异常：请刷新页面或检查权限，否则无法打卡。';
-                    gpsText.style.color = 'rgba(248,113,113,0.9)';
+                    gpsText.style.color = 'rgba(237,161,172,0.9)';
                     gpsText.style.fontSize = '12px';
                 }
             }
@@ -615,24 +615,24 @@
                 const resp = await HRMS_API.getCheckinToday();
                 const records = Array.isArray(resp?.records) ? resp.records : [];
                 if (!records.length) {
-                    box.innerHTML = '<div style="font-size:12px; color:rgba(200,215,230,0.5); text-align:center; padding:8px;">今日暂无打卡记录</div>';
+                    box.innerHTML = '<div style="font-size:12px; color:rgba(151,132,142,0.5); text-align:center; padding:8px;">今日暂无打卡记录</div>';
                     return;
                 }
-                box.innerHTML = '<div style="font-size:12px; font-weight:700; color:rgba(200,215,230,0.7); margin-bottom:6px;">今日打卡记录</div>' +
+                box.innerHTML = '<div style="font-size:12px; font-weight:700; color:rgba(151,132,142,0.7); margin-bottom:6px;">今日打卡记录</div>' +
                     records.map(r => {
                         const t = new Date(r.check_time);
                         const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`;
                         const typeLabel = r.type === 'clock_in' ? '<span class="att-dot att-dot--in" aria-hidden="true"></span> 上班' : '<span class="att-dot att-dot--out" aria-hidden="true"></span> 下班';
-                        const statusColor = (r.status === 'normal' || r.status === 'no_gps') ? 'rgba(34,197,94,0.8)' : 'rgba(234,179,8,0.8)';
+                        const statusColor = (r.status === 'normal' || r.status === 'no_gps') ? 'rgba(134,201,162,0.8)' : 'rgba(207,161,74,0.8)';
                         const statusLabel = (r.status === 'normal' || r.status === 'no_gps') ? '正常' : r.status === 'face_fail' ? '人脸异常' : r.status === 'no_store_location' ? '未设定位' : r.status;
                         const dist = r.distance_meters != null ? `${Math.round(r.distance_meters)}米` : '';
-                        return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-radius:6px; background:rgba(255,255,255,0.03); margin-bottom:4px; font-size:12px;">
+                        return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-radius:6px; background:rgba(242,234,238,0.03); margin-bottom:4px; font-size:12px;">
                             <span>${typeLabel} ${time}</span>
                             <span style="color:${statusColor};">${statusLabel} · ${dist}</span>
                         </div>`;
                     }).join('');
             } catch (e) {
-                box.innerHTML = '<div style="font-size:12px; color:rgba(239,68,68,0.6);">加载失败</div>';
+                box.innerHTML = '<div style="font-size:12px; color:rgba(229,139,152,0.6);">加载失败</div>';
             }
         }
 
@@ -707,10 +707,10 @@
             const itemHtml = (r) => {
                 const t = new Date(r.check_time);
                 const timeStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-                const typeLabel = r.type === 'clock_in' ? '<span style="color:rgba(34,197,94,0.9); font-weight:800;">上班</span>' : '<span style="color:rgba(239,68,68,0.9); font-weight:800;">下班</span>';
+                const typeLabel = r.type === 'clock_in' ? '<span style="color:rgba(134,201,162,0.9); font-weight:800;">上班</span>' : '<span style="color:rgba(229,139,152,0.9); font-weight:800;">下班</span>';
                 const dist = r.distance_meters != null ? Math.round(r.distance_meters) + '米' : '-';
                 const statusLabel = statusMap[r.status] || r.status;
-                const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.9)' : 'rgba(234,179,8,0.9)';
+                const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(134,201,162,0.9)' : 'rgba(207,161,74,0.9)';
                 const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
                 const actionText = canConfirm
                     ? `<button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>`
@@ -757,7 +757,7 @@
             if (!tbody || !listBox) return;
             if (groupBtn) groupBtn.textContent = `按天折叠：${__attRecordsGroupByDay ? '开' : '关'}`;
             listBox.innerHTML = '<div class="att-list-item"><div class="att-list-row">加载中...</div></div>';
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(200,215,230,0.5);">加载中...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(151,132,142,0.5);">加载中...</td></tr>';
             try {
                 const params = {
                     name: document.getElementById('att-rec-name')?.value?.trim() || '',
@@ -771,20 +771,20 @@
                 __attRecordsLastData = records;
                 if (!records.length) {
                     listBox.innerHTML = '<div class="att-list-item"><div class="att-list-row">暂无记录</div></div>';
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(200,215,230,0.5);">暂无记录</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(151,132,142,0.5);">暂无记录</td></tr>';
                     return;
                 }
                 tbody.innerHTML = records.map(r => {
                     const t = new Date(r.check_time);
                     const timeStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-                    const typeLabel = r.type === 'clock_in' ? '<span style="color:rgba(34,197,94,0.9);">上班</span>' : '<span style="color:rgba(239,68,68,0.9);">下班</span>';
+                    const typeLabel = r.type === 'clock_in' ? '<span style="color:rgba(134,201,162,0.9);">上班</span>' : '<span style="color:rgba(229,139,152,0.9);">下班</span>';
                     const dist = r.distance_meters != null ? Math.round(r.distance_meters) + '米' : '-';
-                    const faceLabel = r.face_match ? '<span style="color:rgba(34,197,94,0.8);">✓</span>' : '<span style="color:rgba(239,68,68,0.8);">✗</span>';
+                    const faceLabel = r.face_match ? '<span style="color:rgba(134,201,162,0.8);">✓</span>' : '<span style="color:rgba(229,139,152,0.8);">✗</span>';
                     const statusMap = { normal: '正常', face_fail: '人脸异常', out_of_range: '超出范围', no_store_location: '未设定位', no_gps: '正常', confirmed: '已确认' };
                     const statusLabel = statusMap[r.status] || r.status;
-                    const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(34,197,94,0.8)' : 'rgba(234,179,8,0.8)';
+                    const statusColor = r.status === 'normal' || r.status === 'confirmed' || r.status === 'no_gps' ? 'rgba(134,201,162,0.8)' : 'rgba(207,161,74,0.8)';
                     const canConfirm = (currentUser?.role === 'admin' || currentUser?.role === 'hq_manager' || currentUser?.role === 'store_manager' || currentUser?.role === 'hr_manager') && r.status !== 'normal' && r.status !== 'confirmed';
-                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(200,215,230,0.5);">${r.confirmed_by}确认</span>` : '-');
+                    const actions = canConfirm ? `<button class="btn btn-secondary" style="font-size:11px; padding:2px 8px;" data-click="attConfirmRecord" data-arg="${r.id}">确认</button>` : (r.confirmed_by ? `<span style="font-size:11px; color:rgba(151,132,142,0.5);">${r.confirmed_by}确认</span>` : '-');
                     return `<tr>
                         <td>${r.display_name || r.username}</td>
                         <td>${r.store || '-'}</td>
@@ -799,8 +799,8 @@
                 attRenderRecordsList(records);
             } catch (e) {
                 __attRecordsLastData = [];
-                listBox.innerHTML = '<div class="att-list-item"><div class="att-list-row" style="color:rgba(239,68,68,0.75);">加载失败</div></div>';
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(239,68,68,0.6);">加载失败</td></tr>';
+                listBox.innerHTML = '<div class="att-list-item"><div class="att-list-row" style="color:rgba(229,139,152,0.75);">加载失败</div></div>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:rgba(229,139,152,0.6);">加载失败</td></tr>';
             }
         }
 
@@ -863,15 +863,15 @@
         async function attLoadSummary() {
             const box = document.getElementById('att-summary-box');
             if (!box) return;
-            box.innerHTML = '<div style="color:rgba(200,215,230,0.5); padding:20px; text-align:center;">加载中...</div>';
+            box.innerHTML = '<div style="color:rgba(151,132,142,0.5); padding:20px; text-align:center;">加载中...</div>';
             try {
                 const month = document.getElementById('att-sum-month')?.value || '';
                 const store = document.getElementById('att-sum-store')?.value || '';
-                if (!month) { box.innerHTML = '<div style="color:rgba(200,215,230,0.5); padding:20px; text-align:center;">请选择月份</div>'; return; }
+                if (!month) { box.innerHTML = '<div style="color:rgba(151,132,142,0.5); padding:20px; text-align:center;">请选择月份</div>'; return; }
                 const resp = await HRMS_API.getCheckinSummary({ month, store });
                 const records = Array.isArray(resp?.records) ? resp.records : [];
                 const leaveBalances = resp?.leaveBalances || {};
-                if (!records.length) { box.innerHTML = '<div style="color:rgba(200,215,230,0.5); padding:20px; text-align:center;">暂无数据</div>'; return; }
+                if (!records.length) { box.innerHTML = '<div style="color:rgba(151,132,142,0.5); padding:20px; text-align:center;">暂无数据</div>'; return; }
 
                 // Group by username, build nameMap from backend display_name
                 const byUser = {};
@@ -915,14 +915,14 @@
                     const leaveRemaining = lb.remaining != null ? lb.remaining : '-';
                     const leaveTitle = lb.totalLeave != null ? `总假期: ${lb.totalLeave}天 (周休${lb.baseLeave} + 年假${lb.annualLeave})\\n已用: ${lb.usedLeave}天` : '';
                     const leaveCell = canEditLeave
-                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:rgba(226,232,240,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" data-change="attSaveLeaveBalance" data-arg="${u}" data-arg2="${month}" data-pass-value>${lb.overridden ? ' <span style="color:rgba(234,179,8,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
-                        : `<span title="${leaveTitle}" style="color:rgba(96,165,250,0.9); font-weight:700;">${leaveRemaining}</span>`;
+                        ? `<input type="number" step="0.5" value="${leaveRemaining}" style="width:76px; text-align:center; background:rgba(242,234,238,0.08); border:1px solid rgba(242,234,238,0.15); border-radius:6px; color:rgba(242,234,238,0.9); font-size:12px; padding:4px 6px;" title="${leaveTitle}" data-change="attSaveLeaveBalance" data-arg="${u}" data-arg2="${month}" data-pass-value>${lb.overridden ? ' <span style="color:rgba(207,161,74,0.7); font-size:10px;" title="已手动修改">改</span>' : ''}`
+                        : `<span title="${leaveTitle}" style="color:rgba(224,166,180,0.9); font-weight:700;">${leaveRemaining}</span>`;
                     html += `<div class="att-list-item">
                         <div class="att-list-row"><span class="att-list-main">${nameMap[u] || u}</span><span class="att-list-sub">${month}</span></div>
                         <div class="att-summary-metrics">
-                            <div class="att-summary-metric"><div class="k">出勤</div><div class="v" style="color:rgba(34,197,94,0.95);">${attendDays}</div></div>
-                            <div class="att-summary-metric"><div class="k">缺勤</div><div class="v" style="color:${absentDays > 0 ? 'rgba(239,68,68,0.95)' : 'rgba(200,215,230,0.7)'};">${absentDays}</div></div>
-                            <div class="att-summary-metric"><div class="k">异常</div><div class="v" style="color:${abnormalCount > 0 ? 'rgba(234,179,8,0.95)' : 'rgba(200,215,230,0.7)'};">${abnormalCount}</div></div>
+                            <div class="att-summary-metric"><div class="k">出勤</div><div class="v" style="color:rgba(134,201,162,0.95);">${attendDays}</div></div>
+                            <div class="att-summary-metric"><div class="k">缺勤</div><div class="v" style="color:${absentDays > 0 ? 'rgba(229,139,152,0.95)' : 'rgba(151,132,142,0.7)'};">${absentDays}</div></div>
+                            <div class="att-summary-metric"><div class="k">异常</div><div class="v" style="color:${abnormalCount > 0 ? 'rgba(207,161,74,0.95)' : 'rgba(151,132,142,0.7)'};">${abnormalCount}</div></div>
                             <div class="att-summary-metric"><div class="k">剩余假期</div><div class="v">${typeof leaveRemaining === 'number' ? leaveRemaining : leaveRemaining}</div></div>
                         </div>
                         <div class="att-list-row" style="margin-top:8px;"><span class="att-list-sub">假期调整</span><span>${leaveCell}</span></div>
@@ -945,7 +945,7 @@
                     confirmBtn.style.display = 'none';
                 }
             } catch (e) {
-                box.innerHTML = '<div style="color:rgba(239,68,68,0.6); padding:20px; text-align:center;">加载失败</div>';
+                box.innerHTML = '<div style="color:rgba(229,139,152,0.6); padding:20px; text-align:center;">加载失败</div>';
             }
         }
 
@@ -1039,17 +1039,17 @@
             if (!box) return;
             const state = HRMS_STORE.ensure();
             const stores = Array.isArray(state.stores) ? state.stores : [];
-            if (!stores.length) { box.innerHTML = '<div style="color:rgba(200,215,230,0.5);">暂无门店</div>'; return; }
+            if (!stores.length) { box.innerHTML = '<div style="color:rgba(151,132,142,0.5);">暂无门店</div>'; return; }
             box.innerHTML = stores.map(s => {
                 const hasLoc = Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude));
                 const locText = hasLoc ? `${Number(s.latitude).toFixed(6)}, ${Number(s.longitude).toFixed(6)}` : '未设置';
-                const locColor = hasLoc ? 'rgba(34,197,94,0.8)' : 'rgba(234,179,8,0.8)';
+                const locColor = hasLoc ? 'rgba(134,201,162,0.8)' : 'rgba(207,161,74,0.8)';
                 const addr = s.address || '';
                 return `<div class="card" style="padding:12px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
                     <div>
                         <div style="font-weight:700; font-size:14px;">${s.name || '未命名'}</div>
                         <div style="font-size:12px; color:${locColor}; margin-top:2px;">📍 ${locText}</div>
-                        ${addr ? `<div style="font-size:11px; color:rgba(200,215,230,0.5); margin-top:2px;">${addr}</div>` : ''}
+                        ${addr ? `<div style="font-size:11px; color:rgba(151,132,142,0.5); margin-top:2px;">${addr}</div>` : ''}
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         <button class="btn btn-secondary" style="font-size:11px; padding:4px 10px;" data-click="attSetStoreLocationCurrent" data-arg="${escapeHtml(s.name || '')}">用当前位置</button>
@@ -1209,9 +1209,9 @@
                 if (stores.length > 1) {
                     switchWrap.style.display = 'block';
                     switchWrap.innerHTML = `
-                        <div style="margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);">
-                            <div style="font-size:11px;color:rgba(255,255,255,0.58);margin-bottom:6px;">当前操作门店</div>
-                            <select id="mobile-store-switch-select" data-change="switchCurrentUserStore" data-pass-value style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(15,23,42,0.86);color:#fff;">
+                        <div style="margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.08);">
+                            <div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">当前操作门店</div>
+                            <select id="mobile-store-switch-select" data-change="switchCurrentUserStore" data-pass-value style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,234,238,0.12);background:rgba(28,24,28,0.86);color:#fff;">
                                 ${stores.map(function (store) {
                                     const selected = String(currentUser?.current_store || currentUser?.store || '') === String(store) ? 'selected' : '';
                                     return `<option value="${escapeHtml(store)}" ${selected}>${escapeHtml(store)}</option>`;
@@ -1270,11 +1270,11 @@
                     <div data-click="handleMobileMoreItemClick" data-arg="${item.page || ''}" data-arg2="${item.href || ''}" style="
                         display:flex;flex-direction:column;align-items:center;gap:6px;
                         padding:12px 4px;border-radius:14px;cursor:pointer;
-                        background:rgba(255,255,255,0.05);
+                        background:rgba(242,234,238,0.05);
                         -webkit-tap-highlight-color:transparent;
-                    " ontouchstart="this.style.background='rgba(245,158,11,0.15)'" ontouchend="this.style.background='rgba(255,255,255,0.05)'">
+                    " ontouchstart="this.style.background='rgba(207,161,74,0.15)'" ontouchend="this.style.background='rgba(242,234,238,0.05)'">
                         <span style="font-size:24px;line-height:1;">${item.icon}</span>
-                        <span style="font-size:11px;color:rgba(255,255,255,0.8);font-weight:500;text-align:center;">${item.label}</span>
+                        <span style="font-size:11px;color:rgba(242,234,238,0.8);font-weight:500;text-align:center;">${item.label}</span>
                     </div>
                 `).join('');
             }

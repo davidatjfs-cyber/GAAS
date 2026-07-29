@@ -172,7 +172,7 @@
                     var posData = await posRes.json();
                     renderGrowthPosMetricsCards(posData);
                 } catch (e) {
-                    document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">POS数据暂不可用</div>';
+                    document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">POS数据暂不可用</div>';
                 }
 
                 // B链：小程序数据
@@ -208,13 +208,13 @@
                     var wRes = await fetch('/api/growth/weather-context', { headers: gh });
                     var wData = await wRes.json();
                     renderGrowthWeather(wData);
-                } catch (e) { document.getElementById('growth-weather').innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">天气数据暂不可用</div>'; }
+                } catch (e) { document.getElementById('growth-weather').innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">天气数据暂不可用</div>'; }
                 try {
                     var awStore = document.getElementById('growth-store-filter')?.value || '';
                     var awRes = await fetch('/api/growth/active-window' + (awStore ? '?store_id=' + encodeURIComponent(awStore) : ''), { headers: gh });
                     var awData = await awRes.json();
                     renderGrowthActiveWindow(awData);
-                } catch (e) { document.getElementById('growth-active-window').innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">触达时段数据暂不可用</div>'; }
+                } catch (e) { document.getElementById('growth-active-window').innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">触达时段数据暂不可用</div>'; }
                 try {
                     var rpStore = document.getElementById('growth-store-filter')?.value || '';
                     var rpRes = await fetch('/api/growth/customer-profiles?limit=1000' + (rpStore ? '&store_id=' + encodeURIComponent(rpStore) : ''), { headers: gh });
@@ -223,7 +223,7 @@
                     var atRisk = rpRows.filter(function(p) { return p.lifecycle_stage === 'at_risk'; });
                     var churned = rpRows.filter(function(p) { return p.lifecycle_stage === 'churned'; });
                     renderGrowthRepurchase(atRisk.length, churned.length, rpStore);
-                } catch (e) { document.getElementById('growth-repurchase').innerHTML = '<div style="color:rgba(226,232,240,0.4);font-size:12px;">复购数据暂不可用</div>'; }
+                } catch (e) { document.getElementById('growth-repurchase').innerHTML = '<div style="color:rgba(242,234,238,0.4);font-size:12px;">复购数据暂不可用</div>'; }
 
                 document.querySelectorAll('#growth-page .hidden').forEach(function(e) { e.classList.remove('hidden'); });
             } catch (e) {
@@ -304,8 +304,8 @@
             detailHost.id = 'growth-campaign-funnel-detail';
             detailHost.style.marginTop = '16px';
             detailHost.style.padding = '16px';
-            detailHost.style.background = 'rgba(14,165,233,0.06)';
-            detailHost.style.border = '1px solid rgba(14,165,233,0.2)';
+            detailHost.style.background = 'rgba(209,143,160,0.06)';
+            detailHost.style.border = '1px solid rgba(209,143,160,0.2)';
             detailHost.style.borderRadius = '12px';
 
             var countMap = {};
@@ -318,7 +318,7 @@
                 { key: 'payment_success', label: '支付', count: countMap['payment_success'] || 0, pctBase: countMap['coupon_redeemed'] || 1 }
             ];
             var marketingCount = countMap['marketing_triggered'] || 0;
-            var marketingNote = marketingCount > 0 ? '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-top:6px;"> 另：HRMS自动营销发券 ' + marketingCount + ' 次（不计入漏斗）</div>' : '';
+            var marketingNote = marketingCount > 0 ? '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-top:6px;"> 另：HRMS自动营销发券 ' + marketingCount + ' 次（不计入漏斗）</div>' : '';
 
             // 从 dailyMetrics 累计收入
             var revenueFen = 0;
@@ -326,14 +326,14 @@
                 revenueFen += Number(m.revenue_fen) || 0;
             });
 
-            detailHost.innerHTML = '<div style="font-size:13px;font-weight:700;color:#38bdf8;margin-bottom:10px;">📊 活动漏斗：' + campaignId.slice(0, 40) + '</div>'
+            detailHost.innerHTML = '<div style="font-size:13px;font-weight:700;color:#EABBC5;margin-bottom:10px;">📊 活动漏斗：' + campaignId.slice(0, 40) + '</div>'
                 + '<div style="margin-bottom:8px;">' + steps.map(function(s, i) {
                     var pct = s.pctBase > 0 ? Math.round(s.count / s.pctBase * 100) : 0;
-                    var barColor = pct < 10 ? '#ef4444' : pct < 30 ? '#f59e0b' : '#22c55e';
-                    return '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(226,232,240,0.78);"><strong style="color:#fff;">' + s.label + '</strong><span>' + s.count + ' · ' + pct + '%</span></div><div style="height:8px;background:rgba(255,255,255,0.07);border-radius:999px;overflow:hidden;"><div style="height:100%;width:' + Math.max(4, Math.min(100, pct)) + '%;background:' + barColor + ';border-radius:999px;"></div></div></div>';
+                    var barColor = pct < 10 ? '#E58B98' : pct < 30 ? '#CFA14A' : '#86C9A2';
+                    return '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:rgba(242,234,238,0.78);"><strong style="color:#fff;">' + s.label + '</strong><span>' + s.count + ' · ' + pct + '%</span></div><div style="height:8px;background:rgba(242,234,238,0.07);border-radius:999px;overflow:hidden;"><div style="height:100%;width:' + Math.max(4, Math.min(100, pct)) + '%;background:' + barColor + ';border-radius:999px;"></div></div></div>';
                 }).join('') + '</div>'
                 + marketingNote
-                + '<div style="font-size:12px;color:#22c55e;margin-top:8px;">💰 总收入(events): ¥' + (revenueFen / 100).toFixed(2) + '</div>';
+                + '<div style="font-size:12px;color:#86C9A2;margin-top:8px;">💰 总收入(events): ¥' + (revenueFen / 100).toFixed(2) + '</div>';
 
             var existing = document.getElementById('growth-campaign-funnel-detail');
             if (existing) existing.replaceWith(detailHost);
@@ -362,7 +362,7 @@
                 { label: '外卖订单', value: takeawayOrders, tag: '外卖', source: 'POS系统导入' },
                 { label: '新客率', value: (posData.profileInsights && posData.profileInsights.new_vs_returning ? posData.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客', source: '统计期内首次消费手机号占比' }
             ];
-            document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 新客率 = 统计期内历史首次消费手机号数 / 总识别手机号数（基于POS订单手机号去重）</div>'
+            document.getElementById('growth-pos-metrics-cards').innerHTML = '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-bottom:8px;"> 新客率 = 统计期内历史首次消费手机号数 / 总识别手机号数（基于POS订单手机号去重）</div>'
                 + cards.map(function(c) {
                 return '<div class="rep-metric" style="text-align:center;">'
                     + '<div class="k" style="text-align:center;">' + c.tag + '</div>'
@@ -397,7 +397,7 @@
                     + '<div class="k" style="text-align:center;">' + c.tag + '</div>'
                     + '<div class="v" style="text-align:center;font-size:24px;">' + c.value + '</div>'
                     + '<div style="font-size:11px;color:var(--rep-muted);text-align:center;margin-top:4px;">' + c.label + '</div>'
-                    + '<div style="font-size:10px;color:rgba(226,232,240,0.35);text-align:center;margin-top:2px;line-height:1.3;">' + c.source + '</div>'
+                    + '<div style="font-size:10px;color:rgba(242,234,238,0.35);text-align:center;margin-top:2px;line-height:1.3;">' + c.source + '</div>'
                     + '</div>';
             }).join('');
         }
@@ -436,7 +436,7 @@
                     { label: '新客率', value: (d.profileInsights && d.profileInsights.new_vs_returning ? d.profileInsights.new_vs_returning.new_pct : '-') + '%', tag: '新客' },
                     { label: '回头率', value: (d.profileInsights && d.profileInsights.new_vs_returning ? d.profileInsights.new_vs_returning.returning_pct : '-') + '%', tag: '复购' }
                 ].map(function(c) {
-                    return '<div class="growth-metric-card"><div class="metric-tag">' + c.tag + '</div><div class="metric-value" style="font-size:24px;font-weight:800;color:#fff;">' + c.value + '</div><div style="font-size:11px;color:rgba(226,232,240,0.5);">' + c.label + '</div></div>';
+                    return '<div class="growth-metric-card"><div class="metric-tag">' + c.tag + '</div><div class="metric-value" style="font-size:24px;font-weight:800;color:#fff;">' + c.value + '</div><div style="font-size:11px;color:rgba(242,234,238,0.5);">' + c.label + '</div></div>';
                 }).join('');
 
                 renderPosHourChart(d.hourDist || []);
@@ -452,53 +452,53 @@
             } catch (e) {
                 console.error('loadPosStats error:', e);
                 var loadingEl = document.getElementById('pos-stats-loading');
-                if (loadingEl) loadingEl.innerHTML = '<div style="color:#ef4444;padding:20px;">加载失败: ' + (e.message || e) + '</div>';
+                if (loadingEl) loadingEl.innerHTML = '<div style="color:#E58B98;padding:20px;">加载失败: ' + (e.message || e) + '</div>';
             }
         }
 
         function renderPosHourChart(hours) {
             var el = document.getElementById('pos-stats-hour');
-            if (!hours.length) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无数据</div>'; return; }
+            if (!hours.length) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无数据</div>'; return; }
             var maxVal = Math.max.apply(null, hours.map(function(h) { return h.orders; }));
             el.innerHTML = '<div style="display:flex;align-items:end;gap:4px;height:160px;padding:0 4px;">'
                 + hours.map(function(h) {
                     var pct = maxVal > 0 ? (h.orders / maxVal * 100) : 0;
                     return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:end;height:100%;">'
-                        + '<div style="font-size:9px;color:rgba(226,232,240,0.5);margin-bottom:2px;">' + h.orders + '</div>'
-                        + '<div style="width:100%;max-width:28px;height:' + Math.max(4, Math.min(pct, 100)) + '%;background:linear-gradient(180deg,#38bdf8,#0ea5e9);border-radius:4px 4px 0 0;"></div>'
-                        + '<div style="font-size:9px;color:rgba(226,232,240,0.7);margin-top:4px;">' + h.hour + ':00</div>'
+                        + '<div style="font-size:9px;color:rgba(242,234,238,0.5);margin-bottom:2px;">' + h.orders + '</div>'
+                        + '<div style="width:100%;max-width:28px;height:' + Math.max(4, Math.min(pct, 100)) + '%;background:linear-gradient(180deg,#EABBC5,#D18FA0);border-radius:4px 4px 0 0;"></div>'
+                        + '<div style="font-size:9px;color:rgba(242,234,238,0.7);margin-top:4px;">' + h.hour + ':00</div>'
                         + '</div>';
                 }).join('') + '</div>';
         }
 
         function renderPosPayChart(pays) {
             var el = document.getElementById('pos-stats-pay');
-            if (!pays.length) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无数据</div>'; return; }
+            if (!pays.length) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无数据</div>'; return; }
             var total = pays.reduce(function(a, b) { return a + Number(b.orders); }, 0) || 1;
-            var colors = ['#38bdf8', '#22c55e', '#f59e0b', '#ef4444', '#a78bfa', '#f472b6', '#94a3b8'];
+            var colors = ['#EABBC5', '#86C9A2', '#CFA14A', '#E58B98', '#D18FA0', '#E58B98', '#97848E'];
             el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
                 + pays.map(function(p, i) {
                     var pct = Math.round(Number(p.orders) / total * 100);
                     var rev = Number(p.revenue || 0);
-                    return '<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:10px;display:flex;align-items:center;gap:10px;">'
+                    return '<div style="background:rgba(242,234,238,0.04);border-radius:8px;padding:10px;display:flex;align-items:center;gap:10px;">'
                         + '<div style="width:4px;height:36px;border-radius:4px;background:' + (colors[i % colors.length]) + ';flex-shrink:0;"></div>'
                         + '<div style="flex:1;min-width:0;">'
                         + '<div style="font-size:13px;color:#fff;font-weight:600;">' + p.pay_group + '</div>'
-                        + '<div style="font-size:11px;color:rgba(226,232,240,0.55);margin-top:2px;">' + p.orders + '笔 · ' + pct + '%</div>'
-                        + (rev > 0 ? '<div style="font-size:11px;color:#22c55e;margin-top:2px;">¥' + Number(rev / 100).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + '</div>' : '')
+                        + '<div style="font-size:11px;color:rgba(242,234,238,0.55);margin-top:2px;">' + p.orders + '笔 · ' + pct + '%</div>'
+                        + (rev > 0 ? '<div style="font-size:11px;color:#86C9A2;margin-top:2px;">¥' + Number(rev / 100).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + '</div>' : '')
                         + '</div></div>';
                 }).join('') + '</div>';
         }
 
         function renderPosTopDishes(dishes) {
             var el = document.getElementById('pos-stats-dishes');
-            if (!dishes.length) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无数据</div>'; return; }
+            if (!dishes.length) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无数据</div>'; return; }
             var maxRev = Math.max.apply(null, dishes.map(function(d) { return Number(d.revenue); })) || 1;
             el.innerHTML = '<div style="max-height:300px;overflow-y:auto;">'
                 + '<table style="width:100%;border-collapse:collapse;font-size:11px;">'
-                + '<thead><tr style="color:rgba(226,232,240,0.5);border-bottom:1px solid rgba(255,255,255,0.06);"><th style="text-align:left;padding:4px 6px;">菜品</th><th style="text-align:right;padding:4px 6px;">分类</th><th style="text-align:right;padding:4px 6px;">销量</th><th style="text-align:right;padding:4px 6px;">营收</th></tr></thead>'
+                + '<thead><tr style="color:rgba(242,234,238,0.5);border-bottom:1px solid rgba(242,234,238,0.06);"><th style="text-align:left;padding:4px 6px;">菜品</th><th style="text-align:right;padding:4px 6px;">分类</th><th style="text-align:right;padding:4px 6px;">销量</th><th style="text-align:right;padding:4px 6px;">营收</th></tr></thead>'
                 + '<tbody>' + dishes.map(function(d) {
-                    return '<tr style="border-bottom:1px solid rgba(255,255,255,0.03);"><td style="padding:5px 6px;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (d.dish_name || '-') + '</td><td style="padding:5px 6px;text-align:right;color:rgba(226,232,240,0.5);">' + (d.category || '-') + '</td><td style="padding:5px 6px;text-align:right;color:rgba(226,232,240,0.7);">' + d.total_qty + '</td><td style="padding:5px 6px;text-align:right;color:#22c55e;">¥' + parseFloat(d.revenue).toFixed(2) + '</td></tr>';
+                    return '<tr style="border-bottom:1px solid rgba(242,234,238,0.03);"><td style="padding:5px 6px;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (d.dish_name || '-') + '</td><td style="padding:5px 6px;text-align:right;color:rgba(242,234,238,0.5);">' + (d.category || '-') + '</td><td style="padding:5px 6px;text-align:right;color:rgba(242,234,238,0.7);">' + d.total_qty + '</td><td style="padding:5px 6px;text-align:right;color:#86C9A2;">¥' + parseFloat(d.revenue).toFixed(2) + '</td></tr>';
                 }).join('') + '</tbody></table></div>';
         }
 
@@ -521,9 +521,9 @@
         function renderPosBreakdown(elId, rows, labelKey) {
             var el = document.getElementById(elId);
             if (!el) return;
-            if (!rows.length) { el.innerHTML = '<div style="padding:10px;color:rgba(226,232,240,0.4);font-size:12px;">暂无数据</div>'; return; }
+            if (!rows.length) { el.innerHTML = '<div style="padding:10px;color:rgba(242,234,238,0.4);font-size:12px;">暂无数据</div>'; return; }
             var totalRev = rows.reduce(function(s, r) { return s + Number(r.revenue || 0); }, 0) || 1;
-            var colors = ['#38bdf8','#22c55e','#f59e0b','#ef4444','#a78bfa','#f472b6','#94a3b8','#fb923c','#4ade80','#e879f9'];
+            var colors = ['#EABBC5','#86C9A2','#CFA14A','#E58B98','#D18FA0','#E58B98','#97848E','#DDB66A','#9ED9B4','#E58B98'];
             el.innerHTML = rows.map(function(r, i) {
                 var pct = Math.round(Number(r.revenue) / totalRev * 1000) / 10;
                 var c = colors[i % colors.length];
@@ -533,8 +533,8 @@
                     + '<div style="display:flex;justify-content:space-between;font-size:12px;">'
                     + '<span style="color:#fff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r[labelKey] || '-') + '</span>'
                     + '<span style="color:' + c + ';font-weight:700;flex-shrink:0;margin-left:4px;">' + pct + '%</span></div>'
-                    + '<div style="font-size:10px;color:rgba(226,232,240,0.5);">' + r.cnt + '笔 · ¥' + Number(r.revenue || 0).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) + '</div>'
-                    + '<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.06);margin-top:3px;"><div style="width:' + Math.max(4, pct) + '%;height:100%;border-radius:2px;background:' + c + ';"></div></div>'
+                    + '<div style="font-size:10px;color:rgba(242,234,238,0.5);">' + r.cnt + '笔 · ¥' + Number(r.revenue || 0).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) + '</div>'
+                    + '<div style="height:3px;border-radius:2px;background:rgba(242,234,238,0.06);margin-top:3px;"><div style="width:' + Math.max(4, pct) + '%;height:100%;border-radius:2px;background:' + c + ';"></div></div>'
                     + '</div></div>';
             }).join('');
         }
@@ -545,7 +545,7 @@
 
         function renderPosStoreTable(stores) {
             var el = document.getElementById('pos-stats-stores');
-            if (!stores.length) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无数据</div>'; return; }
+            if (!stores.length) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无数据</div>'; return; }
             var ranked = stores.slice().sort(function(a, b) { return Number(b.total_revenue || 0) - Number(a.total_revenue || 0); });
             var totalRevenue = ranked.reduce(function(sum, item) { return sum + Number(item.total_revenue || 0); }, 0) || 1;
             el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">'
@@ -555,49 +555,49 @@
                     var badge = rank === 1 ? '🥇 TOP1' : rank === 2 ? '🥈 TOP2' : rank === 3 ? '🥉 TOP3' : '#' + rank;
                     var revenue = Number(s.total_revenue || 0);
                     var share = Math.round(revenue / totalRevenue * 1000) / 10;
-                    return '<div style="background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04));border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(15,23,42,0.2);">'
+                    return '<div style="background:linear-gradient(180deg,rgba(242,234,238,0.08),rgba(242,234,238,0.04));border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(28,24,28,0.2);">'
                         + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px;">'
                         + '<div style="font-size:14px;font-weight:700;color:#fff;line-height:1.4;">🏪 ' + displayName + '</div>'
-                        + '<div style="font-size:11px;font-weight:800;color:' + (rank === 1 ? '#c9a96a' : rank === 2 ? '#cbd5e1' : rank === 3 ? '#fdba74' : '#94a3b8') + ';background:rgba(15,23,42,0.38);border:1px solid rgba(255,255,255,0.08);padding:4px 8px;border-radius:999px;white-space:nowrap;">' + badge + '</div>'
+                        + '<div style="font-size:11px;font-weight:800;color:' + (rank === 1 ? '#CFA14A' : rank === 2 ? '#B8AAB1' : rank === 3 ? '#DDB66A' : '#97848E') + ';background:rgba(28,24,28,0.38);border:1px solid rgba(242,234,238,0.08);padding:4px 8px;border-radius:999px;white-space:nowrap;">' + badge + '</div>'
                         + '</div>'
-                        + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:10px;">营收贡献 ' + share + '%</div>'
+                        + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:10px;">营收贡献 ' + share + '%</div>'
                         + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
-                        + '<div style="text-align:center;padding:6px 0;background:rgba(255,255,255,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#38bdf8;">' + s.orders + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:2px;">订单</div></div>'
-                        + '<div style="text-align:center;padding:6px 0;background:rgba(255,255,255,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#22c55e;">¥' + revenue.toLocaleString(undefined, { maximumFractionDigits: 0 }) + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:2px;">总营收</div></div>'
-                        + '<div style="text-align:center;padding:6px 0;background:rgba(255,255,255,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#f59e0b;">¥' + parseFloat(s.avg_check || 0).toFixed(0) + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:2px;">均单(折后)</div></div>'
+                        + '<div style="text-align:center;padding:6px 0;background:rgba(242,234,238,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#EABBC5;">' + s.orders + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);margin-top:2px;">订单</div></div>'
+                        + '<div style="text-align:center;padding:6px 0;background:rgba(242,234,238,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#86C9A2;">¥' + revenue.toLocaleString(undefined, { maximumFractionDigits: 0 }) + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);margin-top:2px;">总营收</div></div>'
+                        + '<div style="text-align:center;padding:6px 0;background:rgba(242,234,238,0.04);border-radius:6px;"><div style="font-size:18px;font-weight:800;color:#CFA14A;">¥' + parseFloat(s.avg_check || 0).toFixed(0) + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);margin-top:2px;">均单(折后)</div></div>'
                         + '</div>'
-                        + '<div style="margin-top:10px;height:8px;border-radius:999px;background:rgba(255,255,255,0.06);overflow:hidden;">'
-                        + '<div style="width:' + Math.max(8, share) + '%;height:100%;background:linear-gradient(90deg,#22c55e,#38bdf8);"></div>'
+                        + '<div style="margin-top:10px;height:8px;border-radius:999px;background:rgba(242,234,238,0.06);overflow:hidden;">'
+                        + '<div style="width:' + Math.max(8, share) + '%;height:100%;background:linear-gradient(90deg,#86C9A2,#EABBC5);"></div>'
                         + '</div></div>';
                 }).join('') + '</div>';
         }
 
         function renderPosRepeatStats(repeat) {
             var el = document.getElementById('pos-stats-repeat');
-            if (!repeat || !repeat.total_customers) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无数据</div>'; return; }
+            if (!repeat || !repeat.total_customers) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无数据</div>'; return; }
             var total = Number(repeat.total_customers) || 1;
             var once = Number(repeat.one_timer) || 0;
             var twice = Number(repeat.two_timer) || 0;
             var threePlus = Number(repeat.repeat_3plus) || 0;
             var repeatRate = ((twice + threePlus) / total * 100).toFixed(1);
-            el.innerHTML = '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:28px;font-weight:800;color:#22c55e;">' + repeatRate + '%</div><div style="font-size:11px;color:rgba(226,232,240,0.5);">复购率</div></div>'
+            el.innerHTML = '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:28px;font-weight:800;color:#86C9A2;">' + repeatRate + '%</div><div style="font-size:11px;color:rgba(242,234,238,0.5);">复购率</div></div>'
                 + '<div style="display:flex;gap:8px;margin-bottom:8px;">'
-                + '<div style="flex:1;background:rgba(56,189,248,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#38bdf8;">' + once + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);">仅1次</div></div>'
-                + '<div style="flex:1;background:rgba(245,158,11,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#f59e0b;">' + twice + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);">2次</div></div>'
-                + '<div style="flex:1;background:rgba(34,197,94,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#22c55e;">' + threePlus + '</div><div style="font-size:10px;color:rgba(226,232,240,0.5);">3次+</div></div>'
+                + '<div style="flex:1;background:rgba(234,187,197,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#EABBC5;">' + once + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);">仅1次</div></div>'
+                + '<div style="flex:1;background:rgba(207,161,74,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#CFA14A;">' + twice + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);">2次</div></div>'
+                + '<div style="flex:1;background:rgba(134,201,162,0.1);border-radius:8px;padding:8px;text-align:center;"><div style="font-size:16px;font-weight:800;color:#86C9A2;">' + threePlus + '</div><div style="font-size:10px;color:rgba(242,234,238,0.5);">3次+</div></div>'
                 + '</div>'
                 + '<div style="display:flex;gap:0;height:20px;border-radius:999px;overflow:hidden;">'
-                + '<div style="flex:0 0 ' + (once / total * 100) + '%;background:#38bdf8;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
-                + '<div style="flex:0 0 ' + (twice / total * 100) + '%;background:#f59e0b;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
-                + '<div style="flex:0 0 ' + (threePlus / total * 100) + '%;background:#22c55e;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
+                + '<div style="flex:0 0 ' + (once / total * 100) + '%;background:#EABBC5;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
+                + '<div style="flex:0 0 ' + (twice / total * 100) + '%;background:#CFA14A;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
+                + '<div style="flex:0 0 ' + (threePlus / total * 100) + '%;background:#86C9A2;display:flex;align-items:center;justify-content:center;min-width:2px;"></div>'
                 + '</div>'
-                + '<div style="margin-top:6px;font-size:11px;color:rgba(226,232,240,0.5);">共 ' + total + ' 位客户产生POS消费</div>';
+                + '<div style="margin-top:6px;font-size:11px;color:rgba(242,234,238,0.5);">共 ' + total + ' 位客户产生POS消费</div>';
         }
 
         function renderPosProfileInsights(pi, orderTypes, orderSources, depts) {
             var el = document.getElementById('pos-stats-profile');
             if (!el) return;
-            if (!pi || !pi.lifecycle) { el.innerHTML = '<div style="padding:20px;color:rgba(226,232,240,0.4);font-size:13px;">暂无画像数据</div>'; return; }
+            if (!pi || !pi.lifecycle) { el.innerHTML = '<div style="padding:20px;color:rgba(242,234,238,0.4);font-size:13px;">暂无画像数据</div>'; return; }
 
             function totalOf(obj) {
                 var total = 0;
@@ -612,17 +612,17 @@
                 if (limit) keys = keys.slice(0, limit);
                 var total = 0;
                 keys.forEach(function(k) { total += Number(dataMap[k] || 0); });
-                var html = '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:12px;">'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,0.88);font-weight:700;margin-bottom:8px;">' + title + '</div>';
+                var html = '<div style="background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.06);border-radius:10px;padding:12px;">'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,0.88);font-weight:700;margin-bottom:8px;">' + title + '</div>';
                 keys.forEach(function(k) {
                     var val = Number(dataMap[k] || 0);
                     var pct = total > 0 ? Math.round(val / total * 100) : 0;
-                    var color = (colorMap && colorMap[k]) || '#38bdf8';
+                    var color = (colorMap && colorMap[k]) || '#EABBC5';
                     var label = (labelMap && labelMap[k]) || k;
                     html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
-                        + '<div style="width:72px;font-size:11px;color:rgba(226,232,240,0.66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + label + '</div>'
-                        + '<div style="flex:1;height:8px;background:rgba(255,255,255,0.06);border-radius:999px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:999px;"></div></div>'
-                        + '<div style="width:64px;text-align:right;font-size:11px;color:rgba(226,232,240,0.66);">' + val + unit + ' ' + pct + '%</div>'
+                        + '<div style="width:72px;font-size:11px;color:rgba(242,234,238,0.66);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + label + '</div>'
+                        + '<div style="flex:1;height:8px;background:rgba(242,234,238,0.06);border-radius:999px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:999px;"></div></div>'
+                        + '<div style="width:64px;text-align:right;font-size:11px;color:rgba(242,234,238,0.66);">' + val + unit + ' ' + pct + '%</div>'
                         + '</div>';
                 });
                 html += '</div>';
@@ -640,9 +640,9 @@
             var statDaysLabel = statDays > 0 ? ('近' + statDays + '天') : '统计期';
             var lifecycleLabels = { prospect: '潜在新客', new: '新客', active: '活跃', at_risk: '临界客', dormant: '沉睡老客', churned: '流失客', lost_90: '流失客(3-6月)', lost_180: '流失客(6-12月)', lost_365: '流失客(1年+)' };
             var totalLc = totalOf(lifecycle);
-            var lcColors = { prospect: '#94a3b8', new: '#38bdf8', active: '#22c55e', at_risk: '#f59e0b', dormant: '#ef4444', churned: '#6b7280', lost_90: '#a855f7', lost_180: '#7c3aed', lost_365: '#4c1d95' };
-            var lcHtml = '<div style="margin-bottom:12px;"><div style="font-size:12px;color:rgba(226,232,240,0.88);font-weight:700;margin-bottom:8px;">客户生命周期 <span style="font-weight:500;color:rgba(226,232,240,0.45);">（' + statDaysLabel + ' POS消费客户）</span></div>'
-                + '<div style="display:flex;gap:0;height:22px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,0.04);">';
+            var lcColors = { prospect: '#97848E', new: '#EABBC5', active: '#86C9A2', at_risk: '#CFA14A', dormant: '#E58B98', churned: '#97848E', lost_90: '#D18FA0', lost_180: '#B87B8C', lost_365: '#6E5223' };
+            var lcHtml = '<div style="margin-bottom:12px;"><div style="font-size:12px;color:rgba(242,234,238,0.88);font-weight:700;margin-bottom:8px;">客户生命周期 <span style="font-weight:500;color:rgba(242,234,238,0.45);">（' + statDaysLabel + ' POS消费客户）</span></div>'
+                + '<div style="display:flex;gap:0;height:22px;border-radius:999px;overflow:hidden;background:rgba(242,234,238,0.04);">';
             var lifecycleDefs = {
                 prospect: '扫码/被触达但从未下单',
                 new: '累计下单1次 · 近14天内到过店',
@@ -660,12 +660,12 @@
                 if (cnt > 0) {
                     var pct = totalLc > 0 ? (cnt / totalLc * 100) : 0;
                     var pctRound = totalLc > 0 ? Math.round(cnt / totalLc * 100) : 0;
-                    lcHtml += '<div title="' + lifecycleLabels[lk] + ' ' + cnt + '" style="flex:0 0 ' + pct + '%;background:' + (lcColors[lk] || '#94a3b8') + ';min-width:6px;"></div>';
+                    lcHtml += '<div title="' + lifecycleLabels[lk] + ' ' + cnt + '" style="flex:0 0 ' + pct + '%;background:' + (lcColors[lk] || '#97848E') + ';min-width:6px;"></div>';
                     lcLegend += '<div style="display:flex;gap:7px;align-items:flex-start;">'
-                        + '<span style="width:9px;height:9px;border-radius:2px;background:' + (lcColors[lk] || '#94a3b8') + ';flex:0 0 auto;margin-top:4px;"></span>'
+                        + '<span style="width:9px;height:9px;border-radius:2px;background:' + (lcColors[lk] || '#97848E') + ';flex:0 0 auto;margin-top:4px;"></span>'
                         + '<div style="flex:1;min-width:0;">'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,0.9);font-weight:600;">' + lifecycleLabels[lk] + ' <strong style="color:#fff;">' + cnt + '</strong> <span style="color:rgba(226,232,240,0.45);font-weight:400;">' + pctRound + '%</span></div>'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.5);line-height:1.4;margin-top:1px;">' + (lifecycleDefs[lk] || '') + '</div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,0.9);font-weight:600;">' + lifecycleLabels[lk] + ' <strong style="color:#fff;">' + cnt + '</strong> <span style="color:rgba(242,234,238,0.45);font-weight:400;">' + pctRound + '%</span></div>'
+                        + '<div style="font-size:10px;color:rgba(242,234,238,0.5);line-height:1.4;margin-top:1px;">' + (lifecycleDefs[lk] || '') + '</div>'
                         + '</div></div>';
                 }
             }
@@ -681,25 +681,25 @@
             var topLifecycleKey = Object.keys(lifecycle).sort(function(a, b) { return Number(lifecycle[b] || 0) - Number(lifecycle[a] || 0); })[0] || 'active';
             var topLifecycleLabel = lifecycleLabels[topLifecycleKey] || topLifecycleKey;
             var personaHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;">'
-                + '<div style="background:linear-gradient(180deg,rgba(59,130,246,0.14),rgba(56,189,248,0.05));border:1px solid rgba(56,189,248,0.18);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">核心客群</div>'
+                + '<div style="background:linear-gradient(180deg,rgba(224,166,180,0.14),rgba(234,187,197,0.05));border:1px solid rgba(234,187,197,0.18);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">核心客群</div>'
                 + '<div style="font-size:16px;font-weight:800;color:#fff;">以' + topLifecycleLabel + '为主</div>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;">当前以' + topLifecycleLabel + '阶段客户为主体，适合围绕复购和加深黏性运营。</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:6px;">当前以' + topLifecycleLabel + '阶段客户为主体，适合围绕复购和加深黏性运营。</div>'
                 + '</div>'
-                + '<div style="background:linear-gradient(180deg,rgba(34,197,94,0.14),rgba(34,197,94,0.05));border:1px solid rgba(34,197,94,0.18);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">渠道画像</div>'
+                + '<div style="background:linear-gradient(180deg,rgba(134,201,162,0.14),rgba(134,201,162,0.05));border:1px solid rgba(134,201,162,0.18);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">渠道画像</div>'
                 + '<div style="font-size:16px;font-weight:800;color:#fff;">' + (topSource ? topSource.order_source : '暂无') + '</div>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;">客户主要从' + (topSource ? topSource.order_source : '主渠道') + '完成下单，建议围绕该触点做活动承接。</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:6px;">客户主要从' + (topSource ? topSource.order_source : '主渠道') + '完成下单，建议围绕该触点做活动承接。</div>'
                 + '</div>'
-                + '<div style="background:linear-gradient(180deg,rgba(249,115,22,0.14),rgba(249,115,22,0.05));border:1px solid rgba(249,115,22,0.18);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">消费场景</div>'
+                + '<div style="background:linear-gradient(180deg,rgba(207,161,74,0.14),rgba(207,161,74,0.05));border:1px solid rgba(207,161,74,0.18);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">消费场景</div>'
                 + '<div style="font-size:16px;font-weight:800;color:#fff;">' + (takeawayPct > 0 ? ('外卖占比 ' + takeawayPct + '%') : '堂食消费为主') + '</div>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;">' + (takeawayPct >= 20 ? '存在明显外卖需求，适合做平台券和外卖套餐。' : '消费仍以到店堂食为主，适合做到店复购和桌边加购。') + '</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:6px;">' + (takeawayPct >= 20 ? '存在明显外卖需求，适合做平台券和外卖套餐。' : '消费仍以到店堂食为主，适合做到店复购和桌边加购。') + '</div>'
                 + '</div>'
-                + '<div style="background:linear-gradient(180deg,rgba(168,85,247,0.14),rgba(168,85,247,0.05));border:1px solid rgba(168,85,247,0.18);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">口味锚点</div>'
+                + '<div style="background:linear-gradient(180deg,rgba(184,123,140,0.14),rgba(184,123,140,0.05));border:1px solid rgba(184,123,140,0.18);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">口味锚点</div>'
                 + '<div style="font-size:16px;font-weight:800;color:#fff;">' + (topDept ? topDept.department : '暂无') + '</div>'
-                + '<div style="font-size:12px;color:rgba(226,232,240,0.7);margin-top:6px;">客户下单更集中在' + (topDept ? topDept.department : '核心出品部门') + '，可围绕该线做主推与组合推荐。</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.7);margin-top:6px;">客户下单更集中在' + (topDept ? topDept.department : '核心出品部门') + '，可围绕该线做主推与组合推荐。</div>'
                 + '</div>'
                 + '</div>';
             var adviceTitle = takeawayPct >= 20 ? '补强外卖套餐与平台承接' : '强化堂食复购与到店加购';
@@ -715,77 +715,77 @@
                 ? '围绕' + topDept.department + '做套餐锚点，搭配' + (topSource ? topSource.order_source : '主渠道') + '专属券，更容易提升转化。'
                 : '围绕当前高频品类做套餐和加价购，提高客单与复购。';
             var suggestHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px;">'
-                + '<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.16);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">门店经营建议</div>'
+                + '<div style="background:rgba(134,201,162,0.08);border:1px solid rgba(134,201,162,0.16);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">门店经营建议</div>'
                 + '<div style="font-size:15px;font-weight:800;color:#fff;">' + adviceTitle + '</div>'
-                + '<div style="font-size:12px;line-height:1.6;color:rgba(226,232,240,0.74);margin-top:6px;">' + adviceDesc + '</div>'
+                + '<div style="font-size:12px;line-height:1.6;color:rgba(242,234,238,0.74);margin-top:6px;">' + adviceDesc + '</div>'
                 + '</div>'
-                + '<div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.16);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">适合触达客群</div>'
+                + '<div style="background:rgba(207,161,74,0.08);border:1px solid rgba(207,161,74,0.16);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">适合触达客群</div>'
                 + '<div style="font-size:15px;font-weight:800;color:#fff;">' + segmentTitle + '</div>'
-                + '<div style="font-size:12px;line-height:1.6;color:rgba(226,232,240,0.74);margin-top:6px;">' + segmentDesc + '</div>'
+                + '<div style="font-size:12px;line-height:1.6;color:rgba(242,234,238,0.74);margin-top:6px;">' + segmentDesc + '</div>'
                 + '</div>'
-                + '<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.16);border-radius:12px;padding:12px;">'
-                + '<div style="font-size:11px;color:rgba(226,232,240,0.58);margin-bottom:6px;">推荐营销动作</div>'
+                + '<div style="background:rgba(184,123,140,0.08);border:1px solid rgba(184,123,140,0.16);border-radius:12px;padding:12px;">'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.58);margin-bottom:6px;">推荐营销动作</div>'
                 + '<div style="font-size:15px;font-weight:800;color:#fff;">' + actionTitle + '</div>'
-                + '<div style="font-size:12px;line-height:1.6;color:rgba(226,232,240,0.74);margin-top:6px;">' + actionDesc + '</div>'
+                + '<div style="font-size:12px;line-height:1.6;color:rgba(242,234,238,0.74);margin-top:6px;">' + actionDesc + '</div>'
                 + '</div>'
                 + '</div>';
             var overviewHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">'
-                + '<div style="background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">新客占比</div><div style="font-size:22px;font-weight:800;color:#38bdf8;">' + (nvr.new_pct || 0) + '%</div></div>'
-                + '<div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">回头客占比</div><div style="font-size:22px;font-weight:800;color:#22c55e;">' + (nvr.returning_pct || 0) + '%</div></div>'
-                + '<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">POS消费客户</div><div style="font-size:22px;font-weight:800;color:#f59e0b;">' + Number(hv.count || 0) + '</div></div>'
-                + '<div style="background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(226,232,240,0.6);">堂食桌均</div><div style="font-size:22px;font-weight:800;color:#a78bfa;">¥' + (pi.avg_table_spend || '0') + '</div></div>'
+                + '<div style="background:rgba(234,187,197,0.10);border:1px solid rgba(234,187,197,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(242,234,238,0.6);">新客占比</div><div style="font-size:22px;font-weight:800;color:#EABBC5;">' + (nvr.new_pct || 0) + '%</div></div>'
+                + '<div style="background:rgba(134,201,162,0.10);border:1px solid rgba(134,201,162,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(242,234,238,0.6);">回头客占比</div><div style="font-size:22px;font-weight:800;color:#86C9A2;">' + (nvr.returning_pct || 0) + '%</div></div>'
+                + '<div style="background:rgba(207,161,74,0.10);border:1px solid rgba(207,161,74,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(242,234,238,0.6);">POS消费客户</div><div style="font-size:22px;font-weight:800;color:#CFA14A;">' + Number(hv.count || 0) + '</div></div>'
+                + '<div style="background:rgba(209,143,160,0.10);border:1px solid rgba(209,143,160,0.18);border-radius:10px;padding:10px;"><div style="font-size:11px;color:rgba(242,234,238,0.6);">堂食桌均</div><div style="font-size:22px;font-weight:800;color:#D18FA0;">¥' + (pi.avg_table_spend || '0') + '</div></div>'
                 + '</div>';
 
             var spendHtml = renderMiniBars('堂食桌均分布', pi.avg_spend_dist || {}, {
-                '0-200': '#38bdf8', '200-400': '#22c55e', '400-600': '#f59e0b', '600-800': '#ef4444', '800+': '#a78bfa'
+                '0-200': '#EABBC5', '200-400': '#86C9A2', '400-600': '#CFA14A', '600-800': '#E58B98', '800+': '#D18FA0'
             }, {
                 '0-200': '0-200元', '200-400': '200-400元', '400-600': '400-600元', '600-800': '600-800元', '800+': '800元+'
             }, '单');
 
             var visitHtml = renderMiniBars('到店时段偏好', pi.top_visit_times || {}, {
-                '午市(10-14点)': '#f59e0b', '晚市(17-21点)': '#38bdf8', '其他时段': '#94a3b8'
+                '午市(10-14点)': '#CFA14A', '晚市(17-21点)': '#EABBC5', '其他时段': '#97848E'
             }, {
                 '午市(10-14点)': '午市', '晚市(17-21点)': '晚市', '其他时段': '其他'
             }, '单');
 
             var custTypeHtml = renderMiniBars('客户订单类型偏好', pi.cust_order_type || {}, {
-                '堂食': '#22c55e', '平台外卖': '#f97316'
+                '堂食': '#86C9A2', '平台外卖': '#CFA14A'
             }, null, '项');
 
             var custSourceHtml = renderMiniBars('客户订单来源偏好', pi.cust_order_source || {}, {
-                '微信小程序': '#22c55e', '收银POS': '#38bdf8', '掌上客如云': '#a78bfa', '支付宝小程序': '#f59e0b', '美团外卖': '#f97316', '淘宝闪购餐饮外卖': '#ef4444'
+                '微信小程序': '#86C9A2', '收银POS': '#EABBC5', '掌上客如云': '#D18FA0', '支付宝小程序': '#CFA14A', '美团外卖': '#CFA14A', '淘宝闪购餐饮外卖': '#E58B98'
             }, null, '项', 6);
 
             var deptHtml = renderMiniBars('客户偏好出品部门', pi.cust_dept || {}, {
-                '热厨': '#ef4444', '烧味': '#f59e0b', '卤水档': '#22c55e', '刺身档': '#38bdf8', '煲仔档': '#a78bfa', '汤档': '#14b8a6', '水吧': '#e879f9', '上杂': '#fb7185', '前厅': '#94a3b8'
+                '热厨': '#E58B98', '烧味': '#CFA14A', '卤水档': '#86C9A2', '刺身档': '#EABBC5', '煲仔档': '#D18FA0', '汤档': '#6FAF89', '水吧': '#E58B98', '上杂': '#E58B98', '前厅': '#97848E'
             }, null, '份', 8);
 
             var dishHtml = renderMiniBars('品类偏好 TOP5', pi.top_dish_categories || {}, {
-                '广东小炒': '#38bdf8', '饮品酒水': '#22c55e', '招牌主食': '#f59e0b', '名厨啫啫': '#ef4444', '招牌烧味': '#a78bfa'
+                '广东小炒': '#EABBC5', '饮品酒水': '#86C9A2', '招牌主食': '#CFA14A', '名厨啫啫': '#E58B98', '招牌烧味': '#D18FA0'
             }, null, '份', 5);
 
             var cm = pi.customer_metrics || {};
             var cmCards = [
-                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#38bdf8', sub: statDaysLabel + '有消费手机号' },
-                { label: '新客', value: Number(cm.new_count || nvr.new_count || 0), color: '#0ea5e9', sub: statDaysLabel + '内首次消费' },
-                { label: '回头客', value: Number(cm.returning_count || nvr.returning_count || 0), color: '#6366f1', sub: statDaysLabel + '内复访老客' },
-                { label: '活跃客', value: Number(cm.active_count || lifecycle.active || 0), color: '#22c55e', sub: statDaysLabel + '消费·近14天活跃' },
-                { label: '临界客', value: Number(cm.at_risk_count || lifecycle.at_risk || 0), color: '#f59e0b', sub: statDaysLabel + '消费·14-30天未到' },
-                { label: '沉睡老客', value: Number(cm.dormant_count || lifecycle.dormant || 0), color: '#ef4444', sub: statDaysLabel + '消费·30天+未到' },
-                { label: '流失客', value: Number(cm.churned_count || lifecycle.churned || 0), color: '#9ca3af', sub: statDaysLabel + '消费·低频流失' },
-                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#fbbf24', sub: statDaysLabel + '折前人均消费前15%' },
-                { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#f87171', sub: statDaysLabel + '消费客中沉睡+流失' },
-                { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#a78bfa', sub: statDaysLabel + '内下单≥2次占比' }
+                { label: '客户总数', value: Number(cm.total_customers || 0), color: '#EABBC5', sub: statDaysLabel + '有消费手机号' },
+                { label: '新客', value: Number(cm.new_count || nvr.new_count || 0), color: '#D18FA0', sub: statDaysLabel + '内首次消费' },
+                { label: '回头客', value: Number(cm.returning_count || nvr.returning_count || 0), color: '#D18FA0', sub: statDaysLabel + '内复访老客' },
+                { label: '活跃客', value: Number(cm.active_count || lifecycle.active || 0), color: '#86C9A2', sub: statDaysLabel + '消费·近14天活跃' },
+                { label: '临界客', value: Number(cm.at_risk_count || lifecycle.at_risk || 0), color: '#CFA14A', sub: statDaysLabel + '消费·14-30天未到' },
+                { label: '沉睡老客', value: Number(cm.dormant_count || lifecycle.dormant || 0), color: '#E58B98', sub: statDaysLabel + '消费·30天+未到' },
+                { label: '流失客', value: Number(cm.churned_count || lifecycle.churned || 0), color: '#97848E', sub: statDaysLabel + '消费·低频流失' },
+                { label: 'VIP人数', value: Number(cm.vip_count || 0), color: '#DDB66A', sub: statDaysLabel + '折前人均消费前15%' },
+                { label: '流失率', value: Number(cm.churn_rate || 0) + '%', color: '#EDA1AC', sub: statDaysLabel + '消费客中沉睡+流失' },
+                { label: '复购率', value: Number(cm.repurchase_rate || 0) + '%', color: '#D18FA0', sub: statDaysLabel + '内下单≥2次占比' }
             ];
-            var cmHtml = '<div style="margin-bottom:12px;"><div style="font-size:13px;color:#fff;font-weight:800;margin-bottom:8px;">📊 核心客户指标 <span style="font-size:11px;color:rgba(226,232,240,0.45);font-weight:500;">（' + statDaysLabel + ' POS消费客户）</span></div>'
+            var cmHtml = '<div style="margin-bottom:12px;"><div style="font-size:13px;color:#fff;font-weight:800;margin-bottom:8px;">📊 核心客户指标 <span style="font-size:11px;color:rgba(242,234,238,0.45);font-weight:500;">（' + statDaysLabel + ' POS消费客户）</span></div>'
                 + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;">'
                 + cmCards.map(function(c) {
-                    return '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px 8px;text-align:center;">'
+                    return '<div style="background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);border-radius:12px;padding:10px 8px;text-align:center;">'
                         + '<div style="font-size:21px;font-weight:800;color:' + c.color + ';line-height:1.1;white-space:nowrap;">' + c.value + '</div>'
-                        + '<div style="font-size:12px;color:rgba(226,232,240,0.82);margin-top:5px;font-weight:600;">' + c.label + '</div>'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.45);margin-top:2px;line-height:1.3;">' + c.sub + '</div>'
+                        + '<div style="font-size:12px;color:rgba(242,234,238,0.82);margin-top:5px;font-weight:600;">' + c.label + '</div>'
+                        + '<div style="font-size:10px;color:rgba(242,234,238,0.45);margin-top:2px;line-height:1.3;">' + c.sub + '</div>'
                         + '</div>';
                 }).join('') + '</div></div>';
 
@@ -828,7 +828,7 @@
                 byChannel[ch].payment += Number(m.payment_count) || 0;
             });
             var chLabels = { miniprogram: '小程序', wecom: '企微', sms: '短信', subscribe: '订阅消息', pos: 'POS', unknown: '其他' };
-            var chColors = { miniprogram: '#38bdf8', wecom: '#22c55e', sms: '#f59e0b', subscribe: '#a78bfa', pos: '#f472b6', unknown: '#94a3b8' };
+            var chColors = { miniprogram: '#EABBC5', wecom: '#86C9A2', sms: '#CFA14A', subscribe: '#D18FA0', pos: '#E58B98', unknown: '#97848E' };
             var chList = Object.keys(byChannel).filter(function(c) { return byChannel[c].scan > 0 || byChannel[c].auth > 0 || byChannel[c].claimed > 0; });
             var steps = [
                 { name: '扫码', count: total.scan, pct: 100 },
@@ -840,56 +840,56 @@
             var chBreakdownHtml = '';
             if (chList.length > 1) {
                 chBreakdownHtml = '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--pf-line);">'
-                    + '<div style="font-size:11px;color:rgba(226,232,240,0.5);margin-bottom:6px;"> 按渠道细分</div>'
+                    + '<div style="font-size:11px;color:rgba(242,234,238,0.5);margin-bottom:6px;"> 按渠道细分</div>'
                     + chList.map(function(ch) {
                         var d = byChannel[ch];
                         var label = chLabels[ch] || ch;
-                        var color = chColors[ch] || '#94a3b8';
-                        return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:rgba(226,232,240,0.6);padding:2px 0;">'
+                        var color = chColors[ch] || '#97848E';
+                        return '<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:rgba(242,234,238,0.6);padding:2px 0;">'
                             + '<span style="width:8px;height:8px;border-radius:2px;background:' + color + ';flex-shrink:0;"></span>'
                             + '<span style="flex:1;">' + label + '</span>'
                             + '<span>扫码' + d.scan + ' · 授权' + d.auth + ' · 领券' + d.claimed + ' · 核销' + d.redeem + '</span>'
                             + '</div>';
                     }).join('') + '</div>';
             }
-            var marketingNote = total.marketing > 0 ? '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-top:8px;"> 另：HRMS自动营销发券 ' + total.marketing + ' 次（不计入漏斗）</div>' : '';
-            document.getElementById('growth-funnel').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 漏斗仅统计小程序用户主动行为，HRMS自动营销发券单独展示</div>'
+            var marketingNote = total.marketing > 0 ? '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-top:8px;"> 另：HRMS自动营销发券 ' + total.marketing + ' 次（不计入漏斗）</div>' : '';
+            document.getElementById('growth-funnel').innerHTML = '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-bottom:8px;"> 漏斗仅统计小程序用户主动行为，HRMS自动营销发券单独展示</div>'
                 + steps.map(function(s, i) {
-                var barColor = s.pct < 10 ? '#ef4444' : s.pct < 30 ? '#f59e0b' : '#22c55e';
+                var barColor = s.pct < 10 ? '#E58B98' : s.pct < 30 ? '#CFA14A' : '#86C9A2';
                 return '<div style="margin-bottom:12px;">'
-                    + '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px;font-size:12px;color:rgba(226,232,240,0.78);">'
+                    + '<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:6px;font-size:12px;color:rgba(242,234,238,0.78);">'
                     + '<strong style="color:#fff;">' + s.name + '</strong><span>' + s.count + ' · ' + s.pct + '%</span></div>'
-                    + '<div style="height:10px;background:rgba(255,255,255,0.07);border-radius:999px;overflow:hidden;">'
+                    + '<div style="height:10px;background:rgba(242,234,238,0.07);border-radius:999px;overflow:hidden;">'
                     + '<div style="height:100%;width:' + Math.max(4, Math.min(100, s.pct)) + '%;background:' + barColor + ';border-radius:999px;"></div>'
                     + '</div></div>';
             }).join('') + marketingNote + chBreakdownHtml;
             if (!total.scan && !total.auth) {
-                document.getElementById('growth-funnel').innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:20px;">暂无数据</div>';
+                document.getElementById('growth-funnel').innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:20px;">暂无数据</div>';
             }
         }
 
         function renderGrowthAlerts(alerts) {
             var churnAlerts = alerts.filter(function(a) { return a.alert_type === 'churn' || /流失/.test(a.title || ''); });
             if (!churnAlerts.length) {
-                document.getElementById('growth-alerts').innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:20px;">暂无流失预警</div>';
+                document.getElementById('growth-alerts').innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:20px;">暂无流失预警</div>';
                 return;
             }
             document.getElementById('growth-alerts').innerHTML = churnAlerts.slice(0, 10).map(function(a) {
-                var sevColor = a.severity === 'high' ? '#ef4444' : a.severity === 'medium' ? '#f59e0b' : '#22c55e';
+                var sevColor = a.severity === 'high' ? '#E58B98' : a.severity === 'medium' ? '#CFA14A' : '#86C9A2';
                 var sevEmoji = a.severity === 'high' ? '🚨' : a.severity === 'medium' ? '⚠️' : 'ℹ️';
                 var sevZh = a.severity === 'high' ? '严重' : a.severity === 'medium' ? '中等' : '低';
                 var storeId = (a.store_id || '').replace(/'/g, "\\'");
                 var storeLabel = a.store_id ? ('🏪 ' + amStoreName(a.store_id)) : '🏪 未关联门店';
-                return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                     + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
                     + '<span style="font-size:13px;font-weight:800;color:#fff;line-height:1.35;">' + sevEmoji + ' ' + (a.title || '').slice(0, 48) + '</span>'
                     + '<span style="font-size:10px;padding:3px 8px;border-radius:999px;background:' + sevColor + ';color:#fff;flex:0 0 auto;">' + sevZh + '</span>'
                     + '</div>'
-                    + '<div style="margin-top:5px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);">' + storeLabel + '</span></div>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
+                    + '<div style="margin-top:5px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(234,187,197,0.14);color:#EABBC5;border:1px solid rgba(234,187,197,0.25);">' + storeLabel + '</span></div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,0.66);margin-top:6px;line-height:1.55;">' + (a.message || '').slice(0, 120) + '</div>'
                     + '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'
-                    + '<button data-click="alertActionRecall" data-arg="' + storeId + '" data-arg2="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
-                    + '<button data-click="alertActionDismiss" data-arg="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
+                    + '<button data-click="alertActionRecall" data-arg="' + storeId + '" data-arg2="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(207,161,74,0.15);color:#CFA14A;border:1px solid rgba(207,161,74,0.3);cursor:pointer;font-size:11px;"> 发送召回券</button>'
+                    + '<button data-click="alertActionDismiss" data-arg="' + String(a.alert_key || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 10px;border-radius:6px;background:rgba(134,201,162,0.15);color:#86C9A2;border:1px solid rgba(134,201,162,0.3);cursor:pointer;font-size:11px;">✅ 标记已处理</button>'
                     + '</div></div>';
             }).join('');
         }
@@ -940,15 +940,15 @@
             });
             var dates = Object.keys(byDate).sort();
             if (!dates.length) {
-                document.getElementById('growth-trends').innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:20px;">暂无数据</div>';
+                document.getElementById('growth-trends').innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:20px;">暂无数据</div>';
                 return;
             }
             var trendIndicators = [
-                { key: 'scan', label: '扫码', color: '#3b82f6' },
-                { key: 'auth', label: '授权', color: '#22c55e' },
-                { key: 'claimed', label: '领券', color: '#a78bfa' },
-                { key: 'redeem', label: '核销', color: '#f59e0b' },
-                { key: 'payment', label: '支付', color: '#f472b6' }
+                { key: 'scan', label: '扫码', color: '#E0A6B4' },
+                { key: 'auth', label: '授权', color: '#86C9A2' },
+                { key: 'claimed', label: '领券', color: '#D18FA0' },
+                { key: 'redeem', label: '核销', color: '#CFA14A' },
+                { key: 'payment', label: '支付', color: '#E58B98' }
             ];
             var activeKey = __growthTrendIndicator || 'scan';
             var barHeight = 120;
@@ -961,16 +961,16 @@
             var prevVal = prevDate ? (byDate[prevDate][activeKey] || 0) : 0;
             var changePct = prevVal > 0 ? (((curVal - prevVal) / prevVal) * 100).toFixed(1) : '0.0';
             var changeDir = curVal >= prevVal ? '↑' : '↓';
-            var changeColor = curVal >= prevVal ? '#22c55e' : '#ef4444';
+            var changeColor = curVal >= prevVal ? '#86C9A2' : '#E58B98';
             var daysLabel = document.getElementById('growth-days-filter')?.value || '30';
             var indicatorHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
-                + '<span style="font-size:11px;color:rgba(226,232,240,0.5);">指标：</span>'
+                + '<span style="font-size:11px;color:rgba(242,234,238,0.5);">指标：</span>'
                 + trendIndicators.map(function(ind) {
-                    return '<button data-click="switchTrendIndicator" data-arg="' + ind.key + '" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(255,255,255,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(226,232,240,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
+                    return '<button data-click="switchTrendIndicator" data-arg="' + ind.key + '" style="padding:3px 8px;border-radius:4px;font-size:11px;border:1px solid ' + (ind.key === activeKey ? ind.color : 'rgba(242,234,238,0.1)') + ';background:' + (ind.key === activeKey ? ind.color + '33' : 'transparent') + ';color:' + (ind.key === activeKey ? ind.color : 'rgba(242,234,238,0.5)') + ';cursor:pointer;">' + ind.label + '</button>';
                 }).join('')
                 + '<span style="margin-left:auto;font-size:11px;color:' + changeColor + ';">' + changeDir + ' ' + changePct + '%（较前一日）</span>'
                 + '</div>';
-            document.getElementById('growth-trends').innerHTML = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;"> 近' + daysLabel + '天核心指标趋势，数据来自小程序事件上报</div>'
+            document.getElementById('growth-trends').innerHTML = '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-bottom:8px;"> 近' + daysLabel + '天核心指标趋势，数据来自小程序事件上报</div>'
                 + indicatorHtml
                 + '<div style="display:flex;align-items:flex-end;gap:' + (colWidth * 0.25) + 'px;min-height:' + (barHeight + 30) + 'px;padding-top:10px;overflow-x:auto;">'
                 + dates.map(function(d) {
@@ -978,11 +978,11 @@
                     var val = s[activeKey] || 0;
                     var h = maxVal > 0 ? Math.round(val / maxVal * barHeight) : 0;
                     var activeInd = trendIndicators.find(function(ind) { return ind.key === activeKey; });
-                    var barColor = activeInd ? activeInd.color : '#3b82f6';
+                    var barColor = activeInd ? activeInd.color : '#E0A6B4';
                     return '<div style="display:flex;flex-direction:column;align-items:center;width:' + colWidth + 'px;">'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.6);margin-bottom:2px;white-space:nowrap;">' + val + '</div>'
+                        + '<div style="font-size:10px;color:rgba(242,234,238,0.6);margin-bottom:2px;white-space:nowrap;">' + val + '</div>'
                         + '<div style="width:12px;background:' + barColor + ';border-radius:3px 3px 0 0;height:' + h + 'px;"></div>'
-                        + '<div style="font-size:10px;color:rgba(226,232,240,0.5);margin-top:4px;white-space:nowrap;">' + d.slice(5) + '</div>'
+                        + '<div style="font-size:10px;color:rgba(242,234,238,0.5);margin-top:4px;white-space:nowrap;">' + d.slice(5) + '</div>'
                         + '</div>';
                 }).join('')
                 + '</div>';
@@ -995,17 +995,17 @@
 
         function renderGrowthActions(actions) {
             if (!actions.length) {
-                document.getElementById('growth-actions').innerHTML = '<div style="color:rgba(226,232,240,0.4);padding:20px;">暂无行动建议</div>';
+                document.getElementById('growth-actions').innerHTML = '<div style="color:rgba(242,234,238,0.4);padding:20px;">暂无行动建议</div>';
                 return;
             }
             document.getElementById('growth-actions').innerHTML = actions.slice(0, 10).map(function(a) {
                 var status = a.status || '-';
-                var statusColor = status === 'executed' ? '#22c55e' : status === 'ignored' ? '#ef4444' : '#f59e0b';
-                return '<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);">'
+                var statusColor = status === 'executed' ? '#86C9A2' : status === 'ignored' ? '#E58B98' : '#CFA14A';
+                return '<div style="padding:12px 0;border-bottom:1px solid rgba(242,234,238,0.06);">'
                     + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">'
                     + '<div style="font-size:13px;font-weight:800;color:#fff;line-height:1.4;">💡 ' + (a.title || '').slice(0, 54) + '</div>'
                     + '<span style="font-size:10px;padding:3px 8px;border-radius:999px;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '55;white-space:nowrap;">' + status + '</span></div>'
-                    + '<div style="font-size:12px;color:rgba(226,232,240,0.66);margin-top:7px;line-height:1.55;">' + (a.detail || '-').slice(0, 150) + '</div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,0.66);margin-top:7px;line-height:1.55;">' + (a.detail || '-').slice(0, 150) + '</div>'
                     + '</div>';
             }).join('');
         }
@@ -1021,9 +1021,9 @@
             var isWeekend = data?.is_weekend;
             var dayType = holiday ? '🎯 ' + holiday : (isWeekend ? '🌿 周末' : '💼 工作日');
             el.innerHTML = '<div style="font-size:28px;font-weight:800;color:#fff;">' + temp + '</div>'
-                + '<div style="font-size:13px;color:rgba(226,232,240,0.7);margin-top:4px;">' + cond + ' · ' + season + '</div>'
-                + '<div style="font-size:12px;color:#38bdf8;margin-top:6px;">' + dayType + '</div>'
-                + (tips.length ? '<div style="margin-top:8px;">' + tips.map(function(t) { return '<div style="font-size:11px;color:rgba(226,232,240,0.55);padding:2px 0;">💡 ' + t + '</div>'; }).join('') + '</div>' : '');
+                + '<div style="font-size:13px;color:rgba(242,234,238,0.7);margin-top:4px;">' + cond + ' · ' + season + '</div>'
+                + '<div style="font-size:12px;color:#EABBC5;margin-top:6px;">' + dayType + '</div>'
+                + (tips.length ? '<div style="margin-top:8px;">' + tips.map(function(t) { return '<div style="font-size:11px;color:rgba(242,234,238,0.55);padding:2px 0;">💡 ' + t + '</div>'; }).join('') + '</div>' : '');
         }
 
         function renderGrowthActiveWindow(data) {
@@ -1033,15 +1033,15 @@
             var recs = Array.isArray(data?.recommendations) ? data.recommendations : [];
             var segments = Array.isArray(data?.segments) ? data.segments : [];
             var risk = Array.isArray(data?.repurchase_risk) ? data.repurchase_risk : [];
-            var html = '<div style="font-size:13px;font-weight:700;color:' + (pred !== '数据不足' ? '#22c55e' : 'rgba(226,232,240,0.5)') + ';margin-bottom:8px;">' + (pred !== '数据不足' ? '✅ ' + pred : '⏳ 暂无足够事件数据') + '</div>';
+            var html = '<div style="font-size:13px;font-weight:700;color:' + (pred !== '数据不足' ? '#86C9A2' : 'rgba(242,234,238,0.5)') + ';margin-bottom:8px;">' + (pred !== '数据不足' ? '✅ ' + pred : '⏳ 暂无足够事件数据') + '</div>';
             if (segments.length) {
-                html += '<div style="font-size:11px;color:rgba(226,232,240,0.55);margin-bottom:6px;">客群分布</div>';
+                html += '<div style="font-size:11px;color:rgba(242,234,238,0.55);margin-bottom:6px;">客群分布</div>';
                 segments.forEach(function(s) {
-                    html += '<div style="font-size:11px;color:rgba(226,232,240,0.5);padding:2px 0;">' + (s.lifecycle_stage || '-') + ': ' + (s.cnt || 0) + '人 · 触达窗口 ' + (s.top_window || '-') + '</div>';
+                    html += '<div style="font-size:11px;color:rgba(242,234,238,0.5);padding:2px 0;">' + (s.lifecycle_stage || '-') + ': ' + (s.cnt || 0) + '人 · 触达窗口 ' + (s.top_window || '-') + '</div>';
                 });
             }
             if (risk.length) {
-                html += '<div style="font-size:11px;color:#f59e0b;margin-top:6px;">⚠️ ' + risk[0].at_risk_count + '位客户复购临界</div>';
+                html += '<div style="font-size:11px;color:#CFA14A;margin-top:6px;">⚠️ ' + risk[0].at_risk_count + '位客户复购临界</div>';
             }
             el.innerHTML = html;
         }
@@ -1051,17 +1051,17 @@
             if (!el) return;
             var total = atRiskCount + churnedCount;
             var storeLabel = storeId ? amStoreName(storeId) : '全部门店';
-            var html = '<div style="font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:8px;">📌 基于客户最近到店时间自动判定：14-30天未到店=临界，30天+=流失</div>'
-                + '<div style="margin-bottom:8px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(56,189,248,0.14);color:#7dd3fc;border:1px solid rgba(56,189,248,0.25);">🏪 ' + storeLabel + '</span></div>'
+            var html = '<div style="font-size:11px;color:rgba(242,234,238,0.4);margin-bottom:8px;">📌 基于客户最近到店时间自动判定：14-30天未到店=临界，30天+=流失</div>'
+                + '<div style="margin-bottom:8px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(234,187,197,0.14);color:#EABBC5;border:1px solid rgba(234,187,197,0.25);">🏪 ' + storeLabel + '</span></div>'
                 + '<div style="display:flex;gap:10px;margin-bottom:12px;">'
-                + '<div style="flex:1;text-align:center;background:rgba(245,158,11,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#f59e0b;">' + atRiskCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">临界客户</div></div>'
-                + '<div style="flex:1;text-align:center;background:rgba(239,68,68,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#ef4444;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(226,232,240,0.6);margin-top:2px;">流失客户</div></div>'
+                + '<div style="flex:1;text-align:center;background:rgba(207,161,74,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#CFA14A;">' + atRiskCount + '</div><div style="font-size:11px;color:rgba(242,234,238,0.6);margin-top:2px;">临界客户</div></div>'
+                + '<div style="flex:1;text-align:center;background:rgba(229,139,152,0.08);border-radius:10px;padding:10px 4px;"><div style="font-size:24px;font-weight:800;color:#E58B98;">' + churnedCount + '</div><div style="font-size:11px;color:rgba(242,234,238,0.6);margin-top:2px;">流失客户</div></div>'
                 + '</div>';
             if (total > 0) {
-                html += '<button data-click="triggerRepurchase" data-arg="' + (storeId || '') + '" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
-                    + '<div style="font-size:10px;color:rgba(226,232,240,0.35);margin-top:6px;line-height:1.4;">⚡ 点击后将自动为这些客户创建「发券/内容触达」待办行动，请到「AI建议」Tab中逐条确认后执行，不会自动发送</div>';
+                html += '<button data-click="triggerRepurchase" data-arg="' + (storeId || '') + '" style="display:block;width:100%;box-sizing:border-box;min-height:44px;padding:11px 14px;border-radius:10px;background:rgba(207,161,74,0.2);color:#CFA14A;border:1px solid rgba(207,161,74,0.3);cursor:pointer;font-size:14px;font-weight:700;">🚀 立即触发复购行动</button>'
+                    + '<div style="font-size:10px;color:rgba(242,234,238,0.35);margin-top:6px;line-height:1.4;">⚡ 点击后将自动为这些客户创建「发券/内容触达」待办行动，请到「AI建议」Tab中逐条确认后执行，不会自动发送</div>';
             } else {
-                html += '<div style="font-size:12px;color:rgba(226,232,240,0.4);">当前无复购临界客户</div>';
+                html += '<div style="font-size:12px;color:rgba(242,234,238,0.4);">当前无复购临界客户</div>';
             }
             el.innerHTML = html;
         }
@@ -1092,20 +1092,20 @@
         key: 'new_welcome', name: '新客福利', desc: '暖色喜庆，适合拉新入会',
         style: '明亮暖色促销海报，橙红渐变背景，大字标题居中，节庆感与新客福利感强，适合餐饮拉新。',
         promptNotes: '商业餐饮KV，真实摄影质感，版式清晰，标题区留白充足，适合后期叠加中文文案，不要卡通插画。',
-        colors: { bg1: '#FF6B35', bg2: '#E63E1A', text: '#FFFFFF', accent: '#FFD700' },
+        colors: { bg1: '#DDB66A', bg2: '#C97686', text: '#F2EAEE', accent: '#DDB66A' },
         draw: function(ctx, w, h, d) {
-          var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#FF6B35'); g.addColorStop(1,'#E63E1A');
+          var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#DDB66A'); g.addColorStop(1,'#C97686');
           ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-          ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.beginPath(); ctx.arc(w*0.8,h*0.2,220,0,Math.PI*2); ctx.fill();
-          ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.beginPath(); ctx.arc(w*0.2,h*0.7,180,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(242,234,238,0.06)'; ctx.beginPath(); ctx.arc(w*0.8,h*0.2,220,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(242,234,238,0.04)'; ctx.beginPath(); ctx.arc(w*0.2,h*0.7,180,0,Math.PI*2); ctx.fill();
           ctx.textAlign='center';
-          ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='bold 72px sans-serif'; ctx.fillText('🎉', w/2, 160);
-          ctx.fillStyle='#FFFFFF'; ctx.font='bold 58px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 280);
-          ctx.font='28px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 350);
+          ctx.fillStyle='rgba(242,234,238,0.15)'; ctx.font='bold 72px sans-serif'; ctx.fillText('🎉', w/2, 160);
+          ctx.fillStyle='#F2EAEE'; ctx.font='bold 58px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 280);
+          ctx.font='28px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillStyle='rgba(242,234,238,0.85)'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 350);
           ctx.fillStyle='rgba(255,215,0,0.15)'; roundRect(ctx, w/2-160,420,320,160,20); ctx.fill();
-          ctx.fillStyle='#FFD700'; ctx.font='bold 44px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 540);
-          if(d.cta){ctx.fillStyle='#FFFFFF'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 620);}
-          ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='18px sans-serif'; ctx.fillText(d.store||'', w/2, h-100);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 44px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 540);
+          if(d.cta){ctx.fillStyle='#F2EAEE'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 620);}
+          ctx.fillStyle='rgba(242,234,238,0.5)'; ctx.font='18px sans-serif'; ctx.fillText(d.store||'', w/2, h-100);
           if (d.qrDataURL) { ctx.drawImage(d.qrDataURL, w/2-50, h-230, 100, 100); }
         }
       },
@@ -1113,19 +1113,19 @@
         key: 'recall', name: '老客召回', desc: '温暖怀旧，唤醒复购',
         style: '深灰暖金色老客召回海报，温暖克制，有情绪氛围与怀旧感，适合回流与私域触达。',
         promptNotes: '高级餐饮广告，真实食物摄影，情绪化暖光，文案区明确，不要过度复杂背景。',
-        colors: { bg1: '#2D3436', bg2: '#636E72', text: '#FFFFFF', accent: '#FDCB6E' },
+        colors: { bg1: '#1C181C', bg2: '#7A6B72', text: '#F2EAEE', accent: '#DDB66A' },
         draw: function(ctx, w, h, d) {
-          var g = ctx.createLinearGradient(0,0,w,0); g.addColorStop(0,'#2D3436'); g.addColorStop(1,'#636E72');
+          var g = ctx.createLinearGradient(0,0,w,0); g.addColorStop(0,'#1C181C'); g.addColorStop(1,'#7A6B72');
           ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
           ctx.fillStyle='rgba(253,203,110,0.08)'; ctx.beginPath(); ctx.arc(w/2,h/2,300,0,Math.PI*2); ctx.fill();
           ctx.textAlign='center';
           ctx.fillStyle='rgba(253,203,110,0.2)'; ctx.font='bold 60px sans-serif'; ctx.fillText('💝', w/2, 160);
-          ctx.fillStyle='#FDCB6E'; ctx.font='bold 50px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 290);
-          ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='24px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 360);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 50px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 290);
+          ctx.fillStyle='rgba(242,234,238,0.8)'; ctx.font='24px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 360);
           ctx.fillStyle='rgba(253,203,110,0.12)'; roundRect(ctx, w/2-170,410,340,140,16); ctx.fill();
-          ctx.fillStyle='#FDCB6E'; ctx.font='bold 40px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 520);
-          if(d.cta){ctx.fillStyle='#FFFFFF'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 600);}
-          ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 40px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 520);
+          if(d.cta){ctx.fillStyle='#F2EAEE'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 600);}
+          ctx.fillStyle='rgba(242,234,238,0.4)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
           if (d.qrDataURL) { ctx.drawImage(d.qrDataURL, w/2-45, h-210, 90, 90); }
         }
       },
@@ -1133,20 +1133,20 @@
         key: 'vip', name: 'VIP专享', desc: '高端黑金，高价值客户',
         style: '黑金高端会员海报，奢华克制，强质感，高净值会员礼遇方向。',
         promptNotes: '高端商业视觉，暗色背景，金属点缀，版面高级留白，不要廉价促销感。',
-        colors: { bg1: '#0A0A0A', bg2: '#1A1A2E', text: '#FFD700', accent: '#C5A55A' },
+        colors: { bg1: '#121012', bg2: '#1C181C', text: '#DDB66A', accent: '#CFA14A' },
         draw: function(ctx, w, h, d) {
-          var g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#0A0A0A'); g.addColorStop(1,'#1A1A2E');
+          var g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#121012'); g.addColorStop(1,'#1C181C');
           ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
           ctx.fillStyle='rgba(197,165,90,0.06)'; ctx.beginPath(); ctx.arc(w/2,h*0.4,260,0,Math.PI*2); ctx.fill();
           ctx.strokeStyle='rgba(197,165,90,0.2)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(w/2,h*0.4,280,0,Math.PI*2); ctx.stroke();
           ctx.textAlign='center';
-          ctx.fillStyle='#C5A55A'; ctx.font='bold 40px sans-serif'; ctx.fillText('👑 VIP', w/2, 150);
-          ctx.fillStyle='#FFD700'; ctx.font='bold 44px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 260);
-          ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='22px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 330);
+          ctx.fillStyle='#CFA14A'; ctx.font='bold 40px sans-serif'; ctx.fillText('👑 VIP', w/2, 150);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 44px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 260);
+          ctx.fillStyle='rgba(242,234,238,0.7)'; ctx.font='22px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 330);
           ctx.fillStyle='rgba(197,165,90,0.15)'; roundRect(ctx, w/2-180,380,360,150,20); ctx.fill();
-          ctx.fillStyle='#FFD700'; ctx.font='bold 38px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 490);
-          if(d.cta){ctx.fillStyle='#FFFFFF'; ctx.font='20px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
-          ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 38px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 490);
+          if(d.cta){ctx.fillStyle='#F2EAEE'; ctx.font='20px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
+          ctx.fillStyle='rgba(242,234,238,0.35)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
           if (d.qrDataURL) { ctx.drawImage(d.qrDataURL, w/2-45, h-210, 90, 90); }
         }
       },
@@ -1154,20 +1154,20 @@
         key: 'festival', name: '节日活动', desc: '喜庆节日风格',
         style: '节日庆典餐饮海报，红金色喜庆氛围，热烈但不土，适合节庆限时活动。',
         promptNotes: '节庆商业视觉，红金主色，留白足够，重点突出优惠与菜品，不要过度拥挤。',
-        colors: { bg1: '#C0392B', bg2: '#8E1B1B', text: '#FFFFFF', accent: '#FFD700' },
+        colors: { bg1: '#A96470', bg2: '#8F5762', text: '#F2EAEE', accent: '#DDB66A' },
         draw: function(ctx, w, h, d) {
-          var g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#C0392B'); g.addColorStop(1,'#8E1B1B');
+          var g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,'#A96470'); g.addColorStop(1,'#8F5762');
           ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
           ctx.fillStyle='rgba(255,215,0,0.07)'; ctx.beginPath(); ctx.arc(100,100,150,0,Math.PI*2); ctx.fill();
           ctx.fillStyle='rgba(255,215,0,0.07)'; ctx.beginPath(); ctx.arc(w-100,h-200,180,0,Math.PI*2); ctx.fill();
           ctx.textAlign='center';
           ctx.fillStyle='rgba(255,215,0,0.15)'; ctx.font='bold 56px sans-serif'; ctx.fillText('🎊', w/2, 140);
-          ctx.fillStyle='#FFD700'; ctx.font='bold 52px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 270);
-          ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='26px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 340);
-          ctx.fillStyle='rgba(255,255,255,0.12)'; roundRect(ctx, w/2-180,390,360,145,18); ctx.fill();
-          ctx.fillStyle='#FFFFFF'; ctx.font='bold 36px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 495);
-          if(d.cta){ctx.fillStyle='#FFD700'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
-          ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='18px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
+          ctx.fillStyle='#DDB66A'; ctx.font='bold 52px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 270);
+          ctx.fillStyle='rgba(242,234,238,0.85)'; ctx.font='26px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 340);
+          ctx.fillStyle='rgba(242,234,238,0.12)'; roundRect(ctx, w/2-180,390,360,145,18); ctx.fill();
+          ctx.fillStyle='#F2EAEE'; ctx.font='bold 36px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 495);
+          if(d.cta){ctx.fillStyle='#DDB66A'; ctx.font='22px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
+          ctx.fillStyle='rgba(242,234,238,0.45)'; ctx.font='18px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
           if (d.qrDataURL) { ctx.drawImage(d.qrDataURL, w/2-45, h-210, 90, 90); }
         }
       },
@@ -1175,19 +1175,19 @@
         key: 'new_dish', name: '新品推荐', desc: '清新简洁，突出菜品',
         style: '清新餐饮新品海报，重点突出一道主菜，现代简洁，偏编辑感。',
         promptNotes: '真实产品摄影，食物为主角，背景简洁，文字区清晰，适合新品上市。',
-        colors: { bg1: '#0F766E', bg2: '#065F46', text: '#FFFFFF', accent: '#34D399' },
+        colors: { bg1: '#4C7E60', bg2: '#4C7E60', text: '#F2EAEE', accent: '#86C9A2' },
         draw: function(ctx, w, h, d) {
-          var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#0F766E'); g.addColorStop(1,'#065F46');
+          var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#4C7E60'); g.addColorStop(1,'#4C7E60');
           ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-          ctx.fillStyle='rgba(52,211,153,0.05)'; ctx.beginPath(); ctx.arc(w*0.25,h*0.3,200,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(134,201,162,0.05)'; ctx.beginPath(); ctx.arc(w*0.25,h*0.3,200,0,Math.PI*2); ctx.fill();
           ctx.textAlign='center';
-          ctx.fillStyle='rgba(52,211,153,0.2)'; ctx.font='bold 50px sans-serif'; ctx.fillText('✨', w/2, 130);
-          ctx.fillStyle='#34D399'; ctx.font='bold 48px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 260);
-          ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='24px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 330);
-          ctx.fillStyle='rgba(52,211,153,0.12)'; roundRect(ctx, w/2-170,380,340,140,18); ctx.fill();
-          ctx.fillStyle='#FFFFFF'; ctx.font='bold 34px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 490);
-          if(d.cta){ctx.fillStyle='#34D399'; ctx.font='20px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
-          ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
+          ctx.fillStyle='rgba(134,201,162,0.2)'; ctx.font='bold 50px sans-serif'; ctx.fillText('✨', w/2, 130);
+          ctx.fillStyle='#86C9A2'; ctx.font='bold 48px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.fillText(d.title||'', w/2, 260);
+          ctx.fillStyle='rgba(242,234,238,0.8)'; ctx.font='24px "PingFang SC",sans-serif'; if(d.subtitle) ctx.fillText(d.subtitle, w/2, 330);
+          ctx.fillStyle='rgba(134,201,162,0.12)'; roundRect(ctx, w/2-170,380,340,140,18); ctx.fill();
+          ctx.fillStyle='#F2EAEE'; ctx.font='bold 34px sans-serif'; if(d.offer) ctx.fillText(d.offer, w/2, 490);
+          if(d.cta){ctx.fillStyle='#86C9A2'; ctx.font='20px "PingFang SC",sans-serif'; ctx.fillText(d.cta, w/2, 570);}
+          ctx.fillStyle='rgba(242,234,238,0.4)'; ctx.font='16px sans-serif'; ctx.fillText(d.store||'', w/2, h-90);
           if (d.qrDataURL) { ctx.drawImage(d.qrDataURL, w/2-45, h-210, 90, 90); }
         }
       }
@@ -1227,7 +1227,7 @@
         var imgUrl = savedTpl && savedTpl.image_url ? savedTpl.image_url : (t.image_url || '');
         if (imgUrl) thumbHtml = '<img src="' + escapeHtml(imgUrl) + '" style="width:100%;height:60px;object-fit:cover;border-radius:6px;margin-bottom:4px;">';
         return '<button data-click="selectPosterTemplate" data-arg="'+t.key+'" style="padding:8px;border-radius:8px;text-align:left;width:100%;'
-          + (sel ? 'background:'+(t.colors?.bg1||'#334155')+';color:#fff;border:2px solid '+(t.colors?.accent||'#a78bfa')+';' : 'background:rgba(255,255,255,0.06);color:rgba(226,232,240,0.7);border:1px solid rgba(255,255,255,0.12);')
+          + (sel ? 'background:'+(t.colors?.bg1||'#6E5F67')+';color:#fff;border:2px solid '+(t.colors?.accent||'#D18FA0')+';' : 'background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.7);border:1px solid rgba(242,234,238,0.12);')
           + 'cursor:pointer;font-size:12px;font-weight:'+(sel?'700':'400')+';">'
           + thumbHtml
           + '<span style="font-size:16px;">' + (sel?'◉':'○') + '</span> ' + t.name
@@ -1242,8 +1242,8 @@
       var tpl = POSTER_TEMPLATES.find(function(t) { return t.key === _selectedPosterTemplate; });
       if (!tpl) { host.innerHTML = ''; return; }
       host.innerHTML = '<div style="font-weight:700;color:#fff;margin-bottom:6px;">当前模板：' + escapeHtml(tpl.name || tpl.key || '-') + '</div>'
-        + '<div><span style="color:rgba(226,232,240,0.45);">风格：</span>' + escapeHtml(tpl.style || tpl.desc || '-') + '</div>'
-        + '<div style="margin-top:4px;"><span style="color:rgba(226,232,240,0.45);">Image2 附加约束：</span>' + escapeHtml(tpl.promptNotes || '无') + '</div>';
+        + '<div><span style="color:rgba(242,234,238,0.45);">风格：</span>' + escapeHtml(tpl.style || tpl.desc || '-') + '</div>'
+        + '<div style="margin-top:4px;"><span style="color:rgba(242,234,238,0.45);">Image2 附加约束：</span>' + escapeHtml(tpl.promptNotes || '无') + '</div>';
     }
 
     function renderPosterTemplateLibrary() {
@@ -1261,14 +1261,14 @@
         var thumb = t.image_url ? '<img src="' + escapeHtml(t.image_url) + '" style="width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;">' : '';
         var nameLabel = t._isBuiltin ? (t.name || t.template_key) : (t.name || t.template_key || '-');
         var isBuiltin = t._isBuiltin;
-        return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+        return '<div style="display:flex;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
           + thumb
           + '<div style="flex:1;min-width:0;color:#fff;font-weight:600;">' + escapeHtml(nameLabel) + '</div>'
-          + '<div style="color:rgba(226,232,240,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
-          + '<button data-click="editPosterTemplate" data-arg="' + t.template_key + '" style="padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#a5b4fc;border:none;cursor:pointer;font-size:10px;">编辑</button>'
-          + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(239,68,68,0.15);color:#fca5a5;border:none;cursor:pointer;font-size:10px;">删除</button>')
+          + '<div style="color:rgba(242,234,238,0.4);font-size:10px;margin-right:6px;">' + escapeHtml(t.category || '') + '</div>'
+          + '<button data-click="editPosterTemplate" data-arg="' + t.template_key + '" style="padding:2px 6px;border-radius:4px;background:rgba(209,143,160,0.15);color:#EABBC5;border:none;cursor:pointer;font-size:10px;">编辑</button>'
+          + (isBuiltin ? '' : '<button data-click="deletePosterTemplate" data-arg="' + t.id + '" data-arg-type="number" style="padding:2px 6px;border-radius:4px;background:rgba(229,139,152,0.15);color:#EDA1AC;border:none;cursor:pointer;font-size:10px;">删除</button>')
           + '</div>';
-      }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
+      }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:8px 0;font-size:11px;">暂无模板</div>';
     }
 
     function populatePosterStoreSelect() {
@@ -1294,8 +1294,8 @@
       if (!container) return;
       container.innerHTML = tags.map(function(tag) {
         var checked = selectedArr.indexOf(tag) >= 0 ? 'checked' : '';
-        return '<label style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);cursor:pointer;font-size:11px;color:rgba(226,232,240,0.8);">' +
-          '<input type="checkbox" value="' + escapeHtml(tag) + '" ' + checked + ' style="margin:0;width:14px;height:14px;accent-color:#6366f1;">' +
+        return '<label style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:rgba(209,143,160,0.08);border:1px solid rgba(209,143,160,0.2);cursor:pointer;font-size:11px;color:rgba(242,234,238,0.8);">' +
+          '<input type="checkbox" value="' + escapeHtml(tag) + '" ' + checked + ' style="margin:0;width:14px;height:14px;accent-color:#D18FA0;">' +
           escapeHtml(tag) + '</label>';
       }).join('');
     }
@@ -1387,16 +1387,16 @@
               desc: [saved.category, saved.channel].filter(Boolean).join(' · ') || '自定义模板',
               style: saved?.style_guide?.style || '自定义海报风格',
               promptNotes: saved?.style_guide?.prompt_notes || '遵循模板风格描述，保留清晰文本区。',
-              colors: { bg1: '#334155', bg2: '#0f172a', text: '#FFFFFF', accent: '#a78bfa' },
+              colors: { bg1: '#6E5F67', bg2: '#121012', text: '#F2EAEE', accent: '#D18FA0' },
               draw: function(ctx, w, h, d2) {
-                var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#334155'); g.addColorStop(1,'#0f172a');
+                var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#6E5F67'); g.addColorStop(1,'#121012');
                 ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
                 ctx.textAlign='left';
-                ctx.fillStyle='#ffffff'; ctx.font='bold 46px "PingFang SC","Microsoft YaHei",sans-serif'; if(d2.title) ctx.fillText(d2.title, 48, 140);
-                ctx.fillStyle='rgba(255,255,255,0.82)'; ctx.font='24px "PingFang SC",sans-serif'; if(d2.subtitle) ctx.fillText(d2.subtitle, 48, 190);
-                ctx.fillStyle='rgba(255,255,255,0.12)'; roundRect(ctx, 48, 250, w - 96, 120, 16); ctx.fill();
-                ctx.fillStyle='#a78bfa'; ctx.font='bold 34px sans-serif'; if(d2.offer) ctx.fillText(d2.offer, 48, 320);
-                ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='18px sans-serif'; ctx.fillText(d2.store || '', 48, h - 60);
+                ctx.fillStyle='#F2EAEE'; ctx.font='bold 46px "PingFang SC","Microsoft YaHei",sans-serif'; if(d2.title) ctx.fillText(d2.title, 48, 140);
+                ctx.fillStyle='rgba(242,234,238,0.82)'; ctx.font='24px "PingFang SC",sans-serif'; if(d2.subtitle) ctx.fillText(d2.subtitle, 48, 190);
+                ctx.fillStyle='rgba(242,234,238,0.12)'; roundRect(ctx, 48, 250, w - 96, 120, 16); ctx.fill();
+                ctx.fillStyle='#D18FA0'; ctx.font='bold 34px sans-serif'; if(d2.offer) ctx.fillText(d2.offer, 48, 320);
+                ctx.fillStyle='rgba(242,234,238,0.6)'; ctx.font='18px sans-serif'; ctx.fillText(d2.store || '', 48, h - 60);
               }
             };
             POSTER_TEMPLATES.push(local);
@@ -1688,14 +1688,14 @@
             var posters = d?.posters || [];
             var host = document.getElementById('poster-history-list');
             if (!host) return;
-            host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(226,232,240,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
-              return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
-                + (p.id ? '<button data-click="deleteGeneratedPoster" data-arg="' + p.id + '" data-arg-type="number" data-stop style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
-                + '<div style="aspect-ratio:3/4;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
-                + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(226,232,240,0.3);font-size:11px;">无预览</span>')
-                + '</div><div style="padding:6px;font-size:11px;color:rgba(226,232,240,0.6);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">'
+            host.innerHTML = posters.length ? '<div style="grid-column:1/-1;font-size:11px;color:rgba(242,234,238,0.4);margin-bottom:4px;">共 ' + posters.length + ' 张</div>' + posters.slice(0, 30).map(function(p) {
+              return '<div style="border:1px solid rgba(242,234,238,0.08);border-radius:8px;overflow:hidden;cursor:pointer;position:relative;" data-click="open" data-arg="' + (p.output_url || '#') + '">'
+                + (p.id ? '<button data-click="deleteGeneratedPoster" data-arg="' + p.id + '" data-arg-type="number" data-stop style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:6px;background:rgba(0,0,0,0.5);color:#EDA1AC;border:none;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;z-index:2;">✕</button>' : '')
+                + '<div style="aspect-ratio:3/4;background:rgba(242,234,238,0.04);display:flex;align-items:center;justify-content:center;overflow:hidden;">'
+                + (p.output_url ? '<img src="' + p.output_url + '" loading="lazy" style="width:100%;height:100%;object-fit:cover;">' : '<span style="color:rgba(242,234,238,0.3);font-size:11px;">无预览</span>')
+                + '</div><div style="padding:6px;font-size:11px;color:rgba(242,234,238,0.6);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;">'
                 + (p.title || '-') + '</div></div>';
-            }).join('') : '<div style="color:rgba(226,232,240,0.4);grid-column:1/-1;padding:20px;">暂无已生成海报</div>';
+            }).join('') : '<div style="color:rgba(242,234,238,0.4);grid-column:1/-1;padding:20px;">暂无已生成海报</div>';
       } catch (e) { /* ignore */ }
     }
 
@@ -1737,13 +1737,13 @@
         var host = document.getElementById('public-channels-list');
         if (!host) return;
         host.innerHTML = _growthPublicChannels.length ? _growthPublicChannels.map(function(ch) {
-          return '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+          return '<div style="padding:10px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
             + '<div style="color:#fff;font-weight:700;">' + escapeHtml(ch.name || ch.channel_key || '-') + '</div>'
-            + '<div style="margin-top:4px;color:rgba(226,232,240,0.55);">' + escapeHtml([ch.channel_key, ch.platform, growthStoreName(ch.store_id || ''), ch.owner_username].filter(Boolean).join(' · ')) + '</div>'
+            + '<div style="margin-top:4px;color:rgba(242,234,238,0.55);">' + escapeHtml([ch.channel_key, ch.platform, growthStoreName(ch.store_id || ''), ch.owner_username].filter(Boolean).join(' · ')) + '</div>'
             + '</div>';
-        }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;">暂无渠道台账</div>';
+        }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;">暂无渠道台账</div>';
       } catch (e) {
-        document.getElementById('public-channels-list').innerHTML = '<div style="color:#ef4444;font-size:12px;">渠道加载失败</div>';
+        document.getElementById('public-channels-list').innerHTML = '<div style="color:#E58B98;font-size:12px;">渠道加载失败</div>';
       }
     }
 
@@ -1782,22 +1782,22 @@
         var host = document.getElementById('public-tasks-list');
         if (!host) return;
         host.innerHTML = tasks.length ? tasks.map(function(t) {
-          var statusColor = t.status === 'published' ? '#22c55e' : t.status === 'planned' ? '#f59e0b' : '#94a3b8';
+          var statusColor = t.status === 'published' ? '#86C9A2' : t.status === 'planned' ? '#CFA14A' : '#97848E';
           var copyText = escapeHtml(String(t.copy_text || '').replace(/'/g, '&#39;'));
           var posterUrl = escapeHtml(String(t.poster_url || ''));
-          return '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+          return '<div style="padding:8px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
             + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">'
             + '<div style="color:#fff;font-weight:600;">' + (t.title || '-').slice(0, 40) + '</div>'
             + '<span style="font-size:10px;padding:2px 6px;border-radius:999px;background:' + statusColor + '22;color:' + statusColor + ';">' + escapeHtml(growthStatusLabel(t.status || '-')) + '</span>'
             + '</div>'
-            + '<div style="color:rgba(226,232,240,0.5);margin-top:3px;">' + escapeHtml(growthChannelLabel(t.channel_key || '-')) + (t.store_id ? ' · ' + escapeHtml(growthStoreName(t.store_id)) : '') + '</div>'
-            + (t.content_brief ? '<div style="color:rgba(226,232,240,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(t.content_brief).slice(0, 56)) + '</div>' : '')
+            + '<div style="color:rgba(242,234,238,0.5);margin-top:3px;">' + escapeHtml(growthChannelLabel(t.channel_key || '-')) + (t.store_id ? ' · ' + escapeHtml(growthStoreName(t.store_id)) : '') + '</div>'
+            + (t.content_brief ? '<div style="color:rgba(242,234,238,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(t.content_brief).slice(0, 56)) + '</div>' : '')
             + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'
-            + '<button data-click="copyPublicTaskText" data-arg="' + String(t.copy_text || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(99,102,241,0.18);color:#c4b5fd;cursor:pointer;font-size:11px;">复制文案</button>'
-            + (t.poster_url ? '<button data-click="hrmsWindowOpen" data-arg="' + String(t.poster_url || '') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(14,165,233,0.18);color:#7dd3fc;cursor:pointer;font-size:11px;">打开海报</button>' : '')
+            + '<button data-click="copyPublicTaskText" data-arg="' + String(t.copy_text || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(209,143,160,0.18);color:#EABBC5;cursor:pointer;font-size:11px;">复制文案</button>'
+            + (t.poster_url ? '<button data-click="hrmsWindowOpen" data-arg="' + String(t.poster_url || '') + '" style="padding:4px 8px;border:none;border-radius:6px;background:rgba(209,143,160,0.18);color:#EABBC5;cursor:pointer;font-size:11px;">打开海报</button>' : '')
             + '</div>'
             + '</div>';
-        }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:16px;">暂无品宣任务</div>';
+        }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:16px;">暂无品宣任务</div>';
       } catch (e) { /* ignore */ }
     }
 
@@ -1849,11 +1849,11 @@
         var host = document.getElementById('public-channel-effects');
         if (!host) return;
         host.innerHTML = effects.length ? effects.map(function(e) {
-          return '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+          return '<div style="padding:8px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
             + '<div style="color:#fff;font-weight:600;">' + (e.channel || e.platform || '-') + '</div>'
-            + '<div style="color:rgba(226,232,240,0.5);margin-top:3px;">发布' + (e.published || e.publish_count || e.total_items || 0) + ' / 总计划' + (e.total_items || e.total || 0) + ' · 扫码' + (e.total_scans || e.scan_count || 0) + ' · 收入¥' + ((e.total_revenue_fen || e.revenue_fen || 0)/100).toFixed(0) + '</div>'
+            + '<div style="color:rgba(242,234,238,0.5);margin-top:3px;">发布' + (e.published || e.publish_count || e.total_items || 0) + ' / 总计划' + (e.total_items || e.total || 0) + ' · 扫码' + (e.total_scans || e.scan_count || 0) + ' · 收入¥' + ((e.total_revenue_fen || e.revenue_fen || 0)/100).toFixed(0) + '</div>'
             + '</div>';
-        }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:16px;">暂无渠道数据</div>';
+        }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:16px;">暂无渠道数据</div>';
       } catch (e) { /* ignore */ }
     }
 
@@ -1866,12 +1866,12 @@
         if (!host) return;
         host.innerHTML = items.length ? items.map(function(i) {
           var dateStr = i.publish_date ? String(i.publish_date).slice(0, 10) : '-';
-          return '<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;">'
+          return '<div style="padding:8px 0;border-bottom:1px solid rgba(242,234,238,0.05);font-size:12px;">'
             + '<div style="color:#fff;font-weight:600;">' + (i.title || '-').slice(0, 40) + '</div>'
-            + '<div style="color:rgba(226,232,240,0.5);margin-top:3px;">' + dateStr + ' · ' + escapeHtml(growthChannelLabel(i.channel || '')) + (i.store_id ? ' · ' + escapeHtml(growthStoreName(i.store_id)) : '') + '</div>'
-            + (i.content_brief ? '<div style="color:rgba(226,232,240,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(i.content_brief).slice(0, 56)) + '</div>' : '')
+            + '<div style="color:rgba(242,234,238,0.5);margin-top:3px;">' + dateStr + ' · ' + escapeHtml(growthChannelLabel(i.channel || '')) + (i.store_id ? ' · ' + escapeHtml(growthStoreName(i.store_id)) : '') + '</div>'
+            + (i.content_brief ? '<div style="color:rgba(242,234,238,0.42);margin-top:4px;line-height:1.5;">' + escapeHtml(String(i.content_brief).slice(0, 56)) + '</div>' : '')
             + '</div>';
-        }).join('') : '<div style="color:rgba(226,232,240,0.4);padding:16px;">暂无内容计划</div>';
+        }).join('') : '<div style="color:rgba(242,234,238,0.4);padding:16px;">暂无内容计划</div>';
       } catch (e) { /* ignore */ }
     }
 
@@ -1917,15 +1917,15 @@
          var host = document.getElementById('creative-assets-list');
          if (!host) return;
          host.innerHTML = assets.length ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;">' + assets.map(function(a) {
-           var thumb = a.url ? '<img src="' + escapeHtml(a.url) + '" loading="lazy" style="width:100%;height:80px;object-fit:cover;border-radius:6px;display:block;">' : '<div style="width:100%;height:80px;background:rgba(255,255,255,0.04);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(226,232,240,0.2);">🖼</div>';
-           return '<div style="position:relative;border:1px solid rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;">'
+           var thumb = a.url ? '<img src="' + escapeHtml(a.url) + '" loading="lazy" style="width:100%;height:80px;object-fit:cover;border-radius:6px;display:block;">' : '<div style="width:100%;height:80px;background:rgba(242,234,238,0.04);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(242,234,238,0.2);">🖼</div>';
+           return '<div style="position:relative;border:1px solid rgba(242,234,238,0.06);border-radius:8px;overflow:hidden;">'
              + thumb
-             + '<div style="padding:4px 6px;font-size:10px;color:rgba(226,232,240,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.name || '-') + '</div>'
-             + '<button data-click="deleteCreativeAsset" data-arg="' + a.id + '" data-arg-type="number" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#fca5a5;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
+             + '<div style="padding:4px 6px;font-size:10px;color:rgba(242,234,238,0.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.name || '-') + '</div>'
+             + '<button data-click="deleteCreativeAsset" data-arg="' + a.id + '" data-arg-type="number" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:4px;background:rgba(0,0,0,0.5);color:#EDA1AC;border:none;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>'
              + '</div>';
-         }).join('') + '</div>' : '<div style="color:rgba(226,232,240,0.4);padding:10px 0;font-size:12px;">暂无素材</div>';
+         }).join('') + '</div>' : '<div style="color:rgba(242,234,238,0.4);padding:10px 0;font-size:12px;">暂无素材</div>';
       } catch (e) {
-        document.getElementById('creative-assets-list').innerHTML = '<div style="color:#ef4444;font-size:12px;">素材加载失败</div>';
+        document.getElementById('creative-assets-list').innerHTML = '<div style="color:#E58B98;font-size:12px;">素材加载失败</div>';
       }
     }
 
@@ -2132,38 +2132,38 @@
       el.innerHTML = `
         <div style="
           width:100%;max-width:560px;
-          background:#1a1a1f;border-radius:20px 20px 0 0;
-          border:1px solid rgba(255,255,255,0.1);
+          background:#1C181C;border-radius:20px 20px 0 0;
+          border:1px solid rgba(242,234,238,0.1);
           max-height:85vh;overflow-y:auto;
           padding:0 0 env(safe-area-inset-bottom,0) 0;
         ">
-          <div style="position:sticky;top:0;background:#1a1a1f;z-index:1;padding:16px 20px 12px;">
+          <div style="position:sticky;top:0;background:#1C181C;z-index:1;padding:16px 20px 12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div>
                 <div id="punch-dish-name" style="font-size:17px;font-weight:700;color:#fff;"></div>
-                <div id="punch-dish-station" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
+                <div id="punch-dish-station" style="font-size:12px;color:rgba(242,234,238,0.4);margin-top:2px;"></div>
               </div>
               <button data-click="closePunchCard" style="
                 width:32px;height:32px;border-radius:50%;border:none;
-                background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);
+                background:rgba(242,234,238,0.08);color:rgba(242,234,238,0.6);
                 font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
               ">×</button>
             </div>
-            <div id="punch-progress-bar" style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:12px;">
-              <div id="punch-progress-fill" style="height:100%;width:0%;background:#22c55e;border-radius:2px;transition:width .4s;"></div>
+            <div id="punch-progress-bar" style="height:3px;background:rgba(242,234,238,0.08);border-radius:2px;margin-top:12px;">
+              <div id="punch-progress-fill" style="height:100%;width:0%;background:#86C9A2;border-radius:2px;transition:width .4s;"></div>
             </div>
-            <div id="punch-progress-text" style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:5px;text-align:right;"></div>
+            <div id="punch-progress-text" style="font-size:11px;color:rgba(242,234,238,0.35);margin-top:5px;text-align:right;"></div>
           </div>
           <!-- 半成品组成：仅出品经理及以上可见 -->
-          <div id="punch-components" style="display:none;margin:0 16px 10px;padding:10px 14px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.18);border-radius:10px;">
+          <div id="punch-components" style="display:none;margin:0 16px 10px;padding:10px 14px;background:rgba(134,201,162,0.06);border:1px solid rgba(134,201,162,0.18);border-radius:10px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
-              <div style="font-size:11px;font-weight:700;color:#6ee7b7;letter-spacing:.05em;">📋 配方组成</div>
-              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(251,191,36,0.35);background:rgba(251,191,36,0.1);color:#fcd34d;font-size:11px;cursor:pointer;" data-click="openRecipeStepViewerFromPunch">👁 查看工艺</button>
+              <div style="font-size:11px;font-weight:700;color:#9ED9B4;letter-spacing:.05em;">📋 配方组成</div>
+              <button id="punch-view-steps-btn" style="display:none;padding:4px 10px;border-radius:16px;border:1px solid rgba(221,182,106,0.35);background:rgba(221,182,106,0.1);color:#DDB66A;font-size:11px;cursor:pointer;" data-click="openRecipeStepViewerFromPunch">👁 查看工艺</button>
             </div>
             <div id="punch-components-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
           </div>
           <div id="punch-steps-list" style="padding:4px 16px 24px;display:grid;gap:8px;"></div>
-          <div id="punch-no-sop" style="display:none;padding:32px 20px;text-align:center;color:rgba(255,255,255,0.35);font-size:14px;">
+          <div id="punch-no-sop" style="display:none;padding:32px 20px;text-align:center;color:rgba(242,234,238,0.35);font-size:14px;">
             📋 该菜品的SOP步骤尚未录入飞书表格<br>
             <span style="font-size:12px;margin-top:6px;display:block;">录入后系统自动同步，无需重启</span>
           </div>
@@ -2179,13 +2179,13 @@
       el.id = 'recipe-step-viewer-modal';
       el.style.cssText = 'display:none;position:fixed;inset:0;z-index:3500;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);align-items:center;justify-content:center;';
       el.innerHTML = `
-        <div style="width:min(540px,96vw);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(135deg,rgba(22,22,40,0.98),rgba(14,14,28,0.98));border:1px solid rgba(255,255,255,0.1);border-radius:20px;overflow:hidden;">
-          <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div style="width:min(540px,96vw);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(135deg,rgba(22,22,40,0.98),rgba(14,14,28,0.98));border:1px solid rgba(242,234,238,0.1);border-radius:20px;overflow:hidden;">
+          <div style="padding:16px 20px;border-bottom:1px solid rgba(242,234,238,0.07);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
             <div>
-              <div id="rsv-dish-name" style="font-size:16px;font-weight:700;color:#e2e8f0;"></div>
-              <div id="rsv-comp-name" style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px;"></div>
+              <div id="rsv-dish-name" style="font-size:16px;font-weight:700;color:#F2EAEE;"></div>
+              <div id="rsv-comp-name" style="font-size:12px;color:rgba(242,234,238,0.4);margin-top:2px;"></div>
             </div>
-            <button data-click="closeRecipeStepViewer" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);cursor:pointer;font-size:18px;">×</button>
+            <button data-click="closeRecipeStepViewer" style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(242,234,238,0.06);color:rgba(242,234,238,0.6);cursor:pointer;font-size:18px;">×</button>
           </div>
           <!-- comp tabs -->
           <div id="rsv-comp-tabs" style="display:flex;gap:6px;padding:10px 16px 0;overflow-x:auto;flex-shrink:0;"></div>
@@ -2228,7 +2228,7 @@
       document.getElementById('rsv-dish-name').textContent = dishName || '配方工艺';
       document.getElementById('rsv-comp-name').textContent = '加载中…';
       document.getElementById('rsv-comp-tabs').innerHTML = '';
-      document.getElementById('rsv-steps-list').innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);padding:32px;">加载中…</div>';
+      document.getElementById('rsv-steps-list').innerHTML = '<div style="text-align:center;color:rgba(242,234,238,0.3);padding:32px;">加载中…</div>';
       try {
         const r = await fetch(`/api/recipes/${recipeId}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('hrms_token')}` } });
         const data = await r.json();
@@ -2238,7 +2238,7 @@
         _renderRsvTabs();
         _renderRsvSteps(0);
       } catch(e) {
-        document.getElementById('rsv-steps-list').innerHTML = `<div style="color:#f87171;padding:20px;">${e.message}</div>`;
+        document.getElementById('rsv-steps-list').innerHTML = `<div style="color:#EDA1AC;padding:20px;">${e.message}</div>`;
       }
     }
 
@@ -2247,7 +2247,7 @@
       const tabs = document.getElementById('rsv-comp-tabs');
       tabs.innerHTML = comps.map((c, i) => `
         <button id="rsv-tab-${i}" data-click="_renderRsvSteps" data-arg="${i}" data-arg-type="number"
-          style="padding:6px 14px;border-radius:20px;border:1px solid rgba(99,102,241,0.3);background:${i===0?'rgba(99,102,241,0.18)':'rgba(255,255,255,0.04)'};color:${i===0?'#a5b4fc':'rgba(255,255,255,0.5)'};font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+          style="padding:6px 14px;border-radius:20px;border:1px solid rgba(209,143,160,0.3);background:${i===0?'rgba(209,143,160,0.18)':'rgba(242,234,238,0.04)'};color:${i===0?'#EABBC5':'rgba(242,234,238,0.5)'};font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;">
           ${c.name}
         </button>`).join('');
     }
@@ -2260,13 +2260,13 @@
       (_rsvRecipe?.components || []).forEach((_, i) => {
         const t = document.getElementById(`rsv-tab-${i}`);
         if (!t) return;
-        t.style.background = i === compIdx ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.04)';
-        t.style.color      = i === compIdx ? '#a5b4fc' : 'rgba(255,255,255,0.5)';
+        t.style.background = i === compIdx ? 'rgba(209,143,160,0.18)' : 'rgba(242,234,238,0.04)';
+        t.style.color      = i === compIdx ? '#EABBC5' : 'rgba(242,234,238,0.5)';
       });
       document.getElementById('rsv-comp-name').textContent = `${comp.name} · ${(comp.steps||[]).length} 步`;
       const list = document.getElementById('rsv-steps-list');
       if (!comp.steps?.length) {
-        list.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);padding:32px;">该半成品暂无工艺步骤</div>';
+        list.innerHTML = '<div style="text-align:center;color:rgba(242,234,238,0.3);padding:32px;">该半成品暂无工艺步骤</div>';
         return;
       }
       list.innerHTML = comp.steps.map((s, i) => {
@@ -2278,12 +2278,12 @@
             }
           </div>` : '';
         return `
-          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 14px;">
+          <div style="background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.08);border-radius:12px;padding:12px 14px;">
             <div style="display:flex;gap:10px;align-items:flex-start;">
-              <div style="width:26px;height:26px;border-radius:50%;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
-              <div style="font-size:13px;color:#e2e8f0;line-height:1.6;flex:1;">${s.instruction}</div>
+              <div style="width:26px;height:26px;border-radius:50%;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.4);color:#EABBC5;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
+              <div style="font-size:13px;color:#F2EAEE;line-height:1.6;flex:1;">${s.instruction}</div>
               ${s.media_url ? `<button data-click="openMediaLightbox" data-arg="${s.media_url}" data-arg2="${s.media_type||'image'}" title="查看${s.media_type==='video'?'视频':'图片'}"
-                style="width:30px;height:30px;border-radius:8px;border:none;background:rgba(99,102,241,0.15);color:#a5b4fc;cursor:pointer;font-size:14px;flex-shrink:0;">${s.media_type==='video'?'▶':'🔍'}</button>` : ''}
+                style="width:30px;height:30px;border-radius:8px;border:none;background:rgba(209,143,160,0.15);color:#EABBC5;cursor:pointer;font-size:14px;flex-shrink:0;">${s.media_type==='video'?'▶':'🔍'}</button>` : ''}
             </div>
             ${mediaHtml}
           </div>`;
@@ -2421,8 +2421,8 @@
           <div class="kitchen-progress-card">
             <div class="kitchen-progress-card__ring">
               <svg viewBox="0 0 64 64" style="width:72px;height:72px;transform:rotate(-90deg);">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="5"/>
-                <circle cx="32" cy="32" r="28" fill="none" stroke="${pct===100?'#5eead4':pct>=50?'#ffc46b':'#6d7cff'}" stroke-width="5"
+                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(242,234,238,0.08)" stroke-width="5"/>
+                <circle cx="32" cy="32" r="28" fill="none" stroke="${pct===100?'#86C9A2':pct>=50?'#DDB66A':'#E0A6B4'}" stroke-width="5"
                   stroke-dasharray="${Math.round(pct/100*175.9)} 175.9" stroke-linecap="round"/>
               </svg>
               <div class="kitchen-progress-card__value">${pct}%</div>
@@ -2463,11 +2463,11 @@
           var overdueCount = rows.filter(t => !t.confirmed && kitchenTaskTimingState(t.schedule_time).overdue).length;
           return `<div id="kitchen-group-${timeKey.replace(':','')}" class="kitchen-task-group">
             <div class="kitchen-task-group__head">
-              <div class="kitchen-task-group__time" style="color:${overdueCount?'#ffd1d7':'rgba(238,241,250,0.88)'};">
+              <div class="kitchen-task-group__time" style="color:${overdueCount?'#F1C5CC':'rgba(238,241,250,0.88)'};">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                 ${timeKey}
               </div>
-              <div class="kitchen-task-group__meta" style="color:${overdueCount?'#ffd1d7':'rgba(238,241,250,0.52)'};">${doneCount}/${rows.length}${overdueCount? '<br>'+overdueCount+' 项超时':''}</div>
+              <div class="kitchen-task-group__meta" style="color:${overdueCount?'#F1C5CC':'rgba(238,241,250,0.52)'};">${doneCount}/${rows.length}${overdueCount? '<br>'+overdueCount+' 项超时':''}</div>
             </div>
             <div class="kitchen-task-stack">${rows.map(t => kitchenTaskCard(t, station, store)).join('')}</div>
           </div>`;
@@ -2489,9 +2489,9 @@
       var target = new Date(now);
       target.setHours(Number(hhmm[0] || 0), Number(hhmm[1] || 0), 0, 0);
       var diffMs = now.getTime() - target.getTime();
-      if (diffMs > 30 * 60 * 1000) return { label: '超时', color: '#ef4444', overdue: true };
-      if (diffMs > 0) return { label: '进行中', color: '#f59e0b', overdue: false };
-      return { label: '待执行', color: '#38bdf8', overdue: false };
+      if (diffMs > 30 * 60 * 1000) return { label: '超时', color: '#E58B98', overdue: true };
+      if (diffMs > 0) return { label: '进行中', color: '#CFA14A', overdue: false };
+      return { label: '待执行', color: '#EABBC5', overdue: false };
     }
 
     function kitchenTaskCard(task, station, store) {
@@ -2499,17 +2499,17 @@
       const dishEsc = task.dish_name.replace(/'/g, "\\'");
       const scheduleEsc = String(task.schedule_time || '').replace(/'/g, "\\'");
       const timing = kitchenTaskTimingState(task.schedule_time);
-      const accent = done ? '#5eead4' : timing.overdue ? '#ff7a90' : timing.label === '进行中' ? '#ffc46b' : '#6d7cff';
-      const bgColor = done ? 'rgba(94,234,212,0.08)' : timing.overdue ? 'rgba(255,122,144,0.08)' : timing.label === '进行中' ? 'rgba(255,196,107,0.08)' : 'rgba(109,124,255,0.08)';
+      const accent = done ? '#86C9A2' : timing.overdue ? '#E58B98' : timing.label === '进行中' ? '#DDB66A' : '#E0A6B4';
+      const bgColor = done ? 'rgba(134,201,162,0.08)' : timing.overdue ? 'rgba(229,139,152,0.08)' : timing.label === '进行中' ? 'rgba(255,196,107,0.08)' : 'rgba(224,166,180,0.08)';
       return `
         <div data-click="openPunchCard" data-arg="${dishEsc}" data-arg2="${station}" data-arg3="${store}" data-arg4="${scheduleEsc}" style="
-          background:${bgColor};border-color:${done ? 'rgba(94,234,212,0.28)' : timing.overdue ? 'rgba(255,122,144,0.28)' : 'rgba(255,255,255,0.12)'};
+          background:${bgColor};border-color:${done ? 'rgba(134,201,162,0.28)' : timing.overdue ? 'rgba(229,139,152,0.28)' : 'rgba(242,234,238,0.12)'};
           ${done ? 'opacity:0.7;' : ''}
         " class="kitchen-task-card">
           <div class="kitchen-task-card__row">
-            <div class="kitchen-task-card__icon" style="background:${done ? 'rgba(94,234,212,0.18)' : timing.overdue ? 'rgba(255,122,144,0.18)' : 'rgba(109,124,255,0.18)'};color:${accent};border-color:${done ? 'rgba(94,234,212,0.3)' : timing.overdue ? 'rgba(255,122,144,0.3)' : 'rgba(109,124,255,0.32)'};">${done ? '✓' : task.is_prep ? '🧂' : '🍽'}</div>
+            <div class="kitchen-task-card__icon" style="background:${done ? 'rgba(134,201,162,0.18)' : timing.overdue ? 'rgba(229,139,152,0.18)' : 'rgba(224,166,180,0.18)'};color:${accent};border-color:${done ? 'rgba(134,201,162,0.3)' : timing.overdue ? 'rgba(229,139,152,0.3)' : 'rgba(224,166,180,0.32)'};">${done ? '✓' : task.is_prep ? '🧂' : '🍽'}</div>
             <div style="flex:1;min-width:0;">
-              <div class="kitchen-task-card__title" style="color:${done?'rgba(238,241,250,0.56)':'#eef1fa'};${done?'text-decoration:line-through;':''}">
+              <div class="kitchen-task-card__title" style="color:${done?'rgba(238,241,250,0.56)':'#F2EAEE'};${done?'text-decoration:line-through;':''}">
                 ${task.dish_name}
               </div>
               <div class="kitchen-task-card__chips">
@@ -2518,7 +2518,7 @@
                 ${done && task.confirmed_at ? `<span class="kitchen-task-card__chip">完成 ${String(task.confirmed_at).slice(11,16)}</span>` : ''}
               </div>
               ${!done && task.critical_step_name
-                ? `<div class="kitchen-task-card__hint" style="color:#ffc46b;">⚡ 关键控制点：${task.critical_step_name}</div>`
+                ? `<div class="kitchen-task-card__hint" style="color:#DDB66A;">⚡ 关键控制点：${task.critical_step_name}</div>`
                 : !done ? `<div class="kitchen-task-card__hint">点击进入逐步骤打点，按当前档口节奏完成确认。</div>` : ''}
             </div>
             ${!done ? `<div class="kitchen-task-card__arrow">▸</div>` : ''}
@@ -2538,7 +2538,7 @@
       document.getElementById('punch-no-sop').style.display = 'none';
       document.getElementById('punch-components').style.display = 'none';
       document.getElementById('punch-steps-list').innerHTML =
-        '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.3);font-size:13px;">加载中…</div>';
+        '<div style="padding:20px;text-align:center;color:rgba(242,234,238,0.3);font-size:13px;">加载中…</div>';
 
       // 出品经理及以上：异步加载半成品组成（不阻塞步骤加载）
       const role = currentUser?.role || '';
@@ -2553,7 +2553,7 @@
               const listEl = document.getElementById('punch-components-list');
               const viewBtn = document.getElementById('punch-view-steps-btn');
               listEl.innerHTML = data.components.map(c =>
-                `<span style="padding:4px 10px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);border-radius:16px;font-size:12px;color:#6ee7b7;">${c.name}</span>`
+                `<span style="padding:4px 10px;background:rgba(134,201,162,0.12);border:1px solid rgba(134,201,162,0.25);border-radius:16px;font-size:12px;color:#9ED9B4;">${c.name}</span>`
               ).join('');
               if (data.recipe_id) {
                 compEl.dataset.recipeId = data.recipe_id;
@@ -2574,7 +2574,7 @@
         renderPunchSteps(data.steps || [], data.hasData);
       } catch(e) {
         document.getElementById('punch-steps-list').innerHTML =
-          `<div style="padding:20px;text-align:center;color:#ef4444;font-size:13px;">加载失败：${e.message}</div>`;
+          `<div style="padding:20px;text-align:center;color:#E58B98;font-size:13px;">加载失败：${e.message}</div>`;
       }
     }
 
@@ -2622,44 +2622,44 @@
 
         // 圆形序号样式
         const circleStyle = isDone
-          ? 'background:#22c55e;border-color:#22c55e;color:#fff;'
+          ? 'background:#86C9A2;border-color:#86C9A2;color:#fff;'
           : isActive
-            ? 'background:rgba(99,102,241,0.2);border-color:#6366f1;color:#a5b4fc;'
-            : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.1);color:rgba(255,255,255,0.2);';
+            ? 'background:rgba(209,143,160,0.2);border-color:#D18FA0;color:#EABBC5;'
+            : 'background:rgba(242,234,238,0.04);border-color:rgba(242,234,238,0.1);color:rgba(242,234,238,0.2);';
 
         // 卡片整体样式
         const cardStyle = isDone
-          ? 'background:rgba(34,197,94,0.07);border-color:rgba(34,197,94,0.25);'
+          ? 'background:rgba(134,201,162,0.07);border-color:rgba(134,201,162,0.25);'
           : isActive
-            ? 'background:rgba(99,102,241,0.06);border-color:rgba(99,102,241,0.35);'
-            : 'background:rgba(255,255,255,0.02);border-color:rgba(255,255,255,0.05);opacity:0.45;';
+            ? 'background:rgba(209,143,160,0.06);border-color:rgba(209,143,160,0.35);'
+            : 'background:rgba(242,234,238,0.02);border-color:rgba(242,234,238,0.05);opacity:0.45;';
 
         // 按钮区
         let btnHtml = '';
         if (isDone) {
-          btnHtml = `<div style="font-size:18px;color:#22c55e;flex-shrink:0;">✓</div>`;
+          btnHtml = `<div style="font-size:18px;color:#86C9A2;flex-shrink:0;">✓</div>`;
         } else if (isActive) {
           if (isCounting) {
             btnHtml = `
               <div id="punch-countdown-${s.step_seq}" style="
                 flex-shrink:0;width:44px;height:44px;border-radius:50%;
-                border:2.5px solid #6366f1;
+                border:2.5px solid #D18FA0;
                 display:flex;align-items:center;justify-content:center;
-                font-size:16px;font-weight:700;color:#a5b4fc;
-                background:rgba(99,102,241,0.12);
+                font-size:16px;font-weight:700;color:#EABBC5;
+                background:rgba(209,143,160,0.12);
               ">${_punchCountdownSecs}</div>`;
           } else {
             btnHtml = `
               <button data-click="startStepCountdown" data-arg="${dishEsc}" data-arg2="${s.step_seq}" data-arg3="${actEsc}" data-arg4="${station}" data-arg5="${store}" data-arg6="${scheduleEsc}"
                 style="flex-shrink:0;height:40px;padding:0 16px;border-radius:9px;border:none;
-                       background:linear-gradient(135deg,#6366f1,#4f46e5);
+                       background:linear-gradient(135deg,#D18FA0,#B87B8C);
                        color:#fff;font-size:13px;font-weight:600;cursor:pointer;
-                       box-shadow:0 3px 10px rgba(99,102,241,0.35);">
+                       box-shadow:0 3px 10px rgba(209,143,160,0.35);">
                 开始
               </button>`;
           }
         } else {
-          btnHtml = `<div style="font-size:16px;color:rgba(255,255,255,0.12);flex-shrink:0;">🔒</div>`;
+          btnHtml = `<div style="font-size:16px;color:rgba(242,234,238,0.12);flex-shrink:0;">🔒</div>`;
         }
 
         return `
@@ -2672,13 +2672,13 @@
               ">${isDone ? '✓' : s.step_seq}</div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:13px;line-height:1.5;
-                  color:${isDone ? 'rgba(255,255,255,0.4)' : isActive ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.3)'};
+                  color:${isDone ? 'rgba(242,234,238,0.4)' : isActive ? 'rgba(242,234,238,0.92)' : 'rgba(242,234,238,0.3)'};
                   ${isDone ? 'text-decoration:line-through;' : ''}">
                   ${s.is_critical ? '⚡ ' : ''}${s.action}
                 </div>
-                ${s.time_limit_seconds ? `<div style="font-size:11px;color:rgba(255,255,255,0.25);margin-top:4px;">⏱ ${s.time_limit_seconds >= 60 ? Math.round(s.time_limit_seconds/60)+'分钟' : s.time_limit_seconds+'秒'}</div>` : ''}
+                ${s.time_limit_seconds ? `<div style="font-size:11px;color:rgba(242,234,238,0.25);margin-top:4px;">⏱ ${s.time_limit_seconds >= 60 ? Math.round(s.time_limit_seconds/60)+'分钟' : s.time_limit_seconds+'秒'}</div>` : ''}
                 ${s.quality_standard && !isDone ? `<div style="font-size:11px;color:rgba(100,200,100,0.55);margin-top:3px;">✓ ${s.quality_standard}</div>` : ''}
-                ${s.common_failure && isActive ? `<div style="font-size:11px;color:rgba(245,158,11,0.6);margin-top:3px;">⚠ ${s.common_failure}</div>` : ''}
+                ${s.common_failure && isActive ? `<div style="font-size:11px;color:rgba(207,161,74,0.6);margin-top:3px;">⚠ ${s.common_failure}</div>` : ''}
               </div>
               ${btnHtml}
             </div>
@@ -2815,8 +2815,8 @@
           <div class="kitchen-overview-card">
             <div class="kitchen-progress-card__ring">
               <svg viewBox="0 0 64 64" style="width:72px;height:72px;transform:rotate(-90deg);">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="5"/>
-                <circle cx="32" cy="32" r="28" fill="none" stroke="${overallRate===100?'#5eead4':overallRate>=60?'#ffc46b':'#ff7a90'}" stroke-width="5"
+                <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(242,234,238,0.06)" stroke-width="5"/>
+                <circle cx="32" cy="32" r="28" fill="none" stroke="${overallRate===100?'#86C9A2':overallRate>=60?'#DDB66A':'#E58B98'}" stroke-width="5"
                   stroke-dasharray="${Math.round(overallRate/100*175.9)} 175.9" stroke-linecap="round"/>
               </svg>
               <div class="kitchen-progress-card__value">${overallRate}%</div>
@@ -2837,9 +2837,9 @@
                 <div class="kitchen-pill-title">STATION</div>
                 <div class="kitchen-dashboard-card__station">${s.station}</div>
               </div>
-              <div class="kitchen-dashboard-card__rate" style="color:${s.rate===100?'#5eead4':s.rate>=60?'#ffc46b':'#ff7a90'};">${s.rate}%</div>
+              <div class="kitchen-dashboard-card__rate" style="color:${s.rate===100?'#86C9A2':s.rate>=60?'#DDB66A':'#E58B98'};">${s.rate}%</div>
             </div>
-            <div class="kitchen-progress-bar"><span style="width:${s.rate}%;background:${s.rate===100?'#5eead4':s.rate>=60?'#ffc46b':'#ff7a90'};"></span></div>
+            <div class="kitchen-progress-bar"><span style="width:${s.rate}%;background:${s.rate===100?'#86C9A2':s.rate>=60?'#DDB66A':'#E58B98'};"></span></div>
             <div class="kitchen-dashboard-card__meta">${s.confirmed}/${s.total} 项完成</div>
             ${(s.completed_details||[]).length ? `
               <div class="kitchen-mini-list">
@@ -2859,21 +2859,21 @@
                   }
                   return `
                   <div class="kitchen-mini-list__item">
-                    <span style="color:#86efac;flex-shrink:0;">✓</span>
+                    <span style="color:#BEE6CE;flex-shrink:0;">✓</span>
                     <span style="flex:1;min-width:0;">
                       <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.is_prep?'🧂':'🍽'} ${item.dish_name}</strong>
                       <span>${item.employee_name || item.employee_username || ''}</span>
                     </span>
-                    <span style="color:rgba(255,255,255,0.3);flex-shrink:0;text-align:right;line-height:1.4;">
+                    <span style="color:rgba(242,234,238,0.3);flex-shrink:0;text-align:right;line-height:1.4;">
                       <div>${String(item.confirmed_at||'').slice(11,16)||''}</div>
-                      ${durStr ? '<div style="color:rgba(255,255,255,0.15);">'+durStr+'</div>' : ''}
+                      ${durStr ? '<div style="color:rgba(242,234,238,0.15);">'+durStr+'</div>' : ''}
                     </span>
                   </div>`;
                 }).join('')}
               </div>
             ` : ''}
             ${(s.unchecked_details||[]).some(i => kitchenTaskTimingState(i.schedule_time).overdue) ? `
-              <div style="font-size:11px;color:#ffd1d7;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:11px;color:#F1C5CC;margin-top:10px;padding-top:10px;border-top:1px solid rgba(242,234,238,0.08);">
                 ⚠ ${s.unchecked_details.filter(i => kitchenTaskTimingState(i.schedule_time).overdue).length} 项超时未完成
               </div>
             ` : ''}
@@ -2891,12 +2891,12 @@
           ulist.innerHTML = unchecked.map(u => {
             const overdue = kitchenTaskTimingState(u.schedule_time).overdue;
             return `
-            <div class="kitchen-risk-card" style="background:${overdue ? 'rgba(255,122,144,0.1)' : 'rgba(255,255,255,0.06)'};border-color:${overdue ? 'rgba(255,122,144,0.24)' : 'rgba(255,255,255,0.1)'};">
+            <div class="kitchen-risk-card" style="background:${overdue ? 'rgba(229,139,152,0.1)' : 'rgba(242,234,238,0.06)'};border-color:${overdue ? 'rgba(229,139,152,0.24)' : 'rgba(242,234,238,0.1)'};">
               <div>
                 <div class="kitchen-risk-card__title">${u.is_prep?'🧂':'🍽'} ${u.dish_name}</div>
                 <div class="kitchen-risk-card__meta">${u.station} · ${u.schedule_time||'--:--'}${u.assignee_name?' · '+u.assignee_name:''}</div>
               </div>
-              <div class="kitchen-pill-title" style="background:${overdue ? 'rgba(255,122,144,0.18)' : 'rgba(255,255,255,0.08)'};border-color:${overdue ? 'rgba(255,122,144,0.26)' : 'rgba(255,255,255,0.1)'};color:${overdue ? '#ffd1d7' : 'rgba(238,241,250,0.74)'};">${overdue?'超时未确认':'待确认'}</div>
+              <div class="kitchen-pill-title" style="background:${overdue ? 'rgba(229,139,152,0.18)' : 'rgba(242,234,238,0.08)'};border-color:${overdue ? 'rgba(229,139,152,0.26)' : 'rgba(242,234,238,0.1)'};color:${overdue ? '#F1C5CC' : 'rgba(238,241,250,0.74)'};">${overdue?'超时未确认':'待确认'}</div>
             </div>`;
           }).join('');
         } else {
@@ -2944,7 +2944,7 @@
           </div>
         `).join('') : '<div class="kitchen-empty-state" style="display:block;"><div class="kitchen-empty-state__icon">🗂</div><div class="kitchen-empty-state__title">暂无岗位配置</div><div class="kitchen-empty-state__desc">先为档口绑定执行人和菜品，员工视图才会生成当天任务。</div></div>';
       } catch(e) {
-        document.getElementById('kitchen-mapping-list').innerHTML = '<div style="color:#ef4444;font-size:13px;padding:10px 0;">加载配置失败</div>';
+        document.getElementById('kitchen-mapping-list').innerHTML = '<div style="color:#E58B98;font-size:13px;padding:10px 0;">加载配置失败</div>';
       }
     }
 
@@ -3143,14 +3143,14 @@
       const el = document.getElementById('ing-cat-list');
       if (!el) return;
       if (!_categoryCache.length) {
-        el.innerHTML = '<span style="font-size:12px;color:rgba(255,255,255,0.2);">暂无分类，请先添加</span>';
+        el.innerHTML = '<span style="font-size:12px;color:rgba(242,234,238,0.2);">暂无分类，请先添加</span>';
         return;
       }
       el.innerHTML = _categoryCache.map(c => `
-        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;font-size:12px;color:var(--rep-text);">
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(242,234,238,0.05);border:1px solid rgba(242,234,238,0.1);border-radius:20px;font-size:12px;color:var(--rep-text);">
           ${c.name}
           <button type="button" data-click="deleteCategoryItem" data-arg="${c.id}" data-arg-type="number" data-arg2="${String(c.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
-            style="background:none;border:none;color:#f87171;cursor:pointer;font-size:13px;line-height:1;padding:0;">×</button>
+            style="background:none;border:none;color:#EDA1AC;cursor:pointer;font-size:13px;line-height:1;padding:0;">×</button>
         </span>`).join('');
     }
 
@@ -3210,14 +3210,14 @@
       const tR = document.getElementById('recipe-tab-recipes');
       const tI = document.getElementById('recipe-tab-ingredients');
       if (tR) {
-        tR.style.background  = isRecipes ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.03)';
-        tR.style.borderColor = isRecipes ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)';
-        tR.style.color       = isRecipes ? '#a5b4fc' : 'var(--rep-muted)';
+        tR.style.background  = isRecipes ? 'rgba(209,143,160,0.2)' : 'rgba(242,234,238,0.03)';
+        tR.style.borderColor = isRecipes ? 'rgba(209,143,160,0.5)' : 'rgba(242,234,238,0.1)';
+        tR.style.color       = isRecipes ? '#EABBC5' : 'var(--rep-muted)';
       }
       if (tI) {
-        tI.style.background  = !isRecipes ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.03)';
-        tI.style.borderColor = !isRecipes ? 'rgba(16,185,129,0.4)'  : 'rgba(255,255,255,0.1)';
-        tI.style.color       = !isRecipes ? '#6ee7b7' : 'var(--rep-muted)';
+        tI.style.background  = !isRecipes ? 'rgba(134,201,162,0.15)' : 'rgba(242,234,238,0.03)';
+        tI.style.borderColor = !isRecipes ? 'rgba(134,201,162,0.4)'  : 'rgba(242,234,238,0.1)';
+        tI.style.color       = !isRecipes ? '#9ED9B4' : 'var(--rep-muted)';
       }
       if (!isRecipes) { loadCategories(); loadIngredientLib().then(renderIngredientLibList); }
     }
@@ -3227,7 +3227,7 @@
       const list = document.getElementById('ingredient-lib-list');
       if (!list) return;
       if (!_ingredientLibCache.length) {
-        list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.25);font-size:13px;">原料库为空，请先添加原料</div>';
+        list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(242,234,238,0.25);font-size:13px;">原料库为空，请先添加原料</div>';
         return;
       }
       const groups = {};
@@ -3238,10 +3238,10 @@
       });
       list.innerHTML = Object.entries(groups).map(([cat, items]) => `
         <div style="margin-bottom:10px;">
-          <div style="font-size:11px;font-weight:700;color:var(--rep-muted);letter-spacing:.05em;padding:4px 0 6px;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:6px;">${cat}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--rep-muted);letter-spacing:.05em;padding:4px 0 6px;border-bottom:1px solid rgba(242,234,238,0.06);margin-bottom:6px;">${cat}</div>
           <div style="display:grid;gap:5px;">
             ${items.map(i => `
-              <div id="ing-row-${i.id}" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;overflow:hidden;">
+              <div id="ing-row-${i.id}" style="background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);border-radius:8px;overflow:hidden;">
                 <!-- 显示行 -->
                 <div class="ing-display-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;">
                   <div style="flex:1;min-width:0;">
@@ -3251,42 +3251,42 @@
                     </div>
                   </div>
                   <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
-                    style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:6px;color:#a5b4fc;cursor:pointer;">编辑</button>
+                    style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(209,143,160,0.1);border:1px solid rgba(209,143,160,0.25);border-radius:6px;color:#EABBC5;cursor:pointer;">编辑</button>
                   <button type="button" data-click="deleteIngredientLibItem" data-arg="${i.id}" data-arg-type="number" data-arg2="${String(i.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
-                    style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;cursor:pointer;">删</button>
+                    style="flex-shrink:0;font-size:11px;padding:4px 9px;background:rgba(229,139,152,0.08);border:1px solid rgba(229,139,152,0.2);border-radius:6px;color:#EDA1AC;cursor:pointer;">删</button>
                 </div>
                 <!-- 编辑行（默认隐藏）-->
-                <div class="ing-edit-row" style="display:none;padding:10px 12px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(99,102,241,0.04);">
+                <div class="ing-edit-row" style="display:none;padding:10px 12px;border-top:1px solid rgba(242,234,238,0.07);background:rgba(209,143,160,0.04);">
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
                     <div>
                       <label style="font-size:10px;color:var(--rep-muted);display:block;margin-bottom:3px;">原料名称</label>
-                      <input class="ing-e-name" value="${i.name.replace(/"/g,'&quot;')}" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
+                      <input class="ing-e-name" value="${i.name.replace(/"/g,'&quot;')}" style="width:100%;padding:6px 8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
                     </div>
                     <div>
                       <label style="font-size:10px;color:var(--rep-muted);display:block;margin-bottom:3px;">分类</label>
-                      <select class="ing-e-cat" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
+                      <select class="ing-e-cat" style="width:100%;padding:6px 8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
                         <option value="">-- 无分类 --</option>
                         ${_categoryCache.map(c => `<option value="${c.name}" ${c.name === i.category ? 'selected' : ''}>${c.name}</option>`).join('')}
                       </select>
                     </div>
                     <div>
                       <label style="font-size:10px;color:var(--rep-muted);display:block;margin-bottom:3px;">品牌</label>
-                      <input class="ing-e-brand" value="${(i.brand||'').replace(/"/g,'&quot;')}" placeholder="如：福临门" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
+                      <input class="ing-e-brand" value="${(i.brand||'').replace(/"/g,'&quot;')}" placeholder="如：福临门" style="width:100%;padding:6px 8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
                     </div>
                     <div>
                       <label style="font-size:10px;color:var(--rep-muted);display:block;margin-bottom:3px;">规格</label>
-                      <input class="ing-e-spec" value="${(i.spec||'').replace(/"/g,'&quot;')}" placeholder="如：500ml/瓶" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
+                      <input class="ing-e-spec" value="${(i.spec||'').replace(/"/g,'&quot;')}" placeholder="如：500ml/瓶" style="width:100%;padding:6px 8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
                     </div>
                     <div>
                       <label style="font-size:10px;color:var(--rep-muted);display:block;margin-bottom:3px;">默认单位</label>
-                      <input class="ing-e-unit" value="${(i.default_unit||'').replace(/"/g,'&quot;')}" placeholder="g / ml / 个" style="width:100%;padding:6px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
+                      <input class="ing-e-unit" value="${(i.default_unit||'').replace(/"/g,'&quot;')}" placeholder="g / ml / 个" style="width:100%;padding:6px 8px;background:rgba(242,234,238,0.06);border:1px solid rgba(242,234,238,0.12);border-radius:7px;color:var(--rep-text);font-size:12px;box-sizing:border-box;">
                     </div>
                   </div>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button type="button" data-click="toggleIngredientEdit" data-arg="${i.id}" data-arg-type="number"
-                      style="font-size:12px;padding:5px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
+                      style="font-size:12px;padding:5px 12px;background:rgba(242,234,238,0.05);border:1px solid rgba(242,234,238,0.1);border-radius:7px;color:var(--rep-muted);cursor:pointer;">取消</button>
                     <button type="button" data-click="saveIngredientLibEdit" data-arg="${i.id}" data-arg-type="number" data-arg-self="1"
-                      style="font-size:12px;padding:5px 14px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);border-radius:7px;color:#a5b4fc;cursor:pointer;">保存</button>
+                      style="font-size:12px;padding:5px 14px;background:rgba(209,143,160,0.2);border:1px solid rgba(209,143,160,0.4);border-radius:7px;color:#EABBC5;cursor:pointer;">保存</button>
                   </div>
                 </div>
               </div>`).join('')}
@@ -3433,41 +3433,41 @@
       const store = _kitchenStore || currentUser?.store || '';
       const list = document.getElementById('recipe-list');
       if (!list) return;
-      list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.25);font-size:13px;">加载中…</div>';
+      list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(242,234,238,0.25);font-size:13px;">加载中…</div>';
       try {
         const r = await fetch(`/api/recipes?store=${encodeURIComponent(store)}`,
           { headers: { 'Authorization': `Bearer ${localStorage.getItem('hrms_token')}` } });
         const data = await r.json();
         if (!data.success) throw new Error(data.error);
         if (!data.recipes.length) {
-          list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(255,255,255,0.25);font-size:13px;">暂无配方，点击「+ 新建配方」开始录入</div>';
+          list.innerHTML = '<div style="text-align:center;padding:30px;color:rgba(242,234,238,0.25);font-size:13px;">暂无配方，点击「+ 新建配方」开始录入</div>';
           return;
         }
         const statusLabel = { active:'✅ 生效中', draft:'📝 草稿', archived:'📦 已归档' };
-        const statusBorder = { active:'rgba(34,197,94,0.2)', draft:'rgba(255,255,255,0.08)', archived:'rgba(255,255,255,0.05)' };
+        const statusBorder = { active:'rgba(134,201,162,0.2)', draft:'rgba(242,234,238,0.08)', archived:'rgba(242,234,238,0.05)' };
         list.innerHTML = data.recipes.map(r => `
-          <div style="background:rgba(255,255,255,0.03);border:1px solid ${statusBorder[r.status]||'rgba(255,255,255,0.08)'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;">
+          <div style="background:rgba(242,234,238,0.03);border:1px solid ${statusBorder[r.status]||'rgba(242,234,238,0.08)'};border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;">
             <div style="flex:1;min-width:0;">
               <div style="font-size:14px;font-weight:600;color:var(--rep-text);">${r.dish_name}</div>
               <div style="font-size:11px;color:var(--rep-muted);margin-top:3px;">
-                ${r.brand ? `<span style="color:#a5b4fc;">${r.brand}</span> · ` : ''}${r.station ? r.station + ' · ' : ''}v${r.version} · ${statusLabel[r.status]||r.status} · ${r.component_count} 个半成品
+                ${r.brand ? `<span style="color:#EABBC5;">${r.brand}</span> · ` : ''}${r.station ? r.station + ' · ' : ''}v${r.version} · ${statusLabel[r.status]||r.status} · ${r.component_count} 个半成品
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
               ${r.status !== 'active' ? `<button type="button" data-click="approveRecipe" data-arg="${r.id}" data-arg-type="number" data-arg-self="1"
-                style="font-size:12px;padding:6px 12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);border-radius:8px;color:#86efac;cursor:pointer;">✓ 生效</button>` : ''}
+                style="font-size:12px;padding:6px 12px;background:rgba(134,201,162,0.15);border:1px solid rgba(134,201,162,0.35);border-radius:8px;color:#BEE6CE;cursor:pointer;">✓ 生效</button>` : ''}
               <button type="button" data-click="downloadRecipePdf" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"
-                style="font-size:12px;padding:6px 12px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#94a3b8;cursor:pointer;">⬇ PDF</button>
+                style="font-size:12px;padding:6px 12px;background:rgba(151,132,142,0.1);border:1px solid rgba(151,132,142,0.25);border-radius:8px;color:#97848E;cursor:pointer;">⬇ PDF</button>
               <button type="button" data-click="openRecipeStepViewer" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"
-                style="font-size:12px;padding:6px 12px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fcd34d;cursor:pointer;">👁 工艺</button>
+                style="font-size:12px;padding:6px 12px;background:rgba(221,182,106,0.12);border:1px solid rgba(221,182,106,0.3);border-radius:8px;color:#DDB66A;cursor:pointer;">👁 工艺</button>
               <button type="button" data-click="openRecipeEditor" data-arg="${r.id}" data-arg-type="number"
-                style="font-size:12px;padding:6px 12px;background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);border-radius:8px;color:#a5b4fc;cursor:pointer;">编辑</button>
+                style="font-size:12px;padding:6px 12px;background:rgba(209,143,160,0.15);border:1px solid rgba(209,143,160,0.3);border-radius:8px;color:#EABBC5;cursor:pointer;">编辑</button>
               <button type="button" data-click="confirmDeleteRecipe" data-arg="${r.id}" data-arg-type="number" data-arg2="${String(r.dish_name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" data-arg-self
-                style="font-size:12px;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#f87171;cursor:pointer;">删</button>
+                style="font-size:12px;padding:6px 10px;background:rgba(229,139,152,0.08);border:1px solid rgba(229,139,152,0.2);border-radius:8px;color:#EDA1AC;cursor:pointer;">删</button>
             </div>
           </div>`).join('');
       } catch(e) {
-        list.innerHTML = `<div style="text-align:center;padding:20px;color:#f87171;font-size:13px;">加载失败：${e.message}</div>`;
+        list.innerHTML = `<div style="text-align:center;padding:20px;color:#EDA1AC;font-size:13px;">加载失败：${e.message}</div>`;
       }
     }
 
@@ -3570,24 +3570,24 @@
 <title>${recipe.dish_name} 配方</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12px;color:#1a1a1a;padding:24px 28px;}
-.hd{border-bottom:2.5px solid #1a1a1a;padding-bottom:12px;margin-bottom:18px;}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:12px;color:#1C181C;padding:24px 28px;}
+.hd{border-bottom:2.5px solid #1C181C;padding-bottom:12px;margin-bottom:18px;}
 .hd h1{font-size:22px;font-weight:800;letter-spacing:-.02em;}
 .hd .meta{margin-top:5px;font-size:11px;color:#555;}
 .hd .meta span{margin-right:16px;}
-.comp{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e5e7eb;}
+.comp{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #F2EAEE;}
 .comp:last-child{border-bottom:none;}
-h2{font-size:14px;font-weight:700;border-left:4px solid #6366f1;padding-left:10px;margin-bottom:10px;}
-h2 small{font-size:11px;color:#888;font-weight:400;}
+h2{font-size:14px;font-weight:700;border-left:4px solid #D18FA0;padding-left:10px;margin-bottom:10px;}
+h2 small{font-size:11px;color:#97848E;font-weight:400;}
 h3{font-size:11px;font-weight:700;color:#444;margin:10px 0 5px;text-transform:uppercase;letter-spacing:.04em;}
 table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:11px;}
-th,td{border:1px solid #d1d5db;padding:4px 8px;text-align:left;}
-th{background:#f3f4f6;font-weight:600;}
+th,td{border:1px solid #B8AAB1;padding:4px 8px;text-align:left;}
+th{background:#F2EAEE;font-weight:600;}
 ol{padding-left:18px;}
 li{margin-bottom:8px;line-height:1.65;}
 .step-img{max-width:220px;max-height:160px;border-radius:6px;margin-top:6px;display:block;object-fit:cover;}
-.step-vid-note{font-size:10px;color:#6366f1;margin-top:4px;}
-.footer{margin-top:18px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:10px;color:#aaa;text-align:center;}
+.step-vid-note{font-size:10px;color:#D18FA0;margin-top:4px;}
+.footer{margin-top:18px;padding-top:10px;border-top:1px solid #F2EAEE;font-size:10px;color:#aaa;text-align:center;}
 @media print{body{padding:10mm 15mm;}@page{margin:12mm 15mm;}li{page-break-inside:avoid;}}
 </style></head><body>
 <div class="hd">
@@ -3600,7 +3600,7 @@ li{margin-bottom:8px;line-height:1.65;}
     ${recipe.notes ? `<span>备注：${recipe.notes}</span>` : ''}
   </div>
 </div>
-${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
+${compsHtml || '<p style="color:#97848E;">暂无半成品数据</p>'}
 <div class="footer">生成时间：${new Date().toLocaleString('zh-CN')} · HRMS 配方管理</div>
 </body></html>`;
     }
@@ -3682,8 +3682,8 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       const compList = document.getElementById('recipe-components-list');
       const card = document.createElement('div');
       card.className = 'recipe-comp-card';
-      card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;';
-      const inputS = 'width:100%;padding:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--rep-text);font-size:13px;box-sizing:border-box;';
+      card.style.cssText = 'background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;';
+      const inputS = 'width:100%;padding:8px;background:rgba(242,234,238,0.05);border:1px solid rgba(242,234,238,0.1);border-radius:8px;color:var(--rep-text);font-size:13px;box-sizing:border-box;';
       const nameVal = (comp.name || '').replace(/"/g, '&quot;');
       const notesVal = (comp.notes || '').replace(/"/g, '&quot;');
       card.innerHTML = `
@@ -3691,19 +3691,19 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <input type="text" placeholder="半成品名称，如：烧鹅皮水" value="${nameVal}"
             style="${inputS}flex:1;font-weight:600;" class="comp-name">
           <button type="button" data-click="hrmsRemoveClosest" data-arg=".recipe-comp-card" data-arg-self="1"
-            style="flex-shrink:0;width:30px;height:30px;border-radius:8px;border:none;background:rgba(239,68,68,0.12);color:#f87171;cursor:pointer;font-size:16px;line-height:1;">×</button>
+            style="flex-shrink:0;width:30px;height:30px;border-radius:8px;border:none;background:rgba(229,139,152,0.12);color:#EDA1AC;cursor:pointer;font-size:16px;line-height:1;">×</button>
         </div>
         <input type="text" placeholder="备注（选填）" value="${notesVal}" style="${inputS}" class="comp-notes">
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-bottom:2px;">原料配比</div>
         <div class="comp-ingredients" style="display:flex;flex-direction:column;gap:5px;"></div>
         <button type="button" data-click="hrmsAddIngredientRow" data-arg-self="1"
-          style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:8px;color:#a5b4fc;cursor:pointer;">+ 添加原料</button>
+          style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(209,143,160,0.1);border:1px solid rgba(209,143,160,0.25);border-radius:8px;color:#EABBC5;cursor:pointer;">+ 添加原料</button>
 
         <div style="font-size:12px;color:var(--rep-muted);font-weight:600;letter-spacing:.5px;margin-top:4px;margin-bottom:2px;">工艺步骤</div>
         <div class="comp-steps" style="display:flex;flex-direction:column;gap:5px;"></div>
         <button type="button" data-click="hrmsAddProcessStepRow" data-arg-self="1"
-          style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:8px;color:#6ee7b7;cursor:pointer;">+ 添加工艺步骤</button>
+          style="align-self:flex-start;font-size:12px;padding:5px 12px;background:rgba(134,201,162,0.1);border:1px solid rgba(134,201,162,0.25);border-radius:8px;color:#9ED9B4;cursor:pointer;">+ 添加工艺步骤</button>
       `;
       compList.appendChild(card);
 
@@ -3719,7 +3719,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       const row = document.createElement('div');
       // align-items:start 以免下拉撑开行高时其他列跟着移位
       row.style.cssText = 'display:grid;grid-template-columns:1fr 70px 55px 60px 28px;gap:4px;align-items:start;';
-      const s = 'width:100%;padding:7px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:8px;color:var(--rep-text);font-size:12px;box-sizing:border-box;';
+      const s = 'width:100%;padding:7px 8px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.09);border-radius:8px;color:var(--rep-text);font-size:12px;box-sizing:border-box;';
       const nameVal = (ing.ingredient_name || '').replace(/"/g, '&quot;');
       const unitVal = (ing.unit || '').replace(/"/g, '&quot;');
       row.innerHTML = `
@@ -3727,18 +3727,18 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
           <input type="text" placeholder="搜索原料…" value="${nameVal}"
             style="${s}width:100%;" class="ri-name" autocomplete="off">
           <div class="ri-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;
-            max-height:160px;overflow-y:auto;background:#1e1e2a;
-            border:1px solid rgba(255,255,255,0.15);border-radius:8px;
+            max-height:160px;overflow-y:auto;background:#1C181C;
+            border:1px solid rgba(242,234,238,0.15);border-radius:8px;
             z-index:999;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
         </div>
         <input type="number" placeholder="用量" step="0.01" min="0" value="${ing.quantity||''}" style="${s}text-align:right;" class="ri-qty">
         <input type="text"   placeholder="单位" value="${unitVal}" style="${s}text-align:center;" class="ri-unit">
         <label style="display:flex;align-items:center;justify-content:center;gap:3px;cursor:pointer;padding-top:7px;">
-          <input type="checkbox" ${ing.is_pack?'checked':''} style="accent-color:#6366f1;" class="ri-pack">
+          <input type="checkbox" ${ing.is_pack?'checked':''} style="accent-color:#D18FA0;" class="ri-pack">
           <span style="font-size:10px;color:var(--rep-muted);">料包</span>
         </label>
         <button type="button" data-click="hrmsRemoveClosest" data-arg="[style*=grid]" data-arg-self="1"
-          style="width:26px;height:26px;margin-top:2px;border-radius:6px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;line-height:1;">×</button>`;
+          style="width:26px;height:26px;margin-top:2px;border-radius:6px;border:none;background:rgba(229,139,152,0.1);color:#EDA1AC;cursor:pointer;font-size:14px;line-height:1;">×</button>`;
       container.appendChild(row);
 
       const nameInput = row.querySelector('.ri-name');
@@ -3753,13 +3753,13 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
         if (!hits.length) { dropdown.style.display = 'none'; return; }
         dropdown.innerHTML = hits.map(i => `
           <div class="ri-opt"
-            style="padding:8px 12px;font-size:12px;color:var(--rep-text);cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);"
+            style="padding:8px 12px;font-size:12px;color:var(--rep-text);cursor:pointer;border-bottom:1px solid rgba(242,234,238,0.05);"
             data-name="${i.name.replace(/"/g,'&quot;')}"
             data-unit="${(i.default_unit||'').replace(/"/g,'&quot;')}">
             <span style="font-weight:500;">${i.name}</span>
             ${i.brand  ? `<span style="color:var(--rep-muted);font-size:10px;"> · ${i.brand}</span>` : ''}
             ${i.spec   ? `<span style="color:var(--rep-muted);font-size:10px;"> ${i.spec}</span>` : ''}
-            ${i.default_unit ? `<span style="float:right;color:rgba(255,255,255,0.3);font-size:10px;">${i.default_unit}</span>` : ''}
+            ${i.default_unit ? `<span style="float:right;color:rgba(242,234,238,0.3);font-size:10px;">${i.default_unit}</span>` : ''}
           </div>`).join('');
         dropdown.querySelectorAll('.ri-opt').forEach(opt => {
           opt.addEventListener('mousedown', e => {
@@ -3786,12 +3786,12 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
     // ── 工艺步骤行 ────────────────────────────────────────────
     function addProcessStepRow(container, step = {}) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;';
+      row.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:8px;background:rgba(242,234,238,0.03);border:1px solid rgba(242,234,238,0.07);border-radius:10px;';
       if (step.media_url) row.dataset.mediaUrl = step.media_url;
       if (step.media_type) row.dataset.mediaType = step.media_type;
 
       const instrVal = (step.instruction || '').replace(/"/g, '&quot;');
-      const inputStyle = 'width:100%;padding:7px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);border-radius:8px;color:var(--rep-text);font-size:12px;box-sizing:border-box;';
+      const inputStyle = 'width:100%;padding:7px 8px;background:rgba(242,234,238,0.04);border:1px solid rgba(242,234,238,0.09);border-radius:8px;color:var(--rep-text);font-size:12px;box-sizing:border-box;';
 
       // 媒体预览 HTML
       const mediaHtml = step.media_url ? _buildStepMediaPreview(step.media_url, step.media_type) : '';
@@ -3799,11 +3799,11 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       row.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;">
           <input type="text" placeholder="工艺步骤，如：顺时针搅拌至均匀" value="${instrVal}" style="${inputStyle}" class="rs-instruction">
-          <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.08);color:#a5b4fc;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
+          <label title="上传图片或视频" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(209,143,160,0.4);background:rgba(209,143,160,0.08);color:#EABBC5;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">
             📷<input type="file" accept="image/*,video/*" style="display:none;" data-change="uploadStepMedia" data-arg-self>
           </label>
           <button type="button" data-click="hrmsRemoveClosestParent" data-arg="div" data-arg-self="1"
-            style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(239,68,68,0.1);color:#f87171;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>
+            style="width:32px;height:32px;border-radius:8px;border:none;background:rgba(229,139,152,0.1);color:#EDA1AC;cursor:pointer;font-size:14px;flex-shrink:0;">×</button>
         </div>
         <div class="rs-media-preview" style="${step.media_url ? '' : 'display:none;'}">${mediaHtml}</div>`;
       container.appendChild(row);
@@ -3958,7 +3958,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       if (btn._confirming) {
         btn._confirming = false;
         btn.textContent = '删';
-        btn.style.background = 'rgba(239,68,68,0.08)';
+        btn.style.background = 'rgba(229,139,152,0.08)';
         try {
           const r = await fetch(`/api/recipes/${id}`, {
             method: 'DELETE',
@@ -3974,12 +3974,12 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
       } else {
         btn._confirming = true;
         btn.textContent = '确认删?';
-        btn.style.background = 'rgba(239,68,68,0.3)';
+        btn.style.background = 'rgba(229,139,152,0.3)';
         setTimeout(() => {
           if (btn._confirming) {
             btn._confirming = false;
             btn.textContent = '删';
-            btn.style.background = 'rgba(239,68,68,0.08)';
+            btn.style.background = 'rgba(229,139,152,0.08)';
           }
         }, 3000);
       }
@@ -4130,7 +4130,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 }
                 if (v.status === 'executing' || v.status === 'pending') {
                     html += '<div class="sp-result-form" id="sp-result-form-' + v.experiment_code + '-' + v.variant_code + '">';
-                    html += '<h4 style="font-size:13px;font-weight:700;margin:10px 0 6px;color:#e2e8f0;">提交执行结果</h4>';
+                    html += '<h4 style="font-size:13px;font-weight:700;margin:10px 0 6px;color:#F2EAEE;">提交执行结果</h4>';
                     html += '<div class="sp-form-group"><label>执行前日均营收（元）</label><input type="number" id="sp-before-rev-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：5000"></div>';
                     html += '<div class="sp-form-group"><label>执行期间日均营收（元）</label><input type="number" id="sp-during-rev-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：6500"></div>';
                     html += '<div class="sp-form-group"><label>执行前日均客流</label><input type="number" id="sp-before-traffic-' + v.experiment_code + '-' + v.variant_code + '" placeholder="例：80"></div>';
@@ -4194,7 +4194,7 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 if (v.execution_guide) html += '<div class="sp-row"><span class="label">执行指南</span><span class="value">' + v.execution_guide + '</span></div>';
                 if (v.result_data) {
                     var rd = typeof v.result_data === 'string' ? JSON.parse(v.result_data) : v.result_data;
-                    html += '<div style="margin-top:10px;padding:10px;background:rgba(14,165,233,0.06);border-radius:10px;">';
+                    html += '<div style="margin-top:10px;padding:10px;background:rgba(209,143,160,0.06);border-radius:10px;">';
                     html += '<div class="sp-row"><span class="label">执行前日均营收</span><span class="value">¥' + (rd.before_daily_revenue || '—') + '</span></div>';
                     html += '<div class="sp-row"><span class="label">执行期间日均营收</span><span class="value">¥' + (rd.during_daily_revenue || '—') + '</span></div>';
                     html += '<div class="sp-row"><span class="label">执行前日均客流</span><span class="value">' + (rd.before_daily_traffic || '—') + '</span></div>';
@@ -4336,12 +4336,12 @@ ${compsHtml || '<p style="color:#888;">暂无半成品数据</p>'}
                 '<div class="sp-form-group"><label>指标侧重</label><select id="sp-new-metric"><option value="revenue">营收</option><option value="customer_count">客流</option><option value="composite">综合</option></select></div>' +
                 '<div class="sp-form-group"><label>开始日期</label><input type="date" id="sp-new-start"></div>' +
                 '<div class="sp-form-group"><label>结束日期（14天实验）</label><input type="date" id="sp-new-end"></div>' +
-                '<div class="sp-variant-form"><h4 style="font-size:14px;font-weight:700;color:#38bdf8;margin-bottom:8px;">方案 A</h4>' +
+                '<div class="sp-variant-form"><h4 style="font-size:14px;font-weight:700;color:#EABBC5;margin-bottom:8px;">方案 A</h4>' +
                 '<div class="sp-form-group"><label>方案名称</label><input type="text" id="sp-new-va-label" placeholder="例：满减券方案"></div>' +
                 '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-va-action" placeholder="详细描述策略内容"></textarea></div>' +
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-va-store" placeholder="门店名称"></div>' +
                 '<div class="sp-form-group"><label>执行指南（选填）</label><textarea id="sp-new-va-guide" placeholder="具体执行步骤"></textarea></div></div>' +
-                '<div class="sp-variant-form variant-b"><h4 style="font-size:14px;font-weight:700;color:#a855f7;margin-bottom:8px;">方案 B（选填，留空则为单方案实验）</h4>' +
+                '<div class="sp-variant-form variant-b"><h4 style="font-size:14px;font-weight:700;color:#D18FA0;margin-bottom:8px;">方案 B（选填，留空则为单方案实验）</h4>' +
                 '<div class="sp-form-group"><label>方案名称</label><input type="text" id="sp-new-vb-label" placeholder="例：新菜品推广方案"></div>' +
                 '<div class="sp-form-group"><label>策略动作</label><textarea id="sp-new-vb-action" placeholder="详细描述策略内容"></textarea></div>' +
                 '<div class="sp-form-group"><label>执行门店</label><input type="text" id="sp-new-vb-store" placeholder="门店名称"></div>' +

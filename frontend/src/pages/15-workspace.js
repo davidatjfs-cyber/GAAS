@@ -147,10 +147,21 @@ function wsEsc(s) {
 
 async function wsFetchJson(url) {
     try {
+        if (typeof HRMS_API !== 'undefined' && HRMS_API && typeof HRMS_API.request === 'function') {
+            return await HRMS_API.request(url, { method: 'GET' });
+        }
         const r = await fetch(url, { headers: wsAuthHeaders() });
-        if (!r.ok) return null;
-        return await r.json();
-    } catch (e) { return null; }
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            const err = new Error(String(data?.message || data?.error || ('HTTP ' + r.status)));
+            err.status = r.status;
+            err.data = data;
+            throw err;
+        }
+        return data;
+    } catch (e) {
+        return { __error: String(e?.message || e), status: e?.status || 0 };
+    }
 }
 
 // ── 门店红绿灯（老板/总部共用）── 依据：store_ratings 营收达成率评级（A/B→绿 C→黄 D/无评级→红），

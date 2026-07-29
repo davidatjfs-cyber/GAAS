@@ -99,8 +99,22 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * (休假申请/升职申请/总经理信箱/修改密码/离职申请)，直接复用"我的档案"页已有的
  * pf2-fold/pf2-qk 样式和全局 data-click 处理函数，没有新写弹窗逻辑；② 用户反馈
  * .ws-section__title 跟正文(.ws-card__desc 13px)几乎一样大、层级不清，改成17px/700。
+ * 2026-07-29 第十八次上调（70518→70661）：合并 feature/workspace-shell-p1（登录页品牌
+ * logo/slogan、5页黑缎玫瑰配色、GET /api/state 性能优化、打卡超时修复等真实工作）到
+ * main——该分支也有一版更早、不完整的 15-workspace.js（365行，Phase 1 壳，且后来自己
+ * 加了 wsRemoveNavItem 把侧栏入口摘掉了，因为当时页面加载会黑屏），跟本分支完整的10项
+ * 工作台实现（1300+行）合并时冲突，取的是本分支这份完整实现，丢弃了对方那份未完成的
+ * 壳和"移除入口"的临时规避（问题本身已经在本分支修好了，不需要再规避）。working-fixed.html
+ * 冲突不手工合并生成文件，直接用合并后的 frontend/src/pages/*.js 重新跑 bundle-frontend
+ * 生成。
+ * 2026-07-29 第十九次上调（70661→70663）：修复合并遗留——01-boot.js 里"01-boot.js" 有个
+ * hunk 跟本分支没有文本冲突所以git静默按对方那边合并，保留了 c6e2716 那次"移除侧栏工作台
+ * 入口"的临时改动（调用 wsRemoveNavItem + 从 hrmsIsAlwaysAllowedPage 白名单删掉
+ * 'workspace'）——但 wsRemoveNavItem 这个函数在合并 15-workspace.js 时已经被删掉了（连着
+ * 那份未完成的壳一起丢弃），导致调用点在调用一个不存在的函数、什么都不做，侧栏"工作台"
+ * 入口消失。改回调用 wsInjectNavItem()，'workspace' 加回白名单。
  */
-const MAX_LINES = 70518;
+const MAX_LINES = 70663;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
