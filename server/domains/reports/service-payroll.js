@@ -5,6 +5,7 @@ import { childLogger } from '../../utils/logger.js';
 import { buildPayrollPeopleMaps } from './payroll-people.js';
 import { tryClosedLoopPayrollPayload } from './payroll-closed-loop.js';
 import { buildLegacyPayrollPayload } from './payroll-legacy-rows.js';
+import { loadPayrollDomainFromTable, upsertPayrollDomain } from '../payroll/service.js';
 
 const log = childLogger({ domain: 'reports', handler: 'payroll' });
 
@@ -71,25 +72,27 @@ export async function getPayrollReportPayload(ctx, {
 /**
  * @returns {Promise<{ ok: true, audit: object } | { ok: false, status: number, error: string, message?: string }>}
  */
-export async function auditPayrollMonth(ctx, { month, store, username, audited }) {
-  const { getSharedState, mergeSharedStateFields, hrmsNowISO } = ctx;
+export async function auditPayrollMonth(ctx, { month, store, username, audited, tenantId }) {
+  const { pool, hrmsNowISO, invalidateSharedStateCache } = ctx;
   if (!username) return { ok: false, status: 400, error: 'missing_user' };
   if (!month) return { ok: false, status: 400, error: 'missing_month' };
 
   try {
-    const state0 = (await getSharedState()) || {};
+    const tid = tenantId || 'default';
     const storeKey = String(store || '').trim();
     const auditKey = `${month}||${storeKey || 'ALL'}`;
-    const auditMap = state0?.payrollAudits && typeof state0.payrollAudits === 'object' ? { ...state0.payrollAudits } : {};
-    auditMap[auditKey] = {
+    const audit = {
       month,
       store: storeKey || '',
       audited: !!audited,
       auditedBy: username,
       auditedAt: hrmsNowISO(),
     };
-    await mergeSharedStateFields({ payrollAudits: auditMap });
-    return { ok: true, audit: auditMap[auditKey] };
+    // 只 patch 这一个 auditKey；upsertPayrollDomain 会在加锁后跟表里当前值合并，
+    // 不会把并发写入的其它门店/月份审计记录冲掉。
+    await upsertPayrollDomain(pool, tid, { payrollAudits: { [auditKey]: audit } });
+    if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
+    return { ok: true, audit };
   } catch (e) {
     return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };
   }
@@ -108,7 +111,7 @@ export async function adjustPayrollRow(ctx, {
   username,
   tenantId,
 }) {
-  const { getSharedState, mergeSharedStateFields, hrmsNowISO, safeNumber } = ctx;
+  const { pool, hrmsNowISO, safeNumber, invalidateSharedStateCache } = ctx;
   if (!username) return { ok: false, status: 400, error: 'missing_user' };
   if (!month) return { ok: false, status: 400, error: 'missing_month' };
   const target = String(targetUsername || '').trim();
@@ -121,11 +124,14 @@ export async function adjustPayrollRow(ctx, {
   }
 
   try {
-    const state0 = (await getSharedState()) || {};
+    const tid = tenantId || 'default';
     const storeKey = String(store || '').trim();
     const key = `${month}||${storeKey || 'ALL'}||${target.toLowerCase()}`;
-    const existing = state0?.payrollAdjustments?.[key] && typeof state0.payrollAdjustments[key] === 'object'
-      ? state0.payrollAdjustments[key]
+    // 只需要读这一个 key 的旧值（用于保留没在这次调用里更新的 subsidy/baseAmount 字段），
+    // 不需要整域快照——upsertPayrollDomain 会在加锁后用当前表值合并，不会覆盖其它 key。
+    const domain = await loadPayrollDomainFromTable(pool, tid);
+    const existing = domain?.payrollAdjustments?.[key] && typeof domain.payrollAdjustments[key] === 'object'
+      ? domain.payrollAdjustments[key]
       : {};
     const item = {
       ...existing,
@@ -137,7 +143,8 @@ export async function adjustPayrollRow(ctx, {
       updatedBy: username,
       updatedAt: hrmsNowISO(),
     };
-    await mergeSharedStateFields({ payrollAdjustments: { [key]: item } });
+    await upsertPayrollDomain(pool, tid, { payrollAdjustments: { [key]: item } });
+    if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
     if (subsidyNum != null) {
       try {
         const upsert = ctx.upsertPayrollLedgerEntry

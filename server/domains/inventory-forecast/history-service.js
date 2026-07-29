@@ -63,6 +63,11 @@ export async function clearHistory(ctx, input) {
       state0.inventoryForecastEvaluations = [];
     }
     await ctx.saveSharedState(state0);
+    if (typeof ctx.syncInventoryForecastStateToTables === 'function') {
+      try {
+        await ctx.syncInventoryForecastStateToTables(state0);
+      } catch (_e) { /* ignore until tables exist */ }
+    }
     const afterCount = Array.isArray(state0.inventoryForecastHistory) ? state0.inventoryForecastHistory.length : 0;
     // 严禁在此删除 sales_raw：无 store 参数时曾误执行 DELETE FROM sales_raw 全表，导致生产数据被清空。
     return { ok: true, cleared: prevCount - afterCount, remaining: afterCount, store: qStore || '(all)' };
@@ -92,6 +97,11 @@ export async function batchHistory(ctx, input) {
     if (!store) return { ok: false, status: 400, error: 'missing_store' };
     const ret = ctx.upsertInventoryForecastHistoryInState(state0, { store, bizType, slot, rowsRaw, username });
     await ctx.saveSharedState(ret.state);
+    if (typeof ctx.syncInventoryForecastStateToTables === 'function') {
+      try {
+        await ctx.syncInventoryForecastStateToTables(ret.state);
+      } catch (_e) { /* ignore until tables exist */ }
+    }
 
     return {
       ok: true,

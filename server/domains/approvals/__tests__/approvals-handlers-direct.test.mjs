@@ -111,8 +111,10 @@ test('leave.beforeUpdate no-op for non-leave type', async () => {
 });
 
 test('leave.afterDecide approved pushes record, pool insert, leave_result notification', async () => {
+  const invalidated = [];
   const { deps, notifs, queries } = makeDeps({
     state: { leaveRecords: [{ id: 'old' }] },
+    depsExtra: { invalidateSharedStateCache: (tid) => invalidated.push(tid) },
   });
   let getStateCalls = 0;
   deps.getSharedState = async () => {
@@ -142,6 +144,7 @@ test('leave.afterDecide approved pushes record, pool insert, leave_result notifi
   assert.ok(notifs.every((n) => n.meta?.type === 'leave_result'));
   assert.ok(notifs.some((n) => n.title === '休假申请已通过'));
   assert.match(notifs[0].msg, /已经审批通过/);
+  assert.deepEqual(invalidated, ['default']);
 });
 
 test('leave.afterDecide rejected sends 未通过 leave_result without pool insert', async () => {
@@ -371,13 +374,10 @@ test('points.afterDecide approved single payload merges records and calls ledger
     note: '',
   });
 
-  assert.equal(merges.length, 1);
-  assert.ok(Array.isArray(merges[0].patch.pointRecords));
-  assert.equal(merges[0].patch.pointRecords.length, 1);
-  assert.equal(merges[0].patch.pointsAppliedApprovals['appr-pts-1'], true);
+  assert.equal(merges.length, 0);
   assert.equal(ledgerCalls.length, 1);
-  assert.equal(queries.length, 1);
-  assert.match(String(queries[0][0]), /INSERT INTO point_records/i);
+  assert.ok(queries.some((q) => /SELECT 1 FROM point_records/i.test(String(q[0]))));
+  assert.ok(queries.some((q) => /INSERT INTO point_records/i.test(String(q[0]))));
   assert.ok(notifs.some((n) => n.meta?.type === 'points_result' && n.title === '积分申请已通过'));
 });
 
@@ -447,7 +447,7 @@ test('points.afterDecide：双写失败告警；ledger 失败仍 merge/通知；
     });
     assert.equal(dualWriteFails.length, 1);
     assert.match(String(dualWriteFails[0][0]), /point_records/);
-    assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.['appr-pts-dw']));
+    assert.equal(merges.length, 0);
     assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
   }
 
@@ -472,13 +472,13 @@ test('points.afterDecide：双写失败告警；ledger 失败仍 merge/通知；
       note: '',
     });
     assert.equal(ledgerCalls.length, 1);
-    assert.ok(merges.length >= 1);
+    assert.equal(merges.length, 0);
     assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
   }
 
   // rules throw → rate 0.5
   {
-    const { deps, merges } = makeDeps();
+    const { deps, ledgerCalls } = makeDeps();
     deps.resolveAttendancePayrollRules = async () => {
       throw new Error('rules down');
     };
@@ -495,7 +495,7 @@ test('points.afterDecide：双写失败告警；ledger 失败仍 merge/通知；
       nextAssignee: null,
       note: '',
     });
-    assert.equal(merges[0].patch.pointRecords[0].amount, 5);
+    assert.equal(ledgerCalls[0][0].amount, 5);
   }
 });
 
@@ -519,14 +519,15 @@ test('points.afterDecide alreadyApplied skips new pointRecords merge but still n
   });
 
   assert.equal(merges.length, 0);
-  assert.equal(queries.length, 0);
+  assert.equal(queries.length, 1);
+  assert.match(String(queries[0][0]), /SELECT 1 FROM point_records/i);
   assert.equal(ledgerCalls.length, 0);
   assert.ok(notifs.some((n) => n.meta?.type === 'points_result' && n.title === '积分申请已通过'));
 });
 
 test('points.afterDecide approved multi items: amount = pts * rate，ledger 多行', async () => {
   let n = 0;
-  const { deps, merges, ledgerCalls, notifs } = makeDeps({ state: {} });
+  const { deps, queries, ledgerCalls, notifs } = makeDeps({ state: {} });
   deps.randomUUID = () => `uuid-${++n}`;
   deps.resolveAttendancePayrollRules = async () => ({ rules: { pointsYuanPerPoint: 1 } });
 
@@ -551,10 +552,8 @@ test('points.afterDecide approved multi items: amount = pts * rate，ledger 多�
     note: '',
   });
 
-  assert.equal(merges[0].patch.pointRecords.length, 2);
-  assert.equal(merges[0].patch.pointRecords[0].amount, 10);
-  assert.equal(merges[0].patch.pointRecords[1].amount, 4);
-  assert.equal(merges[0].patch.pointRecords[1].username, 'emp2');
+  const inserts = queries.filter((q) => /INSERT INTO point_records/i.test(String(q[0])));
+  assert.equal(inserts.length, 2);
   assert.equal(ledgerCalls.length, 2);
   assert.equal(ledgerCalls[0][0].amount, 10);
   assert.equal(ledgerCalls[1][0].amount, 4);
@@ -799,7 +798,7 @@ test('onboarding.afterDecide：通知 merge 失败不抛；仍保留员工同步
     state: { employees: [{ username: 'sm1', store: '测试店', role: 'store_manager' }] },
   });
   const decideExtras = {};
-  let notifMergeAttempts = 0;
+  let notifAppendAttempts = 0;
   deps.buildOnboardingEmployeeRecordFromPayload = () => ({
     ok: true,
     nextEmp: {
@@ -818,11 +817,9 @@ test('onboarding.afterDecide：通知 merge 失败不抛；仍保留员工同步
   deps.toNullableUuid = () => null;
   deps.insertSalaryTimeline = async () => {};
   deps.safeErrMessage = (e) => String(e?.message || e);
-  deps.mergeSharedStateFields = async (patch, _keys) => {
-    if (patch.notifications) {
-      notifMergeAttempts += 1;
-      throw new Error('notif merge boom');
-    }
+  deps.appendNotifications = async () => {
+    notifAppendAttempts += 1;
+    throw new Error('notif append boom');
   };
   await onboarding.afterDecide({
     req: { tenantId: 'default' },
@@ -838,7 +835,7 @@ test('onboarding.afterDecide：通知 merge 失败不抛；仍保留员工同步
     decideExtras,
   });
   assert.equal(decideExtras.onboardingEmployeeSync?.ok, true);
-  assert.equal(notifMergeAttempts, 1);
+  assert.equal(notifAppendAttempts, 1);
 });
 
 test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定薪 / 店长通知', async () => {
@@ -879,7 +876,7 @@ test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定�
   // 成功路径：users 失败不阻断飞书/定薪；有 open_id；有店长
   {
     const timeline = [];
-    const { deps, merges, queries } = makeDeps({
+    const { deps, queries, notifs } = makeDeps({
       state: {
         employees: [
           { username: 'sm1', store: '测试店', role: 'store_manager', name: '店长' },
@@ -945,8 +942,7 @@ test('onboarding.afterDecide：merge 失败 / users 失败 / 飞书成功 / 定�
     assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
     assert.equal(timeline.length, 1);
     assert.equal(timeline[0].amount, 4800);
-    assert.ok(merges.some((m) => Array.isArray(m.patch.notifications)
-      && m.patch.notifications.some((n) => n.u === 'sm1')));
+    assert.ok(notifs.some((n) => n.u === 'sm1'));
   }
 
   // 飞书写入失败不抛；定薪失败吞掉
@@ -1597,7 +1593,7 @@ test('onboarding.afterDecide：employee 非 object；users 成功 flag；rejecte
 
 test('onboarding.afterDecide：非法 salary/joinDate；有门店无店长；非法 open_id 跳过飞书', async () => {
   const timeline = [];
-  const { deps, queries, merges } = makeDeps({
+  const { deps, queries, notifs } = makeDeps({
     state: {
       employees: [
         { username: 'other', store: '甲店', role: 'store_employee' },
@@ -1648,8 +1644,7 @@ test('onboarding.afterDecide：非法 salary/joinDate；有门店无店长；非
   assert.equal(decideExtras.userAccountCreated, true);
   assert.equal(timeline.length, 0);
   assert.equal(queries.some((q) => /feishu_users/i.test(String(q[0]))), false);
-  const notifMerge = merges.find((m) => Array.isArray(m.patch.notifications));
-  const recipients = (notifMerge?.patch.notifications || []).map((n) => n.u);
+  const recipients = notifs.map((n) => n.u);
   assert.ok(recipients.includes('hr1'));
   assert.ok(recipients.includes('mgr1'));
   assert.equal(recipients.includes('store_mgr'), false);
@@ -1657,7 +1652,7 @@ test('onboarding.afterDecide：非法 salary/joinDate；有门店无店长；非
 
 test('points.afterDecide：NaN rate 回落 0.5；item 字段回落；第2条双写失败仍通知', async () => {
   let uuidSeq = 0;
-  const { deps, notifs, ledgerCalls, dualWriteFails, queries, merges } = makeDeps({
+  const { deps, notifs, ledgerCalls, dualWriteFails, queries } = makeDeps({
     depsExtra: {
       randomUUID: () => `00000000-0000-4000-8000-00000000000${++uuidSeq}`,
       resolveAttendancePayrollRules: async () => ({ rules: { pointsYuanPerPoint: Number.NaN } }),
@@ -1700,7 +1695,6 @@ test('points.afterDecide：NaN rate 回落 0.5；item 字段回落；第2条双�
   assert.equal(ledgerCalls[0][0].title, '积分事项');
   assert.equal(dualWriteFails.length, 1);
   assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
-  assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.['pts-fallback'] === true));
   const firstInsert = queries.find((q) => /INSERT INTO point_records/i.test(String(q[0])));
   assert.ok(firstInsert);
   assert.ok(firstInsert[1][9]);
@@ -1809,7 +1803,7 @@ test('promotion.afterDecide：oldSalary=0 跳过 timeline 仍调 next-month；�
 
 test('onboarding.afterDecide：正薪 + joinDate 回落 hrmsNow；有店长进通知名单', async () => {
   const timeline = [];
-  const { deps, merges } = makeDeps({
+  const { deps, notifs } = makeDeps({
     state: {
       employees: [
         { username: 'sm1', store: '甲店', role: 'store_manager', name: '店长甲' },
@@ -1858,15 +1852,14 @@ test('onboarding.afterDecide：正薪 + joinDate 回落 hrmsNow；有店长进�
   assert.equal(timeline.length, 1);
   assert.equal(timeline[0].amount, 8000);
   assert.equal(timeline[0].effectiveFrom, '2026-07-26');
-  const recipients = (merges.find((m) => Array.isArray(m.patch.notifications))?.patch.notifications || [])
-    .map((n) => n.u);
+  const recipients = notifs.map((n) => n.u);
   assert.ok(recipients.includes('sm1'));
   assert.ok(recipients.includes('hr1'));
   assert.ok(recipients.includes('mgr1'));
 });
 
 test('points.afterDecide：pointsAppliedApprovals 缺失仍入账；空 approvalId 不误判已应用', async () => {
-  const { deps, ledgerCalls, merges } = makeDeps({
+  const { deps, ledgerCalls, queries } = makeDeps({
     state: {},
   });
   await points.afterDecide({
@@ -1882,7 +1875,7 @@ test('points.afterDecide：pointsAppliedApprovals 缺失仍入账；空 approval
   });
   assert.equal(ledgerCalls.length, 1);
   assert.equal(ledgerCalls[0][0].points, 3);
-  assert.ok(merges.some((m) => m.patch.pointsAppliedApprovals?.[''] === true));
+  assert.ok(queries.some((q) => /INSERT INTO point_records/i.test(String(q[0]))));
 });
 
 test('promotion.afterDecide：pending 且 nextAssignee 无档案 → 不附带教提示', async () => {
@@ -1922,7 +1915,7 @@ test('onboarding.beforeUpdate no-op；afterDecide 边界：feishuOpenId / tenant
 
   const queries = [];
   const timeline = [];
-  const { deps, merges } = makeDeps({
+  const { deps, notifs } = makeDeps({
     state: {
       employees: [
         { username: '  ', store: '乙店', role: 'store_manager' },
@@ -1979,8 +1972,7 @@ test('onboarding.beforeUpdate no-op；afterDecide 边界：feishuOpenId / tenant
   assert.equal(timeline[0]?.tenantId, 'tenant-b');
   assert.equal(timeline[0]?.effectiveFrom, '2026-08-01');
   assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
-  const recipients = (merges.find((m) => Array.isArray(m.patch.notifications))?.patch.notifications || [])
-    .map((x) => x.u);
+  const recipients = notifs.map((x) => x.u);
   assert.ok(recipients.includes('hr1'));
   assert.equal(recipients.includes('cook1'), false);
 
@@ -2079,7 +2071,7 @@ test('leave.afterDecide：finishDate/leaveDays 别名；tenant 回落 user；lea
 
 test('onboarding.afterDecide：bcrypt.hash 失败仍写飞书并通知', async () => {
   const queries = [];
-  const { deps, merges } = makeDeps();
+  const { deps, notifs } = makeDeps();
   deps.buildOnboardingEmployeeRecordFromPayload = () => ({
     ok: true,
     nextEmp: {
@@ -2127,7 +2119,7 @@ test('onboarding.afterDecide：bcrypt.hash 失败仍写飞书并通知', async (
   assert.equal(decideExtras.userAccountCreated, undefined);
   assert.equal(decideExtras.feishuUsersCreated, true);
   assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0]))));
-  assert.ok(merges.some((m) => Array.isArray(m.patch.notifications)));
+  assert.ok(notifs.some((n) => n.meta?.type === 'onboarding_result'));
 });
 
 test('points.afterDecide：单条 items 用 reason 作文案；merge 失败则无双写/通知', async () => {
@@ -2152,7 +2144,7 @@ test('points.afterDecide：单条 items 用 reason 作文案；merge 失败则�
     assert.ok(notifs.some((n) => n.title === '积分申请已通过' && /门店巡检加分/.test(n.msg)));
   }
   {
-    const { deps, notifs, ledgerCalls, queries, dualWriteFails } = makeDeps();
+    const { deps, notifs, ledgerCalls, queries } = makeDeps();
     deps.mergeSharedStateFields = async () => {
       throw new Error('merge points boom');
     };
@@ -2168,9 +2160,8 @@ test('points.afterDecide：单条 items 用 reason 作文案；merge 失败则�
       },
     });
     assert.equal(ledgerCalls.length, 1);
-    assert.equal(queries.length, 0);
-    assert.equal(dualWriteFails.length, 0);
-    assert.equal(notifs.length, 0);
+    assert.ok(queries.some((q) => /INSERT INTO point_records/i.test(String(q[0]))));
+    assert.ok(notifs.some((n) => n.title === '积分申请已通过'));
   }
 });
 
@@ -2281,7 +2272,7 @@ test('promotion.afterDecide：无必修课题跳过培训；拒绝无 trackId；
   assert.equal(progressCalls.length, 0);
   assert.equal(trainings.length, 0);
   assert.ok(merges.some((m) => m.patch.employees?.[0]?.level === '中级'));
-  assert.ok(notifs.length === 0 || merges.some((m) => Array.isArray(m.patch.notifications)));
+  assert.ok(notifs.some((n) => n.title === '晋升申请已通过'));
 
   const getCalls = [];
   const rej = makeDeps({
@@ -2555,7 +2546,7 @@ test('leave pending；offboarding pending 写通知；promotion 资格拒绝文�
     assert.ok(notifs.some((n) => n.title === '休假申请待审批'));
   }
   {
-    const { deps, merges } = makeDeps();
+    const { deps, notifs } = makeDeps();
     await offboarding.afterDecide({
       req: {},
       deps,
@@ -2568,9 +2559,7 @@ test('leave pending；offboarding pending 写通知；promotion 资格拒绝文�
         payload: {},
       },
     });
-    assert.ok(merges.some((m) =>
-      Array.isArray(m.patch.notifications)
-      && m.patch.notifications.some((n) => n.title === '离职申请待审批')));
+    assert.ok(notifs.some((n) => n.title === '离职申请待审批'));
   }
   {
     const { deps, notifs } = makeDeps();
@@ -2815,7 +2804,7 @@ test('leave/points/onboarding：无日期天数空串；规则抛错；open_id/�
   }
   {
     const queries = [];
-    const { deps, merges } = makeDeps({
+    const { deps, notifs } = makeDeps({
       state: {
         employees: [
           { username: '', store: '甲店', role: 'store_manager', name: '空名店长' },
@@ -2864,9 +2853,7 @@ test('leave/points/onboarding：无日期天数空串；规则抛错；open_id/�
     });
     assert.equal(decideExtras.feishuUsersCreated, true);
     assert.ok(queries.some((q) => /feishu_users/i.test(String(q[0])) && q[1].includes('uuid-open')));
-    assert.ok(merges.some((m) =>
-      Array.isArray(m.patch.notifications)
-      && m.patch.notifications.some((n) => n.u === 'mgrX')));
+    assert.ok(notifs.some((n) => n.u === 'mgrX'));
   }
   {
     const { deps, notifs } = makeDeps();
@@ -3166,7 +3153,7 @@ test('onboarding：空员工名失败日志；仅提交人通知；pending 默�
     assert.equal(decideExtras.onboardingEmployeeSync?.reason, 'missing_name');
   }
   {
-    const { deps, merges } = makeDeps({
+    const { deps, notifs } = makeDeps({
       state: { employees: 'bad' },
     });
     deps.buildOnboardingEmployeeRecordFromPayload = () => ({
@@ -3204,11 +3191,8 @@ test('onboarding：空员工名失败日志；仅提交人通知；pending 默�
         payload: { employee: { name: '独行' } },
       },
     });
-    const notifMerge = merges.find((m) => Array.isArray(m.patch.notifications));
-    assert.ok(notifMerge);
-    assert.equal(notifMerge.patch.notifications.length, 1);
-    assert.equal(notifMerge.patch.notifications[0].u, 'hr1');
-    assert.match(notifMerge.patch.notifications[0].msg, /独行/);
+    assert.ok(notifs.some((n) => n.u === 'hr1' && /独行/.test(n.msg)));
+    assert.equal(notifs.filter((n) => n.meta?.type === 'onboarding_result').length, 1);
   }
   {
     const { deps, notifs } = makeDeps();

@@ -29,7 +29,8 @@ export function registerDailyReportsRoutes(app, deps) {
     pool,
     authRequired,
     getSharedState,
-    mergeSharedStateFields,
+    appendNotifications,
+    invalidateSharedStateCache,
     safeDateOnly,
     stateFindUserRecord,
     expandAgentStoreLabels,
@@ -116,7 +117,7 @@ export function registerDailyReportsRoutes(app, deps) {
     if (!date) return res.status(400).json({ error: 'missing_date' });
     try {
       const result = await upsertDailyReport({
-        pool, getSharedState, mergeSharedStateFields, stateFindUserRecord,
+        pool, getSharedState, appendNotifications, invalidateSharedStateCache, stateFindUserRecord,
         addStateNotification, makeNotif, notifyAdminsDualWriteFailure, safeErrMessage,
         hrmsNowISO, randomUUID, recalcWechatMonthTotalsForStoreMonth, reconcileDailyReportAttendanceRegister,
         username, role, date,
@@ -156,8 +157,9 @@ export function registerDailyReportsRoutes(app, deps) {
       const result = await deleteDailyReportFromState({
         store,
         date,
-        getSharedState,
-        mergeSharedStateFields,
+        pool,
+        tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        invalidateSharedStateCache,
         notifyAdminsDualWriteFailure,
         safeErrMessage,
       });

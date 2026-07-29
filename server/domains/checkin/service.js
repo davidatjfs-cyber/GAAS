@@ -4,6 +4,7 @@
  */
 
 import { childLogger } from '../../utils/logger.js';
+import { upsertLeaveDomain } from '../leave-attendance/domain-service.js';
 import {
   monthBounds,
   buildCheckinByDay,
@@ -337,10 +338,12 @@ export async function setLeaveBalance(ctx, {
   value: valueRaw,
   mode: modeRaw,
   note: noteRaw,
+  tenantId,
 }) {
   const {
+    pool,
     getSharedState,
-    mergeSharedStateFields,
+    invalidateSharedStateCache,
     stateFindUserRecord,
     dbFindEmployeeRecord,
     calcEmployeeMonthlyLeaveBalance,
@@ -375,27 +378,23 @@ export async function setLeaveBalance(ctx, {
           : before.remaining) || 0)
       : 0;
 
-    const overrides = state.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
-      ? { ...state.leaveBalanceOverrides }
+    // 只构造这次改动涉及的最小 patch（不整段拷贝 state 里的旧快照），upsertLeaveDomain
+    // 会在加锁后跟表里的当前值合并——这样并发的另一次调用（别的门店/别的字段）不会被
+    // 这里读到的旧值覆盖掉。legacyKeys 用 null 表示删除（JSON Merge Patch 语义）。
+    const existingOverrides = state.leaveBalanceOverrides && typeof state.leaveBalanceOverrides === 'object'
+      ? state.leaveBalanceOverrides
       : {};
     const key = leaveBalanceOverrideKey(target, monthStr);
-    const legacyKeys = Object.keys(overrides).filter((k) => {
+    const legacyKeys = Object.keys(existingOverrides).filter((k) => {
       const mm = String(k || '').match(/^(.+)_([0-9]{4}-[0-9]{2})$/);
       if (!mm) return false;
       if (String(mm[2] || '') !== monthStr) return false;
       return String(mm[1] || '').trim().toLowerCase() === String(target || '').trim().toLowerCase() && k !== key;
     });
-    for (const lk of legacyKeys) delete overrides[lk];
 
-    overrides[key] = {
-      mode,
-      value: Number(value),
-      updatedBy: actor,
-      updatedAt: hrmsNowISO(),
-      note,
-    };
+    const overridesPatch = { [key]: { mode, value: Number(value), updatedBy: actor, updatedAt: hrmsNowISO(), note } };
+    for (const lk of legacyKeys) overridesPatch[lk] = null;
 
-    const logs = Array.isArray(state.leaveBalanceAdjustments) ? state.leaveBalanceAdjustments.slice() : [];
     const rec = {
       id: randomUUID(),
       key,
@@ -411,21 +410,16 @@ export async function setLeaveBalance(ctx, {
       adjustedByRole: role,
       adjustedAt: hrmsNowISO(),
     };
-    logs.unshift(rec);
 
     const nextPatches = {
-      leaveBalanceOverrides: overrides,
-      leaveBalanceAdjustments: logs.slice(0, 5000),
+      leaveBalanceOverrides: overridesPatch,
+      leaveBalanceAdjustments: [rec],
     };
     if (mode === 'carryover') {
       const prevM = shiftMonth(monthStr, -1);
       if (prevM) {
-        const prevSnaps = state.leaveCumulativeCloseSnapshots && typeof state.leaveCumulativeCloseSnapshots === 'object'
-          ? state.leaveCumulativeCloseSnapshots
-          : {};
         const snapKey = leaveBalanceOverrideKey(target, prevM);
         nextPatches.leaveCumulativeCloseSnapshots = {
-          ...prevSnaps,
           [snapKey]: {
             value: Number(Number(value).toFixed(2)),
             lockedAt: hrmsNowISO(),
@@ -438,7 +432,10 @@ export async function setLeaveBalance(ctx, {
       }
     }
 
-    await mergeSharedStateFields(nextPatches, { leaveBalanceAdjustments: 'id' });
+    await upsertLeaveDomain(pool, tenantId || 'default', nextPatches);
+    if (typeof invalidateSharedStateCache === 'function') {
+      invalidateSharedStateCache(tenantId || 'default');
+    }
     return { ok: true, key, value: Number(value), adjustment: rec };
   } catch (_e) {
     return { ok: false, status: 500, error: 'server_error', message: 'internal_error' };

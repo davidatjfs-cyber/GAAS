@@ -22,10 +22,11 @@ const log = childLogger({ domain: 'flow-config', handler: 'routes' });
  *   pool: any,
  *   resolveTenantId: (req)=>string,
  *   getSharedState?: (tenantId: string)=>Promise<object|null>,
+ *   invalidateSharedStateCache?: (tenantId?: string)=>void,
  * }} deps
  */
 export function registerFlowConfigRoutes(app, authRequired, deps) {
-  const { pool, resolveTenantId, getSharedState } = deps;
+  const { pool, resolveTenantId, getSharedState, invalidateSharedStateCache } = deps;
   const r = express.Router();
 
   r.get('/role-modules', authRequired, async (req, res) => {
@@ -67,6 +68,7 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
         await patchHrmsStateFieldsOnClient(client, tid, { roleModules: normalized });
         return normalized;
       });
+      if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
       return res.json({ ok: true, config: saved });
     } catch (e) {
       log.error({ msg: 'flow_config_role_modules_put_failed', request_id: req.requestId, err: e?.message || String(e) });
@@ -132,6 +134,7 @@ export function registerFlowConfigRoutes(app, authRequired, deps) {
         await patchHrmsStateFieldsOnClient(client, tid, fields);
         return fields;
       });
+      if (typeof invalidateSharedStateCache === 'function') invalidateSharedStateCache(tid);
       return res.json({ ok: true, ...mirror });
     } catch (e) {
       log.error({ msg: 'flow_config_approval_flows_put_failed', request_id: req.requestId, err: e?.message || String(e) });

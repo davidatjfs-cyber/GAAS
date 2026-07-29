@@ -21,7 +21,13 @@ function make(overrides = {}) {
     getLeaveBalanceOverride: () => null,
     calcEmployeeMonthlyCarryover: () => 1.5,
     getSharedState: async () => ({}),
-    mergeSharedStateFields: async () => {},
+    pool: {
+      async query() {
+        return { rows: [] };
+      },
+    },
+    resolveTenantIdDefault: () => 'default',
+    invalidateSharedStateCache: () => {},
     isLegacyTestUsername: (u) => String(u).startsWith('test_'),
     hrmsNowISO: () => '2026-07-01T06:00:00+08:00',
     ...overrides,
@@ -49,24 +55,28 @@ test('getLeaveCumulativeCloseSnapshot：无/非法 → null；数字与对象形
   );
 });
 
-test('getLockedOpeningCarryForMonth：缺参0；人工覆盖 > 快照 > 公式', () => {
+test('getLockedOpeningCarryForMonth：人工 carryover > 快照 > 公式', () => {
   const helpers = make({
     getLeaveBalanceOverride: (_s, u, m) =>
-      u === 'bob' && m === '2026-07' ? { mode: 'carryover', value: 9.1 } : null,
-    calcEmployeeMonthlyCarryover: () => 2.22,
+      u === 'alice' && m === '2026-07' ? { mode: 'carryover', value: 9 } : null,
+    calcEmployeeMonthlyCarryover: () => 2,
   });
-  assert.equal(helpers.getLockedOpeningCarryForMonth({}, null, '2026-07'), 0);
-  assert.equal(helpers.getLockedOpeningCarryForMonth({}, { username: 'bob' }, 'bad'), 0);
-  assert.equal(helpers.getLockedOpeningCarryForMonth({}, { username: 'bob' }, '2026-07'), 9.1);
+  assert.equal(
+    helpers.getLockedOpeningCarryForMonth({ leaveCumulativeCloseSnapshots: {} }, { username: 'alice' }, '2026-07'),
+    9
+  );
   assert.equal(
     helpers.getLockedOpeningCarryForMonth(
-      { leaveCumulativeCloseSnapshots: { 'alice|2026-06': { value: 5.55 } } },
-      { username: 'alice' },
+      { leaveCumulativeCloseSnapshots: { 'bob|2026-06': { value: 5.5 } } },
+      { username: 'bob' },
       '2026-07'
     ),
-    5.55
+    5.5
   );
-  assert.equal(helpers.getLockedOpeningCarryForMonth({}, { username: 'carol' }, '2026-07'), 2.22);
+  assert.equal(
+    helpers.getLockedOpeningCarryForMonth({}, { username: 'carol' }, '2026-07'),
+    2
+  );
 });
 
 test('runLeaveCumulativeCloseSnapshotForClosedMonth：bad_month / bad_next', async () => {
@@ -78,8 +88,8 @@ test('runLeaveCumulativeCloseSnapshotForClosedMonth：bad_month / bad_next', asy
     error: 'bad_month',
   });
   const helpers = make({
-    safeMonthOnly: () => '2026-06',
-    shiftMonth: () => '',
+    safeMonthOnly: (m) => (/^\d{4}-\d{2}$/.test(m) ? m : ''),
+    shiftMonth: (m) => (m === '2026-06' ? '' : '2026-07'),
   });
   assert.deepEqual(await helpers.runLeaveCumulativeCloseSnapshotForClosedMonth('2026-06'), {
     ok: false,
@@ -87,8 +97,38 @@ test('runLeaveCumulativeCloseSnapshotForClosedMonth：bad_month / bad_next', asy
   });
 });
 
-test('runLeaveCumulativeCloseSnapshotForClosedMonth：合并人、跳过 test_/manual、merge 失败', async () => {
-  let merged = null;
+/** upsertLeaveDomain 走 SELECT ... FOR UPDATE 加锁合并，mock 需要支持 pool.connect() 事务。 */
+function makeLeaveDomainPool({ currentRow = null, captureUpdate } = {}) {
+  return {
+    async query() {
+      return { rows: [] };
+    },
+    async connect() {
+      return {
+        async query(sql, params) {
+          const s = String(sql);
+          if (/^\s*BEGIN/i.test(s) || /^\s*COMMIT/i.test(s) || /^\s*ROLLBACK/i.test(s)) return {};
+          if (/SELECT[\s\S]*FROM hrms_leave_domain[\s\S]*FOR UPDATE/i.test(s)) {
+            return { rows: currentRow ? [currentRow] : [] };
+          }
+          if (/UPDATE hrms_leave_domain/i.test(s)) {
+            if (captureUpdate) captureUpdate(params);
+            return { rowCount: 1 };
+          }
+          if (/INSERT INTO hrms_leave_domain/i.test(s)) {
+            return {};
+          }
+          return { rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+}
+
+test('runLeaveCumulativeCloseSnapshotForClosedMonth：写 leave domain 表、跳过 test_/manual', async () => {
+  let updateParams = null;
+  let invalidated = 0;
   const helpers = make({
     getSharedState: async () => ({
       users: [
@@ -103,22 +143,44 @@ test('runLeaveCumulativeCloseSnapshotForClosedMonth：合并人、跳过 test_/m
       leaveCumulativeCloseSnapshots: {
         'alice|2026-06': { value: 1, source: 'manual_carryover' },
       },
+      leaveBalanceOverrides: { x: 1 },
+      leaveBalanceAdjustments: [{ id: 'a1' }],
     }),
     calcEmployeeMonthlyCarryover: (_s, p) => (p.username === 'bob' ? 7.1 : 3),
-    mergeSharedStateFields: async (fields) => {
-      merged = fields;
+    pool: makeLeaveDomainPool({
+      currentRow: {
+        leave_balance_overrides: { existingKey: 1 },
+        leave_balance_adjustments: [{ id: 'keep-me' }],
+        leave_cumulative_close_snapshots: {},
+        updated_at: 'ts1',
+      },
+      captureUpdate: (params) => { updateParams = params; },
+    }),
+    invalidateSharedStateCache: () => {
+      invalidated += 1;
     },
   });
   const ok = await helpers.runLeaveCumulativeCloseSnapshotForClosedMonth('2026-06');
   assert.equal(ok.ok, true);
   assert.equal(ok.employees, 1); // alice skipped (manual), bob written
-  assert.equal(merged.leaveCumulativeCloseSnapshots['bob|2026-06'].value, 7.1);
-  assert.equal(merged.leaveCumulativeCloseSnapshots['alice|2026-06'].source, 'manual_carryover');
+  const snaps = JSON.parse(updateParams[3]);
+  assert.equal(snaps['bob|2026-06'].value, 7.1);
+  assert.equal(snaps['alice|2026-06'].source, 'manual_carryover');
+  // 只 patch leaveCumulativeCloseSnapshots：overrides/adjustments 必须原样保留表里的当前值，
+  // 不能被这个函数读到的（可能是旧的）state0 覆盖——这正是这次要修的并发覆盖丢失 bug。
+  assert.deepEqual(JSON.parse(updateParams[1]), { existingKey: 1 });
+  assert.deepEqual(JSON.parse(updateParams[2]), [{ id: 'keep-me' }]);
+  assert.equal(invalidated, 1);
 
   const fail = make({
     getSharedState: async () => ({ employees: [{ username: 'x' }] }),
-    mergeSharedStateFields: async () => {
-      throw new Error('boom');
+    pool: {
+      async query() {
+        throw new Error('boom');
+      },
+      async connect() {
+        throw new Error('boom');
+      },
     },
   });
   const out = await fail.runLeaveCumulativeCloseSnapshotForClosedMonth('2026-06');

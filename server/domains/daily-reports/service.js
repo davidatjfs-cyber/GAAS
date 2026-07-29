@@ -9,11 +9,47 @@ import {
   upsertDailyReportItem,
 } from './upsert-schedule-notify-helpers.js';
 import { runListDailyReports } from './list-daily-reports-helpers.js';
+import { dailyReportItemFromPgRow } from './helpers.js';
 
 const log = childLogger({ domain: 'daily-reports', handler: 'service' });
 
 const PG_SYNC_FAILED_HINT =
   'PostgreSQL 表 daily_reports 双写失败：前端状态未保存。晨报/考勤/Agent 均依赖该表与 hrms_state 一致；请重试提交或联系管理员查看 HRMS 日志 [daily_report_*]、数据库约束与 DATABASE_URL。';
+
+export async function loadDailyReportsFromTable(pool, tenantId, limit = 500) {
+  const tid = String(tenantId || 'default');
+  const lim = Math.min(2000, Math.max(1, Number(limit) || 500));
+  const r = await pool.query(
+    `SELECT store, date, brand, actual_revenue, pre_discount_revenue, total_discount,
+            dine_orders, dine_revenue, dine_traffic, efficiency, labor_total,
+            actual_margin, gross_profit, dianping_rating, new_wechat_members, wechat_month_total,
+            private_room_uses, operational_anomaly_note, delivery_pre_revenue, delivery_actual,
+            delivery_orders, delivery_bad_reviews, budget, budget_rate, submitted, submitted_at, updated_at,
+            recharge_count, recharge_amount,
+            weather, segments, discount_dine, discount_delivery, categories, delivery_detail,
+            bad_reviews_dianping, staff, schedule_next_day, photos, holiday_switch
+       FROM daily_reports
+      WHERE tenant_id = $1
+      ORDER BY date DESC, updated_at DESC
+      LIMIT $2`,
+    [tid, lim]
+  );
+  return (r.rows || []).map((row) => dailyReportItemFromPgRow(row)).filter(Boolean);
+}
+
+/** daily_reports 表为权威；表有数据时覆盖 state.dailyReports。 */
+export async function hydrateDailyReportsFromTable(pool, state, tenantId) {
+  const base = state && typeof state === 'object' ? { ...state } : {};
+  try {
+    const fromTable = await loadDailyReportsFromTable(pool, tenantId);
+    if (fromTable.length > 0) {
+      base.dailyReports = fromTable;
+    }
+  } catch (e) {
+    log.error({ msg: 'daily_reports_hydrate_failed', err: e?.message || String(e) });
+  }
+  return base;
+}
 
 export async function syncDailyReportRowToPg({
   pool,
@@ -158,7 +194,8 @@ export async function syncDailyReportRowToPg({
 export async function upsertDailyReport({
   pool,
   getSharedState,
-  mergeSharedStateFields,
+  appendNotifications,
+  invalidateSharedStateCache,
   stateFindUserRecord,
   addStateNotification,
   makeNotif,
@@ -269,16 +306,17 @@ export async function upsertDailyReport({
     });
   }
 
-  const drPatches = Array.isArray(nextState.dailyReports) ? nextState.dailyReports : [];
-  const notifPatches = Array.isArray(nextState.notifications) ? nextState.notifications : [];
+  const drPatches = Array.isArray(nextState.notifications) ? nextState.notifications : [];
   try {
-    await mergeSharedStateFields(
-      { dailyReports: drPatches, notifications: notifPatches },
-      { dailyReports: ['store', 'date'], notifications: 'id' }
-    );
+    if (drPatches.length && typeof appendNotifications === 'function') {
+      await appendNotifications(drPatches);
+    }
+    if (typeof invalidateSharedStateCache === 'function') {
+      invalidateSharedStateCache(tenantIdQ);
+    }
   } catch (mergeErr) {
-    void notifyAdminsDualWriteFailure('daily_reports（营业日报 state 合并）', mergeErr);
-    return { error: 'state_merge_failed', status: 502, message: safeErrMessage(mergeErr) };
+    void notifyAdminsDualWriteFailure('daily_reports（营业日报通知写入）', mergeErr);
+    return { error: 'notification_write_failed', status: 502, message: safeErrMessage(mergeErr) };
   }
   return { ok: true, item };
 }
@@ -328,22 +366,26 @@ export async function queryPrivateRoomMonthTotal({
 export async function deleteDailyReportFromState({
   store,
   date,
-  getSharedState,
-  mergeSharedStateFields,
+  pool,
+  tenantId,
+  invalidateSharedStateCache,
   notifyAdminsDualWriteFailure,
   safeErrMessage,
 }) {
-  const state0 = (await getSharedState()) || {};
-  const list = Array.isArray(state0.dailyReports) ? state0.dailyReports.slice() : [];
-  const next = list.filter(r => !(String(r?.store || '').trim() === store && String(r?.date || '').trim() === date));
+  const storeStr = String(store || '').trim();
+  const dateStr = String(date || '').trim();
+  const tenantIdQ = tenantId || 'default';
   try {
-    await mergeSharedStateFields(
-      { dailyReports: next },
-      { dailyReports: ['store', 'date'] }
+    await pool.query(
+      `DELETE FROM daily_reports WHERE TRIM(store) = $1 AND date = $2::date AND tenant_id = $3`,
+      [storeStr, dateStr, tenantIdQ]
     );
+    if (typeof invalidateSharedStateCache === 'function') {
+      invalidateSharedStateCache(tenantIdQ);
+    }
   } catch (mergeErr) {
-    void notifyAdminsDualWriteFailure('daily_reports（营业日报删除 state 合并）', mergeErr);
-    return { error: 'state_merge_failed', message: safeErrMessage(mergeErr) };
+    void notifyAdminsDualWriteFailure('daily_reports（营业日报删除 PG）', mergeErr);
+    return { error: 'pg_delete_failed', message: safeErrMessage(mergeErr) };
   }
   return { ok: true };
 }

@@ -11,18 +11,18 @@ import { createMetricAlerts, setMetricAlerts } from '../shared/metric-alerts.js'
 
 export function createNotificationsHelpers({
   pool,
-  mergeSharedStateFields,
   resolveTenantIdDefault,
   hrmsNowISO,
   sendLarkMessage,
   lookupFeishuUserByUsername,
+  invalidateSharedStateCache,
 }) {
   const makeNotif = createMakeNotif({ hrmsNowISO });
   const { appendNotifications, insertHrmsUserNotifications } = createAppendHelpers({
     pool,
-    mergeSharedStateFields,
     resolveTenantIdDefault,
     hrmsNowISO,
+    invalidateSharedStateCache,
   });
   const sendAdminSystemAlert = createSendAdminSystemAlert({
     pool,

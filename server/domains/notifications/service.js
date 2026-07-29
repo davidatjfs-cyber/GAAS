@@ -50,7 +50,8 @@ export async function loadNotificationsFromTable(pool, tenantId, limit = 500) {
 }
 
 /**
- * 表有数据时覆盖 state.notifications；并保留仅存在于 state 的孤立项（过渡期）。
+ * 表有数据时覆盖 state.notifications。
+ * strip 迁移前仍保留 state-only 孤立项；迁移后 blob 无 notifications，表即唯一来源。
  */
 export async function hydrateNotificationsFromTable(pool, state, tenantId) {
   const base = state && typeof state === 'object' ? { ...state } : {};
@@ -60,7 +61,7 @@ export async function hydrateNotificationsFromTable(pool, state, tenantId) {
     const existing = Array.isArray(base.notifications) ? base.notifications : [];
     const dbIds = new Set(fromTable.map((n) => n.id));
     const stateOnly = existing.filter((n) => n?.id && !dbIds.has(String(n.id)));
-    base.notifications = [...fromTable, ...stateOnly];
+    base.notifications = stateOnly.length ? [...fromTable, ...stateOnly] : fromTable;
   } catch (e) {
     log.error({ msg: 'notifications_hydrate_failed', err: e?.message || String(e) });
   }

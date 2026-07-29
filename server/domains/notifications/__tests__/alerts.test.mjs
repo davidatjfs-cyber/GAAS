@@ -77,20 +77,18 @@ test('notifyAdminsDualWriteFailure：无接收人 / 部分失败 / 外层 catch'
 });
 
 test('sendAdminSystemAlert：查 admin、显式用户、persist 失败、跳过 persist、角色兜底、全失败', async () => {
-  const merge = [];
   const inserts = [];
   const lark = [];
   const nowIso = '2026-07-26T00:00:00.000Z';
   const makeNotif = createMakeNotif({ hrmsNowISO: () => nowIso });
+  // appendNotifications 现在直接落 hrms_user_notifications 表（不再 mergeSharedStateFields
+  // 回写 blob），这里就不用再 mock/断言 merge 了。
   const { appendNotifications, insertHrmsUserNotifications } = createAppendHelpers({
     pool: {
       query: async (...args) => {
         inserts.push(args);
         return { rows: [] };
       },
-    },
-    mergeSharedStateFields: async (...a) => {
-      merge.push(a);
     },
     resolveTenantIdDefault: () => 'default',
     hrmsNowISO: () => nowIso,
@@ -137,11 +135,9 @@ test('sendAdminSystemAlert：查 admin、显式用户、persist 失败、跳过 
   let r = await send('line1\nline2', { meta: { k: 1 } });
   assert.deepEqual(r.recipients, ['admin1']);
   assert.equal(r.feishuSent, 2); // admin1 + role fallback
-  assert.equal(merge.length, 1);
   assert.ok(inserts.length >= 1);
 
   // 显式 usernames：不做 role 兜底；lookup 命中；persist 抛错仍继续发飞书
-  merge.length = 0;
   lark.length = 0;
   send = createSendAdminSystemAlert({
     pool: {
@@ -165,7 +161,6 @@ test('sendAdminSystemAlert：查 admin、显式用户、persist 失败、跳过 
   assert.equal(lark.length, 1);
   assert.equal(r.feishuSent, 0);
   assert.equal(r.feishuFailed, 1);
-  assert.equal(merge.length, 0);
 
   // persistToHrms=false；无 open_id → feishuFailed = recipients.length
   send = createSendAdminSystemAlert({
@@ -208,7 +203,6 @@ test('sendAdminSystemAlert：查 admin、显式用户、persist 失败、跳过 
   assert.equal(r.feishuSent, 0);
 });
 test('appendNotifications / insertHrmsUserNotifications 边角', async () => {
-  const merge = [];
   const q = [];
   const { appendNotifications, insertHrmsUserNotifications } = createAppendHelpers({
     pool: {
@@ -217,21 +211,23 @@ test('appendNotifications / insertHrmsUserNotifications 边角', async () => {
         return {};
       },
     },
-    mergeSharedStateFields: async (...a) => {
-      merge.push(a);
-    },
     resolveTenantIdDefault: () => 't1',
     hrmsNowISO: () => 'iso',
   });
+  // appendNotifications 现在就是 insertHrmsUserNotifications：没有 target 的记录被跳过，
+  // 不再落回 hrms_state blob。
   await appendNotifications([{ id: 'n1' }, null]);
-  assert.equal(merge.length, 1);
-  assert.deepEqual(merge[0][0], { notifications: [{ id: 'n1' }] });
+  assert.equal(q.length, 0);
+
+  await appendNotifications([{ targetUsername: 'n1user', title: 'T', message: 'M' }]);
+  assert.equal(q.length, 1);
+  assert.equal(q[0][1][0], 'n1user');
 
   await insertHrmsUserNotifications([
     { title: 't' }, // no target → skip
     { targetUsername: 'u2', message: 'm', data: { d: 1 } },
   ]);
-  assert.equal(q.length, 1);
-  assert.equal(q[0][1][0], 'u2');
-  assert.equal(q[0][1][6], 't1');
+  assert.equal(q.length, 2);
+  assert.equal(q[1][1][0], 'u2');
+  assert.equal(q[1][1][6], 't1');
 });

@@ -90,48 +90,45 @@ test('queryPrivateRoomMonthTotal exact match then ILIKE fallback', async () => {
   assert.deepEqual(calls[0].args, ['2026-07', ['洪潮店', '洪潮店别名'], 'default']);
 });
 
-test('deleteDailyReportFromState filters list and calls merge', async () => {
-  const merges = [];
-  const state = {
-    dailyReports: [
-      { store: 'A店', date: '2026-07-01', id: 'keep1' },
-      { store: 'B店', date: '2026-07-01', id: 'remove' },
-      { store: 'A店', date: '2026-07-02', id: 'keep2' },
-    ],
+test('deleteDailyReportFromState deletes PG row and invalidates cache', async () => {
+  const queries = [];
+  const invalidates = [];
+  const pool = {
+    query: async (...a) => {
+      queries.push(a);
+      return { rowCount: 1 };
+    },
   };
 
   const result = await deleteDailyReportFromState({
     store: 'B店',
     date: '2026-07-01',
-    getSharedState: async () => state,
-    mergeSharedStateFields: async (patch, keys) => {
-      merges.push({ patch, keys });
-    },
+    pool,
+    tenantId: 'default',
+    invalidateSharedStateCache: (tid) => invalidates.push(tid),
     notifyAdminsDualWriteFailure: () => {},
     safeErrMessage: (e) => String(e?.message || e),
   });
 
   assert.deepEqual(result, { ok: true });
-  assert.equal(merges.length, 1);
-  assert.equal(merges[0].patch.dailyReports.length, 2);
-  assert.ok(merges[0].patch.dailyReports.every((r) => !(r.store === 'B店' && r.date === '2026-07-01')));
-  assert.deepEqual(merges[0].keys, { dailyReports: ['store', 'date'] });
+  assert.equal(queries.length, 1);
+  assert.match(String(queries[0][0]), /DELETE FROM daily_reports/);
+  assert.deepEqual(invalidates, ['default']);
 });
 
-test('deleteDailyReportFromState returns state_merge_failed on merge error', async () => {
+test('deleteDailyReportFromState returns pg_delete_failed on query error', async () => {
   const result = await deleteDailyReportFromState({
     store: 'A店',
     date: '2026-07-01',
-    getSharedState: async () => ({ dailyReports: [] }),
-    mergeSharedStateFields: async () => {
-      throw new Error('merge boom');
-    },
+    pool: { query: async () => { throw new Error('pg boom'); } },
+    tenantId: 'default',
+    invalidateSharedStateCache: () => {},
     notifyAdminsDualWriteFailure: () => {},
     safeErrMessage: (e) => String(e?.message || e),
   });
 
-  assert.equal(result.error, 'state_merge_failed');
-  assert.equal(result.message, 'merge boom');
+  assert.equal(result.error, 'pg_delete_failed');
+  assert.equal(result.message, 'pg boom');
 });
 
 test('syncSubmittedDailyReportsToPg only upserts submitted matching date', async () => {
@@ -336,7 +333,8 @@ test('listDailyReports filters null entries from dailyReports without throwing',
 
 function makeUpsertDeps(overrides = {}) {
   const queries = [];
-  const merges = [];
+  const appends = [];
+  const invalidates = [];
   const adminNotifies = [];
   const pool = {
     query: async (...a) => {
@@ -352,12 +350,16 @@ function makeUpsertDeps(overrides = {}) {
   const deps = {
     pool,
     queries,
-    merges,
+    appends,
+    invalidates,
     adminNotifies,
     getSharedState: async () => overrides.state || { dailyReports: [] },
-    mergeSharedStateFields: async (patch, keys) => {
-      merges.push({ patch, keys });
-      if (overrides.mergeThrows) throw new Error('merge boom');
+    appendNotifications: async (notifs) => {
+      appends.push(notifs);
+      if (overrides.appendThrows) throw new Error('append boom');
+    },
+    invalidateSharedStateCache: (tid) => {
+      invalidates.push(tid);
     },
     stateFindUserRecord,
     addStateNotification: (s, n) => ({
@@ -395,7 +397,7 @@ function isDailyReportsInsertQuery(sql) {
 }
 
 test('upsertDailyReport returns locked for store_manager editing submitted report', async () => {
-  const { callUpsert, merges } = makeUpsertDeps({
+  const { callUpsert, invalidates } = makeUpsertDeps({
     state: {
       dailyReports: [
         {
@@ -411,11 +413,11 @@ test('upsertDailyReport returns locked for store_manager editing submitted repor
   const result = await callUpsert({ role: 'store_manager', wantSubmit: true });
 
   assert.deepEqual(result, { error: 'locked', status: 403 });
-  assert.equal(merges.length, 0);
+  assert.equal(invalidates.length, 0);
 });
 
 test('upsertDailyReport returns missing_store for front_manager without store', async () => {
-  const { callUpsert, merges } = makeUpsertDeps({ myStore: '' });
+  const { callUpsert, invalidates } = makeUpsertDeps({ myStore: '' });
 
   const result = await callUpsert({
     role: 'front_manager',
@@ -425,11 +427,11 @@ test('upsertDailyReport returns missing_store for front_manager without store', 
   });
 
   assert.deepEqual(result, { error: 'missing_store', status: 400 });
-  assert.equal(merges.length, 0);
+  assert.equal(invalidates.length, 0);
 });
 
-test('upsertDailyReport draft save skips PG insert and merge succeeds without submittedAt', async () => {
-  const { callUpsert, queries, merges } = makeUpsertDeps({ state: { dailyReports: [] } });
+test('upsertDailyReport draft save skips PG insert and invalidates cache', async () => {
+  const { callUpsert, queries, invalidates } = makeUpsertDeps({ state: { dailyReports: [] } });
 
   const result = await callUpsert({ wantSubmit: false, dataPayload: { gross: 200 } });
 
@@ -437,13 +439,12 @@ test('upsertDailyReport draft save skips PG insert and merge succeeds without su
   assert.ok(result.item);
   assert.equal(result.item.submittedAt, undefined);
   assert.equal(queries.filter((q) => isDailyReportsInsertQuery(q[0])).length, 0);
-  assert.equal(merges.length, 1);
-  assert.equal(merges[0].patch.dailyReports.length, 1);
-  assert.equal(merges[0].patch.dailyReports[0].store, '我的店');
+  assert.equal(invalidates.length, 1);
+  assert.equal(invalidates[0], 'default');
 });
 
 test('upsertDailyReport submit success writes PG and sets submittedAt', async () => {
-  const { callUpsert, queries, merges } = makeUpsertDeps({ state: { dailyReports: [] } });
+  const { callUpsert, queries, invalidates } = makeUpsertDeps({ state: { dailyReports: [] } });
 
   const result = await callUpsert({ wantSubmit: true, dataPayload: { gross: 300, brand: '洪潮' } });
 
@@ -451,11 +452,11 @@ test('upsertDailyReport submit success writes PG and sets submittedAt', async ()
   assert.equal(result.item.submittedAt, '2026-07-24T12:00:00+08:00');
   assert.equal(result.item.submittedBy, 'user1');
   assert.equal(queries.filter((q) => isDailyReportsInsertQuery(q[0])).length, 1);
-  assert.equal(merges.length, 1);
+  assert.equal(invalidates.length, 1);
 });
 
-test('upsertDailyReport pg_sync_failed skips merge and notifies admins', async () => {
-  const { callUpsert, queries, merges, adminNotifies } = makeUpsertDeps({
+test('upsertDailyReport pg_sync_failed skips invalidate and notifies admins', async () => {
+  const { callUpsert, queries, invalidates, adminNotifies } = makeUpsertDeps({
     state: { dailyReports: [] },
     poolQuery: async (sql) => {
       if (isDailyReportsInsertQuery(sql)) throw new Error('pg boom');
@@ -469,7 +470,7 @@ test('upsertDailyReport pg_sync_failed skips merge and notifies admins', async (
   assert.equal(result.status, 502);
   assert.equal(result.message, 'pg boom');
   assert.match(result.hint, /PostgreSQL 表 daily_reports 双写失败/);
-  assert.equal(merges.length, 0);
+  assert.equal(invalidates.length, 0);
   assert.equal(queries.filter((q) => isDailyReportsInsertQuery(q[0])).length, 1);
   assert.equal(adminNotifies.length, 1);
   assert.match(String(adminNotifies[0][0]), /新建 我的店 2026-07-24/);

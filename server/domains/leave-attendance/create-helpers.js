@@ -13,7 +13,8 @@ import { createCloseSnapshotHelpers } from './close-snapshot.js';
 export function createLeaveAttendanceHelpers({
   pool,
   getSharedState,
-  mergeSharedStateFields,
+  resolveTenantIdDefault,
+  invalidateSharedStateCache,
   safeDateOnly,
   safeMonthOnly,
   isLegacyTestUsername,
@@ -83,7 +84,9 @@ export function createLeaveAttendanceHelpers({
     getLeaveBalanceOverride,
     calcEmployeeMonthlyCarryover,
     getSharedState,
-    mergeSharedStateFields,
+    pool,
+    resolveTenantIdDefault,
+    invalidateSharedStateCache,
     isLegacyTestUsername,
     hrmsNowISO,
   });

@@ -56,6 +56,7 @@ export function registerReportsPayrollRoutes(app, deps) {
       store,
       username,
       audited: !!req.body?.audited,
+      tenantId: req.tenantId || req.user?.tenant_id || 'default',
     });
     return sendServiceResult(res, result, (r) => ({ ok: true, audit: r.audit }));
   });

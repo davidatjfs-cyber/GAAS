@@ -227,7 +227,9 @@ test('createListenMonitors: beatHeartbeat + start wires intervals', async () => 
   const reconcileTick = timers.find((t) => t.ms === 10 * 60 * 1000);
   assert.ok(reconcileTick);
   await reconcileTick.fn();
-  assert.ok(alerts.some((a) => String(a).includes('核心数据自愈')));
+  // monitor-critical-reconcile.js 不再直接 jsonb_set 回灌 blob（表已 hydrate 收口进
+  // getSharedState），落后时只 invalidate 缓存 + 告警，告警文案里已经去掉了"自愈"二字。
+  assert.ok(alerts.some((a) => String(a).includes('核心数据')));
 
   // Force POS sales window by monkey-patching Date temporarily via real local 23:30
   const RealDate = Date;
