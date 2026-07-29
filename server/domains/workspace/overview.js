@@ -28,6 +28,13 @@ function addYears(ymd, delta) {
   return dt.toISOString().slice(0, 10);
 }
 
+/** a、b 都是 YYYY-MM-DD，返回 a-b 的天数差（a晚于b时为正）。 */
+function diffDays(a, b) {
+  const da = new Date(`${a}T12:00:00+08:00`);
+  const db = new Date(`${b}T12:00:00+08:00`);
+  return Math.round((da.getTime() - db.getTime()) / 86400000);
+}
+
 function mondayOf(ymd) {
   const d = new Date(`${ymd}T12:00:00+08:00`);
   const day = d.getUTCDay(); // 0=Sun..6=Sat
@@ -61,10 +68,14 @@ async function revenueRollup(pool, tenantId, today, storeFilter) {
   const yesterday = addDays(today, -1);
   const weekStart = mondayOf(today);
   const weekStartLW = addDays(weekStart, -7);
-  const weekEndLW = addDays(weekStart, -1);
+  // 2026-07-29 修复：之前 weekEndLW 固定是"上周日"（上周整周），但 week_revenue 是
+  // "本周一到今天"（本周至今，可能只过了几天）——本周部分周期 vs 上周整周，同比基数对不上，
+  // 用户反馈"周三时不该拿本周一到周三跟上周一整周比"。改成"上周同样长度"：上周一 + 本周已经
+  // 过去的天数，跟月度同理。
+  const weekEndLW = addDays(weekStartLW, diffDays(today, weekStart));
   const monthStart = monthStartOf(today);
   const monthStartLM = monthStartOf(addDays(monthStart, -1));
-  const monthEndLM = addDays(monthStart, -1);
+  const monthEndLM = addDays(monthStartLM, diffDays(today, monthStart));
   const todayLY = addYears(today, -1);
   const weekStartLY = addYears(weekStart, -1);
   const weekEndLY = addYears(today, -1);
@@ -91,11 +102,19 @@ async function revenueRollup(pool, tenantId, today, storeFilter) {
   );
   const row = r.rows[0] || {};
 
+  // 2026-07-29 修复：之前只查"本月"这一个period，实测生产库revenue_targets最新一条是
+  // 2026-04（本月2026-07根本没配），导致目标永远显示¥0——但月度营收目标业务上通常是
+  // "设一次、沿用到改为止"，不是每个月都要重新录入。改成"往前找最近一个已配置的period"，
+  // 找不到精确当月才会退化到0（不编数字，真没配过就是没有）。
   const targetParams = [tenantId, periodOf(today)];
   const targetFilter = storeFilterClause(storeFilter, targetParams.length + 1);
   if (targetFilter.param) targetParams.push(targetFilter.param);
   const targetR = await pool.query(
-    `SELECT COALESCE(SUM(target_revenue), 0) AS target FROM revenue_targets WHERE tenant_id = $1 AND period = $2${targetFilter.sql}`,
+    `SELECT COALESCE(SUM(target_revenue), 0) AS target FROM revenue_targets
+      WHERE tenant_id = $1 AND period = (
+        SELECT period FROM revenue_targets WHERE tenant_id = $1 AND period <= $2${targetFilter.sql}
+        ORDER BY period DESC LIMIT 1
+      )${targetFilter.sql}`,
     targetParams
   );
   const targetRevenue = Number(targetR.rows[0]?.target || 0);
@@ -140,7 +159,9 @@ async function marginTracking(pool, tenantId, today, storeFilter) {
 async function operationalMetrics(pool, tenantId, today, storeFilter) {
   const monthStart = monthStartOf(today);
   const monthStartLM = monthStartOf(addDays(monthStart, -1));
-  const monthEndLM = addDays(monthStart, -1);
+  // 同 revenueRollup 的修复：上月对比区间要跟"本月至今"天数对齐，不能拿本月未过完的天数
+  // 去跟上月整月比。
+  const monthEndLM = addDays(monthStartLM, diffDays(today, monthStart));
   const monthStartLY = addYears(monthStart, -1);
   const monthEndLY = addYears(today, -1);
 
@@ -222,7 +243,8 @@ async function storeRankings(pool, tenantId, today, storeFilter) {
     store: row.store,
     revenue: Number(row.revenue || 0),
     traffic: Number(row.traffic || 0),
-    efficiency: row.efficiency != null ? Number(row.efficiency) : null,
+    // 用户反馈人效小数位太多，人效本身就是"人均产出"这种粗粒度指标，取整数展示。
+    efficiency: row.efficiency != null ? Math.round(Number(row.efficiency)) : null,
   }));
   return {
     byRevenue: [...rows].sort((a, b) => b.revenue - a.revenue),

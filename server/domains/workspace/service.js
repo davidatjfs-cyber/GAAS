@@ -41,25 +41,29 @@ export async function getOpenTaskSummaryByStore(pool, tenantId) {
  * 2026-07-28 用户明确要求「显示上个月ABCD门店」——严格锁定上一个自然月，不是"最新一期"
  * （之前那版如果本月的评级已经算出来了会显示本月，这次改成固定显示上月）。
  */
+// 2026-07-29 修复：之前用 master_tasks 里出现过的 store 字段做门店全集，结果一堆自动化任务
+// （growth_monitor/proactive_llm 等）的 store 字段本身就是脏数据（"巡检触发3条"/"看看"/
+// "数据报表里有哪些"这种自由文本，不是真门店名），全都混进了门店红绿灯/六大神器/餐饮总监的
+// 门店下拉框里。改成用真实门店台账（hrms_state.data.stores，/api/stores 用的同一个数据源）
+// 做门店全集，master_tasks 只用来读评级，不再贡献"门店名单"。
 export async function getStoreHealthLights(pool, tenantId) {
   const now = new Date();
   const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   const lastMonthPeriod = `${lastMonthDate.getUTCFullYear()}-${String(lastMonthDate.getUTCMonth() + 1).padStart(2, '0')}`;
-  const [ratedRows, taskStoreRows] = await Promise.all([
+  const [ratedRows, stateRow] = await Promise.all([
     pool.query(
       `SELECT store, rating, achievement_rate, period
          FROM store_ratings
         WHERE tenant_id = $1 AND store IS NOT NULL AND store <> '' AND period = $2`,
       [tenantId, lastMonthPeriod]
     ),
-    pool.query(
-      `SELECT DISTINCT store FROM master_tasks
-        WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''`,
-      [tenantId]
-    ),
+    pool.query(`select data from hrms_state where key = $1 limit 1`, [tenantId]),
   ]);
   const ratingByStore = new Map((ratedRows.rows || []).map((r) => [r.store, r]));
-  const allStores = new Set([...ratingByStore.keys(), ...(taskStoreRows.rows || []).map((r) => r.store)]);
+  const realStores = Array.isArray(stateRow.rows?.[0]?.data?.stores)
+    ? stateRow.rows[0].data.stores.map((s) => String(s?.name || '').trim()).filter(Boolean)
+    : [];
+  const allStores = new Set([...ratingByStore.keys(), ...realStores]);
   return [...allStores].map((store) => {
     const rated = ratingByStore.get(store) || null;
     const rating = rated?.rating || null;
@@ -74,6 +78,23 @@ export async function getStoreHealthLights(pool, tenantId) {
   });
 }
 
+// 2026-07-29 修复：之前"任务"栏不限制来源，把 master_tasks 里所有开放行都当"任务"显示——
+// 实测里混进了 growth_monitor(营销优惠券核销率)/data_auditor(充值异常等BI审计)/proactive_llm
+// 等大量跟"任务"完全无关的自动化记录（growth_monitor 一项就有266条）。用户明确要求"任务"
+// 只能是这5类：agent定时任务/agent抽查任务/Agent任务指挥中心/经营诊断下发的任务(走
+// growth_solution_tasks，另一张表，已经在wsFetchGrowthSolutionTasks单独处理)/食安异常。
+// 用真实的 source/category 分布查出来后按下面这个白名单过滤：
+//   rhythm_engine        → agent定时任务(weekly_report/monthly_evaluation)
+//   random_inspection     → agent抽查任务(源名本身就是"随机抽查")
+//   scheduled_inspection  → 目前归到"抽查任务"这类——命名是"定时巡检"，但语义更接近门店
+//     巡查而不是周期报表，跟 rhythm_engine 明显是两回事；这个分类边界不是100%确定，
+//     如果实际应该算"定时任务"需要用户确认再调整。
+//   hrms_task_board       → Agent任务指挥中心模块（source名直接对应"任务看板"）
+//   category含food_safety/food_quality → 食安异常触发（不分source，因为食安类目分散在
+//     bi_anomaly/anomaly_engine/hrms_task_board 好几个source下面）
+const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board'];
+const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')`;
+
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
@@ -81,8 +102,9 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
        FROM master_tasks
       WHERE tenant_id = $1 AND assignee_username = $2
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4')}
       ORDER BY created_at DESC LIMIT $3`,
-    [tenantId, username, lim]
+    [tenantId, username, lim, WS_ALLOWED_TASK_SOURCES]
   );
   return r.rows || [];
 }
@@ -98,8 +120,9 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
        FROM master_tasks
       WHERE tenant_id = $1
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$3')}
       ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim]
+    [tenantId, lim, WS_ALLOWED_TASK_SOURCES]
   );
   return r.rows || [];
 }
