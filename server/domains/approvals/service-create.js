@@ -24,6 +24,7 @@ export async function createApproval({
   pool,
   getSharedState,
   saveSharedState,
+  mergeSharedStateFields,
   stateFindUserRecord,
   stateOrDbFindUserRecord,
   pickAdminUsername,
@@ -133,6 +134,7 @@ export async function createApproval({
         payload,
         state,
         item,
+        mergeSharedStateFields,
         saveSharedState,
         hrmsNowISO,
       });

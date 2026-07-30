@@ -255,8 +255,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-30 第三十九次上调（71367→71397）：用户明确要求"营销全部手动触发"，去掉自动
  * 执行相关文案；"忽略"改成实时刷新替换新建议（原来只是隐藏按钮，不会补新的）；补上
  * 未读"新"标签区分滚动更新后的新旧建议(localStorage记录已见过的actionKey)。
+ * 2026-07-31 第四十次上调（71397→71401）：合并 origin/main 到 feature/workspace-shell-p1；
+ * 正式晋升申请资格判断补上 trainingProgress.passed 这条兜底（此前只认
+ * assessmentStatus === 'passed'，考核通过但该字段没同步的场景会显示"暂无可申请记录"）。
  */
-const MAX_LINES = 71397;
+const MAX_LINES = 71401;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
