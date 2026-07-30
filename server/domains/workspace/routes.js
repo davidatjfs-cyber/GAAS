@@ -42,8 +42,11 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
     const username = String(req.user?.username || '').trim();
     if (!username) return res.status(400).json({ error: 'missing_username' });
     try {
-      const scope = String(req.query?.scope || '').trim() === 'notable' ? 'notable' : 'mine';
-      const data = await getWorkspaceHome(pool, tenantId, username, { scope });
+      // 2026-07-30 修复：任务是否需要"抄送"由角色决定（只有食品安全类需要抄送总部经理/
+      // 管理员），不能再由前端传的 scope 参数决定"看谁的任务"——那会导致任何角色只要传
+      // scope=notable 就能看到全租户任务。改成服务端按 req.user.role 判断。
+      const role = String(req.user?.role || '').trim();
+      const data = await getWorkspaceHome(pool, tenantId, username, { role });
       res.json({ ok: true, ...data });
     } catch (e) {
       log.error({ msg: 'workspace_home_failed', request_id: req.requestId, err: e?.message });

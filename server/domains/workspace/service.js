@@ -109,9 +109,18 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   return r.rows || [];
 }
 
+// 2026-07-30 修复：业务方明确确认任务路由规则——除食品安全类需要抄送总部经理+管理员，
+// 其余全部只发给当事人(assignee_username)。之前这里是"全租户范围、不管是谁的任务全都给
+// 管理员/老板看"，导致 admin/hq_manager/store_manager/出品经理登录后看到完全一样的
+// rhythm_engine 周报、random_inspection 抽查等任务列表——这些任务本该只有各自的责任人
+// 能看到。现在收窄到只有"食品安全"这一类会被 cc 给总部经理/管理员看（category含
+// food_safety/food_quality），其余任务类型不再broadcast给非责任人，getWorkspaceHome()
+// 只对admin/hq_manager角色额外拼这份"食安cc视图"，其他角色只看 getMyOpenTasks()。
+const WS_FOOD_SAFETY_CC_ROLES = ['admin', 'hq_manager'];
+
 /**
- * 老板/总部视角的「需拍板」任务：不是"指派给我"的任务（那是店长/员工视角），
- * 而是全租户范围内按严重度排序的开放任务，用于驾驶舱/总部工作台的决策卡片。
+ * 食品安全类任务的「抄送视图」：不是"指派给我"的任务，是总部经理/管理员按业务规则
+ * 需要被抄送知晓的食安异常，不含其它任务类型（那些只归当事人）。
  */
 export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
@@ -120,9 +129,9 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
        FROM master_tasks
       WHERE tenant_id = $1
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
-        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$3')}
+        AND (category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')
       ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim, WS_ALLOWED_TASK_SOURCES]
+    [tenantId, lim]
   );
   return r.rows || [];
 }
@@ -164,13 +173,19 @@ export async function getPendingConfirmations(pool, tenantId, username, role) {
   return r.rows || [];
 }
 
-export async function getWorkspaceHome(pool, tenantId, username, { scope = 'mine' } = {}) {
-  const [storeSummary, storeLights, tasks, unread] = await Promise.all([
+export async function getWorkspaceHome(pool, tenantId, username, { role = '' } = {}) {
+  const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
+  const [storeSummary, storeLights, myTasks, ccTasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
     getStoreHealthLights(pool, tenantId),
-    scope === 'notable' ? getNotableOpenTasks(pool, tenantId) : getMyOpenTasks(pool, tenantId, username),
+    getMyOpenTasks(pool, tenantId, username),
+    isFoodSafetyCcRole ? getNotableOpenTasks(pool, tenantId) : Promise.resolve([]),
     getUnreadInboxCount(pool, tenantId, username),
   ]);
+  // 去重：如果当前用户本身就是某条食安任务的责任人，getMyOpenTasks 已经包含它，
+  // 不需要在 cc 视图里再出现一次。
+  const myTaskIds = new Set(myTasks.map((t) => t.task_id));
+  const tasks = [...myTasks, ...ccTasks.filter((t) => !myTaskIds.has(t.task_id))];
   return { storeSummary, storeLights, myTasks: tasks, unreadCount: unread };
 }
 
