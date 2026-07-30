@@ -137,18 +137,68 @@ const WS_FOOD_SAFETY_CC_ROLES = ['admin', 'hq_manager'];
  * cc 视图：不是"指派给我"的任务，是总部经理/管理员按业务规则需要被抄送知晓的食品安全
  * 异常，不含其它任务类型（那些只归当事人）。
  */
-export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
+// 2026-07-30 修复：用户明确要求"任务栏是要清空的队列，不是展示区"——cc(食品安全)视图是
+// 共享查询、抄送给所有admin/hq_manager，之前没有任何per-user状态记录"我已经确认收到过
+// 这条了"，同一条任务会永远出现在每个人的列表里。加 viewerUsername，LEFT JOIN
+// master_task_acks 排除掉该用户已经点过"确认收到"(ackTask)的任务——只影响这个用户自己的
+// 列表，不影响任务本身状态、也不影响其他cc收件人。
+export async function getNotableOpenTasks(pool, tenantId, limit = 8, viewerUsername = '') {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
+  const params = [tenantId, lim];
+  let ackFilter = '';
+  if (viewerUsername) {
+    params.push(viewerUsername);
+    ackFilter = ` AND NOT EXISTS (
+      SELECT 1 FROM master_task_acks a
+       WHERE a.tenant_id = t.tenant_id AND a.task_id = t.task_id AND lower(a.username) = lower($3)
+    )`;
+  }
   const r = await pool.query(
-    `SELECT task_id, title, detail, severity, store, status, category, source, created_at
-       FROM master_tasks
-      WHERE tenant_id = $1
-        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
-        AND (category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')
-      ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim]
+    `SELECT t.task_id, t.title, t.detail, t.severity, t.store, t.status, t.category, t.source, t.created_at
+       FROM master_tasks t
+      WHERE t.tenant_id = $1
+        AND t.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+        AND (t.category ILIKE '%food_safety%' OR t.category ILIKE '%food_quality%')${ackFilter}
+      ORDER BY (t.severity = 'high') DESC, t.created_at DESC LIMIT $2`,
+    params
   );
   return r.rows || [];
+}
+
+// admin对cc(仅同步知悉)类任务的"确认收到"——只在这张表记一行，不改master_tasks本身的状态，
+// 因为这条任务可能还抄送给别的admin/hq_manager，不能因为其中一个人点了确认就让所有人都看不到。
+export async function ackTask(pool, tenantId, taskId, username) {
+  const u = String(username || '').trim();
+  const t = String(taskId || '').trim();
+  if (!u || !t) return { ok: false, status: 400, error: 'missing_params' };
+  await pool.query(
+    `INSERT INTO master_task_acks (tenant_id, task_id, username)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (tenant_id, task_id, username) DO NOTHING`,
+    [tenantId, t, u]
+  );
+  return { ok: true };
+}
+
+// 总部经理对食品安全类任务真正"判罚"——这是唯一有权判定处置结果的角色(WS_FOOD_SAFETY_CC_ROLES
+// 里同时能越过promoted_by限制的hq_manager)，输入判罚结果后任务才真正结案(status=resolved)，
+// 对所有cc收件人都消失，不是只对总部经理自己。
+export async function resolveFoodSafetyTask(pool, tenantId, { taskId, reviewerUsername, reviewerRole, verdict }) {
+  const role = String(reviewerRole || '').trim();
+  if (role !== 'hq_manager' && role !== 'admin') return { ok: false, status: 403, error: 'forbidden' };
+  const note = String(verdict || '').trim();
+  if (!note) return { ok: false, status: 400, error: 'missing_verdict' };
+  const r = await pool.query(
+    `UPDATE master_tasks
+        SET status = 'resolved', review_result = $1::jsonb, resolved_at = NOW(), updated_at = NOW()
+      WHERE task_id = $2 AND tenant_id = $3
+        AND (category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')
+        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+      RETURNING task_id`,
+    [JSON.stringify({ verdict: note, reviewer: reviewerUsername || '' }), taskId, tenantId]
+  );
+  if (!r.rows.length) return { ok: false, status: 404, error: 'task_not_found' };
+  return { ok: true };
 }
 
 // 2026-07-30 修复：出品经理/店长反馈工作台通知栏/任务角标一直是0，跟"我的档案"里能看到的
@@ -205,7 +255,7 @@ export async function getWorkspaceHome(pool, tenantId, username, { role = '' } =
     getOpenTaskSummaryByStore(pool, tenantId),
     getStoreHealthLights(pool, tenantId),
     getMyOpenTasks(pool, tenantId, username),
-    isFoodSafetyCcRole ? getNotableOpenTasks(pool, tenantId) : Promise.resolve([]),
+    isFoodSafetyCcRole ? getNotableOpenTasks(pool, tenantId, 8, username) : Promise.resolve([]),
     getUnreadInboxCount(pool, tenantId, username),
   ]);
   // 去重：如果当前用户本身就是某条食安任务的责任人，getMyOpenTasks 已经包含它，

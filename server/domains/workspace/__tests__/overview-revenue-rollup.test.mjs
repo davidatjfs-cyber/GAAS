@@ -123,6 +123,26 @@ test('operationalMetrics：pos_orders的store_name是POS原始长名，归一化
   assert.equal(hc.partySizeSharePct.p2, 28.6, '归一化后应该能取到就餐人数分布，不是null/0');
 });
 
+// 2026-07-30：管理员反馈"实收目标"只接入了马己仙门店——查证生产库发现洪潮门店的
+// revenue_targets最新period停在2026-03，马己仙停在2026-04，之前的SQL找"全租户范围内
+// 唯一最近的period"，取到2026-04后只有马己仙有这一行，洪潮被完全漏掉。锁定：revenue_targets
+// 查询必须按门店各自的MAX(period)分别取值再求和，不能对齐成一个全局period。
+test('revenueRollup：营业日目标必须按门店各自的最近period分别取值求和，不能所有店对齐到同一个全局period', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 1450000 }] };
+      return { rows: [] };
+    },
+  };
+  await revenueRollup(pool, 'default', '2026-07-30', []);
+  const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
+  assert.match(targetCall.sql, /JOIN[\s\S]*MAX\(period\) AS latest_period/, '必须按store分组取各自MAX(period)，不能是全局唯一period');
+  assert.match(targetCall.sql, /GROUP BY store/);
+});
+
 test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤掉pos_orders里POS原始长名不在范围内的门店', async () => {
   const pool = makeMultiStorePool({
     dailyRows: [

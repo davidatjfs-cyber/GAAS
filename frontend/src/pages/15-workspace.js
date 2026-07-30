@@ -271,14 +271,20 @@ function wsRenderTaskCard(task, opts) {
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
     const isPendingReview = task.status === 'pending_review';
-    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道
-    // （目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——不能
-    // 展示"提交完成证据"这类操作按钮，那是给真正的责任人用的。运营周报此前也走过cc视图，
-    // 后来业务方明确要求把周报从任务里整个拿掉，已在后端不再产出，这里不需要区分了。
+    // 2026-07-30 第一次修复：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送
+    // 给他知道（目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——
+    // 当时只是渲染成静态文案"仅同步知悉，由责任人处理"，没有任何操作按钮。
+    // 2026-07-30 第二次修复：用户明确指出"任务栏是要清空的队列，不是展示区"——不同角色对
+    // "这条任务对我来说算完成了"的定义不一样：admin只需要"确认收到"（点一下，per-user
+    // ack，不影响其他cc收件人还能不能看到）；hq_manager是唯一真正有权判罚食品安全的角色，
+    // 需要输入判罚结果，任务才真正结案(status=resolved)，对所有人都消失。
     const isCcOnly = !!task._ccOnly;
+    const isHqVerdictRole = String(currentUser?.role || '') === 'hq_manager';
     let actsHtml;
-    if (isCcOnly) {
-        actsHtml = '<span class="ws-tag">仅同步知悉，由责任人处理</span>';
+    if (isCcOnly && isHqVerdictRole) {
+        actsHtml = '<button type="button" class="ws-btn ws-btn--primary" data-ws-verdict-toggle="' + wsEsc(task.task_id) + '">输入判罚结果</button>';
+    } else if (isCcOnly) {
+        actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-ack-task="' + wsEsc(task.task_id) + '">确认收到</button>';
     } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
     } else if (isPendingReview) {
@@ -299,12 +305,18 @@ function wsRenderTaskCard(task, opts) {
         actsHtml +
         (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
         '</div>' +
-        (isGrowthTask || isPendingReview ? '' :
-            '<div class="ws-respond-form" id="ws-respond-form-' + wsEsc(task.task_id) + '" style="display:none;margin-top:8px;">' +
-            '<textarea class="ws-input" rows="2" placeholder="完成说明（如：已完成XX人培训，附签字文件）" data-ws-respond-text></textarea>' +
-            '<input type="file" multiple accept="image/*,.pdf" data-ws-respond-files style="margin-top:6px;">' +
-            '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" style="margin-top:6px;" data-ws-respond-submit="' + wsEsc(task.task_id) + '">提交</button>' +
-            '</div>'
+        (isCcOnly && isHqVerdictRole
+            ? '<div class="ws-respond-form" id="ws-verdict-form-' + wsEsc(task.task_id) + '" style="display:none;margin-top:8px;">' +
+              '<textarea class="ws-input" rows="2" placeholder="判罚结果（如：门店负责人扣绩效X分，责令2周内整改）" data-ws-verdict-text></textarea>' +
+              '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" style="margin-top:6px;" data-ws-verdict-submit="' + wsEsc(task.task_id) + '">提交判罚结果</button>' +
+              '</div>'
+            : (isGrowthTask || isPendingReview || isCcOnly ? '' :
+                '<div class="ws-respond-form" id="ws-respond-form-' + wsEsc(task.task_id) + '" style="display:none;margin-top:8px;">' +
+                '<textarea class="ws-input" rows="2" placeholder="完成说明（如：已完成XX人培训，附签字文件）" data-ws-respond-text></textarea>' +
+                '<input type="file" multiple accept="image/*,.pdf" data-ws-respond-files style="margin-top:6px;">' +
+                '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" style="margin-top:6px;" data-ws-respond-submit="' + wsEsc(task.task_id) + '">提交</button>' +
+                '</div>'
+            )
         ) +
         '<div class="ws-action-result"></div>';
     return (
@@ -340,16 +352,73 @@ async function wsSubmitTaskResponse(taskId, cardEl) {
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-        resultEl.innerHTML = '<span class="ws-ok">✅ 已提交，等待发起人确认</span>';
-        if (form) form.style.display = 'none';
-        const acts = cardEl.querySelector('.ws-card__acts');
-        if (acts) acts.innerHTML = '<span class="ws-tag">已提交，等待确认</span>';
+        wsRemoveTaskCard(cardEl);
     } catch (e) {
         resultEl.innerHTML = '<span class="ws-err">提交失败：' + wsEsc(e?.message || e) + '</span>';
     }
 }
 
+// 2026-07-30：用户明确要求"任务栏是要清空的队列，不是展示区"——之前每个操作(提交证据/
+// 批准/确认收到/判罚)成功后只是把按钮换成一行文字提示，卡片本身一直留在列表里，跟"清空"
+// 的要求矛盾。统一改成：任一操作对当前查看者来说算完成后，直接把卡片从DOM里移除，并把
+// "任务"tab角标数字减1（角标是渲染时的静态计数，删卡片不会自动联动，这里手动同步）。
+function wsRemoveTaskCard(cardEl) {
+    if (!cardEl) return;
+    const tab = document.querySelector('[data-ws-todo-tab="task"] .ws-todo__n');
+    if (tab) {
+        const n = Math.max(0, (Number(tab.textContent) || 0) - 1);
+        tab.textContent = String(n);
+    }
+    cardEl.remove();
+}
+
 function wsBindTaskCardEvents(root) {
+    root.querySelectorAll('[data-ws-ack-task]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const taskId = btn.getAttribute('data-ws-ack-task');
+            const card = btn.closest('.ws-card');
+            const resultEl = card?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/workspace/tasks/' + encodeURIComponent(taskId) + '/ack', { method: 'POST', headers: wsAuthHeaders() });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                wsRemoveTaskCard(card);
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">确认失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
+    root.querySelectorAll('[data-ws-verdict-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const taskId = btn.getAttribute('data-ws-verdict-toggle');
+            const form = root.querySelector('#ws-verdict-form-' + taskId);
+            if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+        });
+    });
+    root.querySelectorAll('[data-ws-verdict-submit]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const taskId = btn.getAttribute('data-ws-verdict-submit');
+            const card = btn.closest('.ws-card');
+            const form = root.querySelector('#ws-verdict-form-' + taskId);
+            const verdict = form?.querySelector('[data-ws-verdict-text]')?.value?.trim() || '';
+            if (!verdict) { showNotification('请填写判罚结果', 'warning'); return; }
+            const resultEl = card?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/workspace/tasks/' + encodeURIComponent(taskId) + '/food-safety-verdict', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ verdict }),
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                wsRemoveTaskCard(card);
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">提交失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
     root.querySelectorAll('[data-ws-respond-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const taskId = btn.getAttribute('data-ws-respond-toggle');
@@ -375,11 +444,7 @@ function wsBindTaskCardEvents(root) {
                     ? '/api/diagnosis/solutions/rounds/' + encodeURIComponent(roundId) + '/tasks/' + encodeURIComponent(taskId) + '/complete'
                     : '/api/agent-task-board/tasks/' + encodeURIComponent(taskId) + '/review',
                 body: isGrowthTask ? {} : { decision: 'approved' },
-                onSuccess: (cardEl) => {
-                    cardEl.querySelector('.ws-action-result').innerHTML = '<span class="ws-ok">✅ 已确认，任务状态已更新</span>';
-                    const acts = cardEl.querySelector('.ws-card__acts');
-                    if (acts) acts.style.display = 'none';
-                },
+                onSuccess: (cardEl) => wsRemoveTaskCard(cardEl),
             });
         });
     });
@@ -431,23 +496,40 @@ function wsStatRow(label, value, sub) {
 // 2026-07-28 重排：原来营收/客流/人数分布各占一整块 grid，视觉很碎——改成
 // KPI 卡只保留营收今日/本周/本月/目标这4个最重要的数字，其余全部用紧凑的 label-value
 // 单行列表（wsStatRow）呈现，一屏能看完，不再是一堆方块。
-// 2026-07-30：客流量/客单价/桌均/堂食外卖占比/就餐人数分布之前是全范围聚合成一个数字，
-// 用户明确要求按单店显示("否则无法看出问题")——后端operationalMetrics已经改成按店返回
-// 数组，这里改成每店一张卡片，用<details>折叠（多店时页面不会太长）。
-function wsRenderStoreOperationalCard(row) {
+function wsRenderStoreOperationalBody(row) {
     const p = row.partySizeSharePct || {};
-    const body =
-        wsStatRow('客流量（本月累计）', row.traffic ?? '—', '上月' + wsFmtPct(row.trafficMom) + ' 去年' + wsFmtPct(row.trafficYoy)) +
+    return wsStatRow('客流量（本月累计）', row.traffic ?? '—', '上月' + wsFmtPct(row.trafficMom) + ' 去年' + wsFmtPct(row.trafficYoy)) +
         wsStatRow('客单价', '¥' + (row.avgSpendPerGuest ?? '—')) +
         wsStatRow('桌均', '¥' + (row.avgSpendPerTable ?? '—')) +
         wsStatRow('堂食 / 外卖占比', (row.dineInSharePct ?? '—') + '% / ' + (row.deliverySharePct ?? '—') + '%') +
         wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%');
+}
+
+// 2026-07-30 第一次修复：客流量/客单价/桌均/堂食外卖占比/就餐人数分布之前是全范围聚合成
+// 一个数字，改成按店各返回一张<details>折叠卡片。
+// 2026-07-30 第二次修复：门店一多（几十家）时逐店平铺卡片仍然不合理，即使折叠也要滚动
+// 很久才能找到自己关心的店——改成一个门店选择下拉框，下面的数字只显示当前选中门店，
+// 切换下拉框数字跟着变，不再要求用户逐店翻找。opRows缓存在模块级变量里给切换事件用，
+// 这个工作台任何时刻只会渲染一个角色视图，不会有多份数据互相覆盖的问题。
+let _wsLastOpRows = [];
+function wsRenderOperationalSection(opRows) {
+    _wsLastOpRows = Array.isArray(opRows) ? opRows : [];
+    if (!_wsLastOpRows.length) return '<div class="ws-empty">暂无门店经营明细</div>';
+    const options = _wsLastOpRows.map((r) => '<option value="' + wsEsc(r.store || '') + '">' + wsEsc(r.store || '未知门店') + '</option>').join('');
     return (
-        '<details class="ws-detail-collapse" style="margin-bottom:8px;" open>' +
-        '<summary class="ws-section__title ws-detail-summary" style="font-size:14px;margin:0 0 6px;">' + wsEsc(row.store || '未知门店') + '</summary>' +
-        '<div class="ws-stat-list">' + body + '</div>' +
-        '</details>'
+        '<div class="ws-section__title" style="font-size:14px;margin:10px 0 6px;">门店经营明细（选择门店查看）</div>' +
+        '<select class="ws-input" id="ws-op-store-select">' + options + '</select>' +
+        '<div class="ws-stat-list" id="ws-op-store-body" style="margin-top:8px;">' + wsRenderStoreOperationalBody(_wsLastOpRows[0]) + '</div>'
     );
+}
+function wsBindOperationalStoreSelector(root) {
+    const sel = root.querySelector('#ws-op-store-select');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+        const row = _wsLastOpRows.find((r) => r.store === sel.value);
+        const body = root.querySelector('#ws-op-store-body');
+        if (body && row) body.innerHTML = wsRenderStoreOperationalBody(row);
+    });
 }
 
 function wsRenderOverview(ov) {
@@ -463,9 +545,7 @@ function wsRenderOverview(ov) {
         '<div class="ws-kpi__sub">理论 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
     html += '</div>';
 
-    html += opRows.length
-        ? opRows.map(wsRenderStoreOperationalCard).join('')
-        : '<div class="ws-empty">暂无门店经营明细</div>';
+    html += wsRenderOperationalSection(opRows);
 
     html += '<div class="ws-rank-grid">' +
         wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
@@ -602,14 +682,23 @@ async function wsLoadBadReviews(container) {
     )).join('');
 }
 
+// 2026-07-30：店长/出品经理反馈差评展示的门店筛选框显示"全部门店"，应该直接显示自己
+// 所属门店名字——之前不管allStores里有几家店，都无条件在最前面加一个"全部门店"选项，
+// 单店角色也会看到这个选项(且默认选中)，容易误以为自己能看到别的店。allStores长度为1
+// (单店角色场景)时，直接把这一家店的名字设成唯一/默认选中项，不再提供"全部门店"这个
+// 对单店角色毫无意义的选项；多店/不限场景(admin/hq_manager)保留原有的"全部门店"+完整列表。
 function wsRenderBadReviewSection(allStores) {
-    const storeOptions = '<option value="">全部门店</option>' + (allStores || []).map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
+    const stores = allStores || [];
+    const isSingleStore = stores.length === 1;
+    const storeOptions = isSingleStore
+        ? '<option value="' + wsEsc(stores[0]) + '" selected>' + wsEsc(stores[0]) + '</option>'
+        : '<option value="">全部门店</option>' + stores.map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
     return (
         '<div class="ws-br-filters">' +
         '<button type="button" class="ws-br-chip" data-days="7">近7天</button>' +
         '<button type="button" class="ws-br-chip active" data-days="30">近30天</button>' +
         '<button type="button" class="ws-br-chip" data-days="0">全部</button>' +
-        '<select class="ws-input" id="ws-br-store" style="flex:none;">' + storeOptions + '</select>' +
+        '<select class="ws-input" id="ws-br-store" style="flex:none;"' + (isSingleStore ? ' disabled' : '') + '>' + storeOptions + '</select>' +
         '</div>' +
         '<div class="ws-br-feed" id="ws-br-feed"><div class="ws-empty">加载中...</div></div>'
     );
@@ -1008,8 +1097,13 @@ const WS_BOARD_STATUS_ZH = {
     escalated: '已升级',
     hr_filed: '已备案',
 };
+// 2026-07-30：用户反馈状态流转记录里"未知"这个词看着像出错——查证发现这是任务刚创建时
+// (event_type='task_created')那条记录的status_before字段，数据库里存的就是空字符串（任务
+// 创建前当然没有"之前的状态"），不是数据缺失或异常。改成明确写"任务创建前"，不再用容易
+// 让人以为系统坏了的"未知"。
 function wsBoardStatusZh(s) {
-    return WS_BOARD_STATUS_ZH[s] || s || '未知';
+    if (!s) return '任务创建前';
+    return WS_BOARD_STATUS_ZH[s] || s;
 }
 
 function wsFormatAgentBoardDetail(task) {
@@ -1266,9 +1360,16 @@ async function wsConfirmDecisionRequest(taskId, decision, note, cardEl, resultEl
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-        resultEl.innerHTML = decision === 'reject' ? '<span class="ws-ok">✅ 已打回，责任人会收到通知重新提交</span>' : '<span class="ws-ok">✅ 已确认通过</span>';
-        const acts = cardEl.querySelector('.ws-card__acts');
-        if (acts) acts.style.display = 'none';
+        // 2026-07-30：用户反馈点确认通过后卡片一直留在"待确认的任务反馈"列表里，跟"任务栏
+        // 是要清空的队列"矛盾——改成移除卡片，并同步更新标题里的计数"（N）"。
+        const section = cardEl.closest('.ws-section');
+        cardEl.remove();
+        const titleEl = section?.querySelector('.ws-section__title');
+        if (titleEl) {
+            const remaining = section.querySelectorAll('[data-confirm-task-id]').length;
+            if (remaining > 0) titleEl.textContent = '待确认的任务反馈（' + remaining + '）';
+            else section.remove();
+        }
     } catch (e) {
         resultEl.innerHTML = '<span class="ws-err">操作失败：' + wsEsc(e?.message || e) + '</span>';
     }
@@ -1304,17 +1405,20 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
     html += wsRenderPendingConfirmations(pendingConfirmations);
-    html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(allStores) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">门店营销活动建议</div>' + marketingHtml + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">门店红绿灯（上月）</div>' + wsRenderStoreLights(home?.storeLights) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">六大管理神器</div>' + wsRenderSixTools(allStores) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">餐饮总监</div>' + wsRenderCustomDirectorSection(allStores) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">8大AI督导指挥中心</div>' + wsRenderAgentCommandCenter() + '</div>';
+    html += wsSection('今日经营总览', wsRenderOverview(overview));
+    html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
+    // 2026-07-30：门店营销活动建议之前只有每条建议内部自己折叠，整个区块本身不折叠——
+    // 跟其它区块统一改用wsSection()包一层，区块级别也可以整体收起，不是只有卡片能收起。
+    html += wsSection('门店营销活动建议', marketingHtml);
+    html += wsSection('门店红绿灯（上月）', wsRenderStoreLights(home?.storeLights));
+    html += wsSection('六大管理神器', wsRenderSixTools(allStores));
+    html += wsSection('餐饮总监', wsRenderCustomDirectorSection(allStores));
+    html += wsSection('8大AI督导指挥中心', wsRenderAgentCommandCenter());
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
+    wsBindOperationalStoreSelector(root);
     wsBindSixToolsEvents(root);
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
@@ -1356,7 +1460,14 @@ function wsCurrentYm() {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
-function wsRenderMonthlyTargetFields(store) {
+// 2026-07-30：目标追踪之前对每个目标项一律显示"系统暂未接入该指标的自动核算，需人工核对"，
+// 用户指出这不对——除了毛利是每月10号前录入飞书毛利记录表，其它目标(充值/堂食营收/点评
+// 星级/企微新增等)全部已经在营业日报里，只是没接查询。改成异步拉取
+// GET /api/workspace/monthly-target-actuals（server/domains/workspace/overview.js里的
+// getMonthlyTargetActuals()，逐字段从daily_reports聚合本月实际值，毛利单独从monthly_margins
+// 取），能匹配到的目标项显示真实"实际 vs 目标"，只有eleme/meituan分渠道明细这类daily_reports
+// 本身没有单独字段的，才如实标"数据源暂无该粒度"（不是偷懒没接，是真的没有这个字段）。
+async function wsRenderMonthlyTargetFields(store) {
     if (!store || typeof HRMS_STORE === 'undefined' || typeof MT_FIELD_MAP === 'undefined') return '';
     const ym = wsCurrentYm();
     const list = Array.isArray(HRMS_STORE.getSettings?.()?.monthlyTargets) ? HRMS_STORE.getSettings().monthlyTargets : [];
@@ -1364,12 +1475,19 @@ function wsRenderMonthlyTargetFields(store) {
     const targets = rec?.targets || {};
     const keys = Object.keys(targets).filter((k) => targets[k] != null && MT_FIELD_MAP[k]);
     if (!keys.length) return '';
+    const actualsData = await wsFetchJson('/api/workspace/monthly-target-actuals?store=' + encodeURIComponent(store) + '&ym=' + encodeURIComponent(ym));
+    const actuals = actualsData?.actuals || {};
     return '<div class="ws-stat-list" style="margin-top:10px;">' +
         keys.map((k) => {
             const meta = MT_FIELD_MAP[k];
             const v = targets[k];
             const display = meta.unit === '元' ? '¥' + wsFmtMoney(v) : (v + meta.unit);
-            return wsStatRow(wsEsc(meta.label), display, '实际值：系统暂未接入该指标的自动核算，需人工核对');
+            const actual = actuals[k];
+            const detail = actual == null
+                ? '数据源暂无该粒度（如分平台/分品类明细），需人工核对'
+                : ('实际 ' + (meta.unit === '元' ? '¥' + wsFmtMoney(actual) : (actual + meta.unit)) +
+                   (Number(v) > 0 ? ' · 达成 ' + Math.round((Number(actual) / Number(v)) * 100) + '%' : ''));
+            return wsStatRow(wsEsc(meta.label), display, detail);
         }).join('') +
         '</div>';
 }
@@ -1384,7 +1502,7 @@ async function wsRenderTargetTracking(ov, store) {
         wsStatRow('营业日目标', '¥' + wsFmtMoney(t.targetRevenue), '理论达成 ' + (theo ?? '—') + '% · 实际达成 ' + (actual ?? '—') + '% · ' + status) +
         wsStatRow('毛利目标（本月日均）', (m.targetMargin != null ? m.targetMargin + '%' : '—'), '实际 ' + (m.actualMargin != null ? m.actualMargin + '%' : '—')) +
         '</div>';
-    const monthlyFieldsHtml = wsRenderMonthlyTargetFields(store);
+    const monthlyFieldsHtml = await wsRenderMonthlyTargetFields(store);
     const kpiData = store ? await wsFetchJson('/api/tenant-settings/kpi-targets?store=' + encodeURIComponent(store)) : null;
     const kpiTargets = Array.isArray(kpiData?.targets) ? kpiData.targets : [];
     const kpiFieldsHtml = kpiTargets.length
@@ -1484,21 +1602,22 @@ function wsRenderKitchenBoard(summary, date) {
 }
 
 // 智能备货：用户明确要求"把目前智能助手的备货整套功能直接放到这里"——预测接口内部参数/
-// 权限逻辑较复杂(server/domains/inventory-forecast)，与其重新拼接一遍容易拼错，改成直接
-// 内嵌现有独立页面 /forecast.html(iframe)，完整复用真实功能，不重新实现。
-// 2026-07-30：出品经理/店长反馈点开"智能备货"是空白——forecast.html 里读取登录token
-// 靠的是localStorage(HRMS_API_TOKEN/hrms_token)，理论上iframe跟父页面同源应该共享，但
-// 工作台是被企业微信/公司App这类容器WebView内嵌打开的，部分WebView出于隐私限制会把
-// 嵌套iframe的localStorage分区隔离，跟父页面看起来同源但实际上是空的storage——iframe内
-// 就读不到token，直接判定"未登录"。改成把token直接拼进iframe的src查询参数里传过去，
-// 不依赖iframe自己的localStorage能不能读到父页面写的东西，forecast.html这边优先读这个
-// 参数，读不到才退回localStorage（保留原逻辑，非WebView环境行为不变）。
+// 权限逻辑较复杂(server/domains/inventory-forecast)，与其重新拼接一遍容易拼错，直接复用
+// 现有独立页面 /forecast.html，完整复用真实功能，不重新实现。
+// 2026-07-30 第一次修复（已证伪）：以为是WebView localStorage分区隔离导致iframe读不到
+// token，改成token拼进iframe src查询参数——上线验证forecast.html本身可以正常独立打开
+// （直接访问该URL能看到"无访问权限"这类正常渲染，不是白屏），但nginx当时对所有.html统一
+// 加了X-Frame-Options: DENY，浏览器据此完全拒绝任何iframe渲染——已单独给/forecast.html
+// 放开SAMEORIGIN。
+// 2026-07-30 第二次修复：nginx放开之后，安卓手机上智能备货依然空白——排查同源/CSP/token
+// 传递都确认没问题，说明问题出在"作为iframe被嵌套"这件事本身在部分安卓WebView容器下
+// 就是不可靠的（真实容器很可能是企业微信/公司App里的WebView，这类容器对二级嵌套iframe
+// 的支持历来不稳定，是这一整类问题的共同根因，不是某一次具体配置能兜底的）。改成放弃
+// iframe内嵌，直接用<a target="_blank">在新标签页打开完整的/forecast.html——这样它就是
+// 一次普通的同源页面跳转，不再经过iframe这层，从根本上避免这整类"WebView容器下iframe不
+// 可靠"的问题，跟证据文件链接(wsRenderPendingConfirmations)用的是同一种target="_blank"模式。
 function wsRenderSmartRestock() {
-    const token = localStorage.getItem('hrms_token') || '';
-    const src = '/forecast.html' + (token ? '?access_token=' + encodeURIComponent(token) : '');
-    return '<button type="button" class="ws-btn" data-ws-toggle="ws-restock-frame">展开/收起智能备货</button>' +
-        '<div id="ws-restock-frame" style="display:none;margin-top:10px;height:600px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">' +
-        '<iframe src="' + wsEsc(src) + '" style="width:100%;height:100%;border:0;"></iframe></div>';
+    return '<a class="ws-btn ws-btn--primary" href="/forecast.html" target="_blank" rel="noopener">打开智能备货 →</a>';
 }
 
 // 折叠版 ws-section：与"8大AI督导指挥中心"同款 <details>/<summary> 效果，默认展开，
@@ -1537,6 +1656,7 @@ async function wsRenderStore(root) {
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
+    wsBindOperationalStoreSelector(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
