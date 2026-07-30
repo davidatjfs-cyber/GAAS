@@ -951,16 +951,19 @@ async function wsLoadCustomActiveRounds(store) {
     });
 }
 
+// 2026-07-30：用户反馈"最近查询记录"数据一多就是一整片按钮墙，看不出哪条是哪天问的——
+// 改成<details>折叠(默认收起，摘要显示条数)，每条按钮上补日期前缀，不再是光秃秃的标题。
 async function wsLoadCustomHistory(store) {
     const host = document.getElementById('ws-custom-history');
     if (!host || !store) return;
     const data = await wsFetchJson('/api/diagnosis/solutions/custom/history?store=' + encodeURIComponent(store) + '&limit=10');
     const history = Array.isArray(data?.history) ? data.history : [];
     if (!history.length) { host.innerHTML = ''; return; }
-    host.innerHTML = '<div class="ws-section__title" style="font-size:11.5px;">最近查询记录（点击直接查看，不用重新输入）</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-        history.map((h) => '<button type="button" class="ws-btn" data-ws-history-q="' + wsEsc(h.question) + '">' + wsEsc(h.title || h.question) + '</button>').join('') +
-        '</div>';
+    host.innerHTML =
+        '<details class="ws-detail-collapse"><summary class="ws-section__title ws-detail-summary" style="font-size:11.5px;cursor:pointer;">最近查询记录（' + history.length + '条，点击查看，点开后可直接查询不用重新输入）</summary>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' +
+        history.map((h) => '<button type="button" class="ws-btn" data-ws-history-q="' + wsEsc(h.question) + '">' + wsEsc(String(h.created_at || '').slice(0, 10)) + ' · ' + wsEsc(h.title || h.question) + '</button>').join('') +
+        '</div></details>';
     // 历史记录只重新问一次(数据可能已经变了,不直接显示当时的旧结果)，跟经营诊断页同样的取舍。
     host.querySelectorAll('[data-ws-history-q]').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -1081,18 +1084,30 @@ function wsBindSixToolsEvents(root) {
 // tasks/:id，本来就是同一批admin/hq_manager在用，权限一致），展示状态流转时间线+证据+
 // 审核记录；这个页面本身就只有admin/hq_manager能看到，不是新开权限口子。
 const _wsAtbDetailCache = new Map();
+// 2026-07-30：用户反馈折叠后的记录"很难辨识"、条数多了根本找不到——两个问题：① 每条记录
+// 只有标题+状态，没有日期，标题又经常被截断，看不出是哪天的任务；② 没有筛选，"已结案"的
+// 历史记录跟"正在进行"的混在一起，找一条正在处理的任务要翻很久。改成：① 每条摘要行补上
+// created_at日期；② 加状态筛选下拉框，默认只显示"进行中"（board_status不是已结案系列），
+// 需要查历史时手动切到"全部"。用WS_BOARD_STATUS_ZH的'已结案'分组结果判断是否算结案。
+const WS_ATB_CLOSED_STATUSES = new Set(['resolved', 'pending_settlement', 'settled', 'closed']);
+let _wsAtbAllItems = [];
+function wsRenderAtbList(filter) {
+    const items = filter === 'all' ? _wsAtbAllItems : _wsAtbAllItems.filter((it) => !WS_ATB_CLOSED_STATUSES.has(String(it.status || '')));
+    if (!items.length) return '<div class="ws-empty">' + (filter === 'all' ? '暂无记录' : '暂无进行中的记录（可切换"全部"查看历史）') + '</div>';
+    return items.map((it) => (
+        '<div class="ws-rank-row ws-atb-row" data-atb-task-id="' + wsEsc(it.task_id || it.id || '') + '" style="cursor:pointer;">' +
+        '<span class="ws-rank-row__store">' + wsEsc(String(it.created_at || '').slice(0, 10)) + ' · ' + wsEsc(it.title || it.content || '') + '</span>' +
+        '<span class="ws-tag">' + wsEsc(wsBoardStatusZh(it.board_status || it.status)) + '</span></div>' +
+        '<div class="ws-atb-detail" data-atb-detail-for="' + wsEsc(it.task_id || it.id || '') + '" style="display:none;"></div>'
+    )).join('');
+}
 async function wsLoadAgentBoardList(container) {
     const list = container.querySelector('#ws-atb-list');
     if (!list) return;
-    const data = await wsFetchJson('/api/agent-task-board/tasks?limit=8');
-    const items = Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data?.items) ? data.items : []);
-    if (!items.length) { list.innerHTML = '<div class="ws-empty">暂无记录</div>'; return; }
-    list.innerHTML = items.map((it) => (
-        '<div class="ws-rank-row ws-atb-row" data-atb-task-id="' + wsEsc(it.task_id || it.id || '') + '" style="cursor:pointer;">' +
-        '<span class="ws-rank-row__store">' + wsEsc(it.title || it.content || '') + '</span>' +
-        '<span class="ws-tag">' + wsEsc(it.board_status || it.status || '') + '</span></div>' +
-        '<div class="ws-atb-detail" data-atb-detail-for="' + wsEsc(it.task_id || it.id || '') + '" style="display:none;"></div>'
-    )).join('');
+    const data = await wsFetchJson('/api/agent-task-board/tasks?limit=20');
+    _wsAtbAllItems = Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data?.items) ? data.items : []);
+    const filterSel = container.querySelector('#ws-atb-filter');
+    list.innerHTML = wsRenderAtbList(filterSel?.value || 'active');
 }
 
 // 2026-07-30：跟后端 task-parser.js 的 mapBoardStatus() 保持一致的中文映射，用在时间线上
@@ -1191,6 +1206,9 @@ function wsRenderAgentCommandCenter() {
         '<textarea class="ws-input" id="ws-atb-content" rows="3" placeholder="例：洪潮的卫生太差了，请督促门店2周内整改完成，每次提交前厅、后厨、洗手间照片。"></textarea>' +
         '<button type="button" class="ws-btn ws-btn--primary" id="ws-atb-publish">发布任务</button>' +
         '</div>' +
+        '<select class="ws-input" id="ws-atb-filter" style="margin-top:10px;">' +
+        '<option value="active">进行中（默认）</option><option value="all">全部（含已结案）</option>' +
+        '</select>' +
         '<div id="ws-atb-list" style="margin-top:10px;"><div class="ws-empty">加载中...</div></div>'
     );
 }
@@ -1198,6 +1216,10 @@ function wsRenderAgentCommandCenter() {
 function wsBindAgentCommandCenterEvents(root) {
     wsLoadAgentBoardList(root);
     wsBindAgentBoardListClick(root);
+    root.querySelector('#ws-atb-filter')?.addEventListener('change', (ev) => {
+        const list = root.querySelector('#ws-atb-list');
+        if (list) list.innerHTML = wsRenderAtbList(ev.target.value);
+    });
     const btn = root.querySelector('#ws-atb-publish');
     if (!btn) return;
     btn.addEventListener('click', async () => {
@@ -1452,6 +1474,10 @@ async function wsRenderBossOrHq(root, persona) {
     html += wsSection('六大管理神器', wsRenderSixTools(allStores));
     html += wsSection('餐饮总监', wsRenderCustomDirectorSection(allStores));
     html += wsSection('8大AI督导指挥中心', wsRenderAgentCommandCenter());
+    // 2026-07-30：用户反馈admin/hq视角的工作台没有"我的绩效"——之前只加到了店长/出品经理
+    // 的wsRenderStore()，管理员/总部营运看到的是wsRenderBossOrHq()这条完全独立的渲染
+    // 路径，两边各自维护自己的区块列表，加一处不会自动出现在另一处，这里补上同一个模块。
+    html += wsSection('我的绩效', '<div id="ws-my-performance"><div class="ws-loading">加载中...</div></div>');
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
@@ -1461,6 +1487,10 @@ async function wsRenderBossOrHq(root, persona) {
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
     wsBindMarketingSuggestionsEvents(root);
+    wsFetchJson('/api/agent-scores/me').then((data) => {
+        const el = document.getElementById('ws-my-performance');
+        if (el) el.innerHTML = wsRenderMyPerformance(data);
+    });
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
