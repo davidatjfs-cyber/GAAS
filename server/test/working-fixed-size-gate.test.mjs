@@ -207,8 +207,16 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 按店各自展示（不再是跨全部门店的一个聚合数字，turnoverSummary()改成接受具体门店名单
  * 逐店查询）；③ 店长/出品经理视角取消营业额/客流量/人效排名，管理员/总部经理视角保留
  * （wsRenderOverview新增showRankings参数，由调用方按角色传入）。
+ * 2026-07-30 第三十一次上调（71251→71288）：用户反馈"门店营销活动建议"点"执行"等于什么
+ * 都没发生——promo_task类内容创作建议之前只是往growth_content_calendar插一行'planned'，
+ * 没有责任人、没人知道要做、没有追踪。业务方明确要求所有类型营销建议"执行"都必须先选
+ * 责任人(该门店店长/前厅主管)，生成master_tasks任务(source='growth_marketing_action'，
+ * 已加入WS_ALLOWED_TASK_SOURCES白名单)，责任人任务栏能看到、需要提交完成证据、发起人
+ * 确认后才算真正执行完成——复用现成的respondToTask/confirmTaskResponse流程；系统侧真实
+ * 自动化动作(发券/发短信)仍照常立即执行，只是新增责任人确认这层追溯闭环。新增
+ * POST /api/growth/actions/:actionKey/assign-and-execute。
  */
-const MAX_LINES = 71251;
+const MAX_LINES = 71288;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

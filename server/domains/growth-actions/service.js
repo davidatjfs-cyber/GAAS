@@ -199,6 +199,60 @@ export async function executeAction(ctx, tenantId, actionKeyRaw, operator, body)
   };
 }
 
+// 2026-07-30：用户反馈"营销活动建议"里点"执行"其实什么都没真正发生——promo_task这类内容
+// 创作型动作，executeGrowthActionRecord只是往growth_content_calendar插一行'planned'，没有
+// 责任人、没人知道要去做、也没有任何完成情况的追踪，跟增长看板里send_voucher/send_message
+// 那种真能自动发券/发短信的"真闭环"完全不是一回事。业务方明确要求：所有类型的营销建议
+// "执行"都必须先选责任人（该门店的店长/前厅主管），生成一条master_tasks任务，责任人的
+// 任务栏里能看到、需要提交完成证据、发起人确认后才算真正执行完成——复用现成的
+// respondToTask/confirmTaskResponse状态机（跟食品安全等任务卡片同一套UI/流程），不新建
+// 一套。系统侧真实的自动化动作(发券/发短信)仍然在这里立即执行(不因为多了任务分配就延迟
+// 触达客户)，只是新增了"责任人确认执行到位"这一层追溯闭环。
+export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, assigneeUsernameRaw, operator, body) {
+  const actionKey = cleanText(actionKeyRaw, 255);
+  const assigneeUsername = cleanText(assigneeUsernameRaw, 80);
+  if (!assigneeUsername) return { status: 400, body: { ok: false, error: 'missing_assignee' } };
+
+  const outcome = await ctx.tenantContext.run(tenantId, async () => {
+    const current = await ctx.pool.query(`SELECT * FROM growth_actions WHERE action_key = $1 LIMIT 1`, [actionKey]);
+    if (!current.rows.length) return { error: 'action_not_found', status: 404 };
+    const action = current.rows[0];
+
+    const empR = await ctx.pool.query(
+      `SELECT username, name, role, store FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1`,
+      [assigneeUsername, tenantId]
+    );
+    const emp = empR.rows[0];
+    if (!emp) return { error: 'assignee_not_found', status: 400 };
+    if (!['store_manager', 'front_manager'].includes(String(emp.role || ''))) {
+      return { error: 'assignee_role_invalid', status: 400 };
+    }
+
+    const taskId = `MKT-${Date.now()}`;
+    const title = `营销活动执行：${cleanText(action.title, 300)}`;
+    await ctx.pool.query(
+      `INSERT INTO master_tasks (task_id, status, source, current_agent, category, severity, store, title, detail, assignee_username, source_data, tenant_id)
+       VALUES ($1, 'pending_dispatch', 'growth_marketing_action', 'workspace', 'marketing_action', 'medium', $2, $3, $4, $5, $6::jsonb, $7)`,
+      [
+        taskId,
+        action.store_id,
+        title,
+        cleanText(action.detail, 4000),
+        emp.username,
+        JSON.stringify({ action_key: actionKey, action_type: action.action_type, promoted_by: operator.username || '' }),
+        tenantId,
+      ]
+    );
+
+    // 系统侧真实自动化动作(发券/发短信等)照常立即执行——只是多了责任人确认这层追溯，
+    // 不因为分配任务而推迟真实触达客户。
+    const executed = await ctx.executeGrowthActionRecord(ctx.pool, action, operator, body?.payload || {}, body?.reason || '');
+    return { taskId, action: executed.action, execution: executed.execution };
+  });
+  if (outcome.error) return { status: outcome.status || 400, body: { ok: false, error: outcome.error } };
+  return { status: 200, body: { ok: true, taskId: outcome.taskId, action: outcome.action, execution: outcome.execution } };
+}
+
 export async function ignoreAction(ctx, tenantId, actionKeyRaw, operator, body) {
   const actionKey = cleanText(actionKeyRaw, 255);
   const outcome = await ctx.tenantContext.run(tenantId, async () => {
