@@ -31,6 +31,11 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // 但那是一次新增跨服务接口的工作量，这次先放行不阻塞合并，后续必须补上，不能一直留着。
   'domains/workspace/service.js|INSERT INTO|master_tasks',
   'domains/workspace/service.js|UPDATE|master_tasks',
+  // 2026-07-30 同类已知技术债：营销活动建议"执行"改成先分配责任人再生成任务
+  // （assignMarketingActionTask，同样是人类发起、责任人提交证据+发起人确认的任务，
+  // 不是AI agent任务），跟上面workspace/service.js的既有豁免是同一个未解决问题，
+  // 一并记录，不是新的独立越界。
+  'domains/growth-actions/service.js|INSERT INTO|master_tasks',
   // P2：删除死代码 handleTaskEscalation 后 agents.js 已无 agent_messages INSERT
   // Wave A11a：archiveOldBitableSubmissions 迁出；agents.js 已无 DELETE agent_messages
   'domains/feishu-bitable/archive-old-submissions.js|DELETE FROM|agent_messages',

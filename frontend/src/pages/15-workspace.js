@@ -596,48 +596,85 @@ function wsRenderOverview(ov, showRankings) {
 // 2026-07-30：① 跟任务卡片一样加长文本折叠；② 补"执行/忽略"操作，复用增长看板
 // 已有的 /api/growth/actions/:key/execute 与 /ignore 接口（同一张growth_actions表，
 // 同一套状态机，不新建接口）。
+// 2026-07-30：用户反馈"执行"按钮点了等于什么都没发生——promo_task这类内容创作型建议，
+// 之前的executeGrowthActionRecord只是往growth_content_calendar插一行'planned'，没有责任人、
+// 没人知道要去做、没有任何完成追踪。业务方明确要求：所有类型的营销建议"执行"都必须先选
+// 责任人（该门店的店长/前厅主管），生成真实任务，责任人任务栏能看到、需要提交完成证据、
+// 发起人确认后才算真正执行完成。这里把原来"点执行直接调用/execute"改成"点执行先展开责任人
+// 选择框"，选完调用新的/assign-and-execute；责任人列表用HRMS_STORE.getEmployees()按门店+
+// 角色(store_manager/front_manager)过滤，不用额外接口。
+function wsMarketingAssigneeOptions(store) {
+    const employees = (typeof HRMS_STORE !== 'undefined' && HRMS_STORE.getEmployees) ? (HRMS_STORE.getEmployees() || []) : [];
+    const eligible = employees.filter((e) => String(e?.store || '') === String(store || '') && ['store_manager', 'front_manager'].includes(String(e?.role || '')));
+    if (!eligible.length) return { html: '', empty: true };
+    return {
+        html: eligible.map((e) => '<option value="' + wsEsc(e.username) + '">' + wsEsc(e.name || e.username) + '（' + wsEsc(getRoleDisplayName ? getRoleDisplayName(e.role) : e.role) + '）</option>').join(''),
+        empty: false,
+    };
+}
 async function wsRenderMarketingSuggestions() {
     const data = await wsFetchJson('/api/workspace/marketing-suggestions');
     const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
     // 2026-07-30：跟任务卡片一样，改成折叠形式——默认只显示一行(渠道标签+门店+标题)，
     // 点开才展开详情和执行/忽略按钮，跟8大AI督导指挥中心的记录展示保持一致。
-    return items.map((it) => (
-        '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '">' +
-        '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
-        '<span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span> ' +
-        wsEsc((it.store || '') + ' — ' + (it.title || '')) +
-        '</summary>' +
-        '<div style="margin-top:10px;">' +
-        wsFormatTaskDetail(it.detail) +
-        '<div class="ws-card__acts">' +
-        '<button type="button" class="ws-btn ws-btn--primary" data-ws-marketing-execute="' + wsEsc(it.actionKey || '') + '">执行</button>' +
-        '<button type="button" class="ws-btn" data-ws-marketing-ignore="' + wsEsc(it.actionKey || '') + '">忽略</button>' +
-        '</div>' +
-        '<div class="ws-action-result"></div>' +
-        '</div>' +
-        '</details>'
-    )).join('');
+    return items.map((it) => {
+        const assignees = wsMarketingAssigneeOptions(it.store);
+        return (
+            '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '" data-marketing-store="' + wsEsc(it.store || '') + '">' +
+            '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
+            '<span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span> ' +
+            wsEsc((it.store || '') + ' — ' + (it.title || '')) +
+            '</summary>' +
+            '<div style="margin-top:10px;">' +
+            wsFormatTaskDetail(it.detail) +
+            '<div class="ws-card__acts">' +
+            '<button type="button" class="ws-btn ws-btn--primary" data-ws-marketing-execute-toggle="' + wsEsc(it.actionKey || '') + '">执行</button>' +
+            '<button type="button" class="ws-btn" data-ws-marketing-ignore="' + wsEsc(it.actionKey || '') + '">忽略</button>' +
+            '</div>' +
+            '<div class="ws-respond-form" id="ws-marketing-assign-form-' + wsEsc(it.actionKey || '') + '" style="display:none;margin-top:8px;">' +
+            (assignees.empty
+                ? '<div class="ws-empty">本店未配置店长/前厅主管，无法分配责任人——请先在员工档案里补上岗位</div>'
+                : '<select class="ws-input" data-ws-marketing-assignee-select style="width:100%;margin-bottom:6px;">' + assignees.html + '</select>' +
+                  '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-marketing-assign-submit="' + wsEsc(it.actionKey || '') + '">确认分配并执行</button>'
+            ) +
+            '</div>' +
+            '<div class="ws-action-result"></div>' +
+            '</div>' +
+            '</details>'
+        );
+    }).join('');
 }
 
 function wsBindMarketingSuggestionsEvents(root) {
-    root.querySelectorAll('[data-ws-marketing-execute]').forEach((btn) => {
+    root.querySelectorAll('[data-ws-marketing-execute-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const key = btn.getAttribute('data-ws-marketing-execute-toggle');
+            const form = root.querySelector('#ws-marketing-assign-form-' + CSS.escape(key));
+            if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+        });
+    });
+    root.querySelectorAll('[data-ws-marketing-assign-submit]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-            const key = btn.getAttribute('data-ws-marketing-execute');
+            const key = btn.getAttribute('data-ws-marketing-assign-submit');
             const card = btn.closest('.ws-card');
+            const form = root.querySelector('#ws-marketing-assign-form-' + CSS.escape(key));
+            const assigneeUsername = form?.querySelector('[data-ws-marketing-assignee-select]')?.value || '';
+            if (!assigneeUsername) { showNotification('请选择责任人', 'warning'); return; }
             const resultEl = card?.querySelector('.ws-action-result');
             btn.disabled = true;
             try {
-                const r = await fetch('/api/growth/actions/' + encodeURIComponent(key) + '/execute', {
-                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({})
+                const r = await fetch('/api/growth/actions/' + encodeURIComponent(key) + '/assign-and-execute', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ assigneeUsername })
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已执行</span>';
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已分配任务，等待责任人提交完成证据后确认闭环</span>';
                 if (card) card.querySelector('.ws-card__acts')?.remove();
+                if (form) form.remove();
             } catch (e) {
                 btn.disabled = false;
-                if (resultEl) resultEl.innerHTML = '<span class="ws-err">执行失败：' + wsEsc(e?.message || e) + '</span>';
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">分配失败：' + wsEsc(e?.message || e) + '</span>';
             }
         });
     });

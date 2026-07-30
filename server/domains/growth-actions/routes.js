@@ -19,6 +19,7 @@ import {
   listExecutionLogs,
   upsertAction,
   executeAction,
+  assignMarketingActionTask,
   ignoreAction,
   editAndExecuteAction,
   submitActionFeedback,
@@ -85,6 +86,16 @@ export function registerGrowthActionsRoutes(app, pool) {
     return send(
       res,
       await executeAction(ctx, getGrowthTenantId(req), req.params.actionKey, getGrowthOperator(req), req.body)
+    );
+  });
+
+  // 2026-07-30：营销活动建议"执行"必须先分配责任人（该门店店长/前厅主管），生成任务，
+  // 责任人任务栏能看到、需要提交证据、发起人确认才算真正执行完成——见service.js里的注释。
+  app.post('/api/growth/actions/:actionKey/assign-and-execute', async (req, res) => {
+    if (!requireGrowthAuth(req, res)) return;
+    return send(
+      res,
+      await assignMarketingActionTask(ctx, getGrowthTenantId(req), req.params.actionKey, req.body?.assigneeUsername, getGrowthOperator(req), req.body)
     );
   });
 

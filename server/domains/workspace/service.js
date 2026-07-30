@@ -98,7 +98,10 @@ export async function getStoreHealthLights(pool, tenantId) {
 //   hrms_task_board       → Agent任务指挥中心模块（source名直接对应"任务看板"）
 //   category含food_safety/food_quality → 食安异常触发（不分source，因为食安类目分散在
 //     bi_anomaly/anomaly_engine/hrms_task_board 好几个source下面）
-const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board'];
+// 2026-07-30 追加 growth_marketing_action：营销活动建议"执行"改成必须先分配责任人生成
+// 真实任务（见growth-actions/service.js#assignMarketingActionTask），这是真实指派给某个
+// 人的工作，符合这份白名单"真实任务不是噪音"的初衷，需要出现在责任人的任务栏里。
+const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board', 'growth_marketing_action'];
 const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')`;
 
 // 2026-07-30 修复：出品经理/店长反馈任务栏一直是0，跟通知栏同一个根因——生产库里
