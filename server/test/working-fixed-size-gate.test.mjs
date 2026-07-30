@@ -132,8 +132,18 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 本身没有单独责任人，cc视图收窄查询里加上category IN (weekly_report,
  * monthly_evaluation)；前端_ccOnly文案按类目区分：食安显示"仅同步知悉，由责任人处理"，
  * 周报/月评显示"运营汇总，仅供查阅"（不能说"由责任人处理"，周报本来就没有单独责任人）。
+ * 2026-07-30 第二十三次上调（70723→70868）：一批用户实测反馈的修复——① 门店红绿灯
+ * "无评级"：恢复被2026-04误停的月度门店评级计算调度（详见performance-jobs.js）；
+ * ② 8大AI督导指挥中心的记录加点击展开详情（状态流转+证据+审核记录），之前closed等
+ * 状态点了没反应；③ 门店营销活动建议加长文本折叠 + 执行/忽略操作（复用增长看板同一套
+ * /api/growth/actions/:key/execute与/ignore接口）；④ "今日营收"改成"昨日营收"（当天
+ * 日报几乎总是还没出，显示今日会永远是¥0且环比永远-100%）；本周/本月"至今"的统计口径
+ * 也从锚定today改成锚定yesterday，避免用still-zero的"今天"把当周/当月拉低、制造假环比；
+ * ⑤ 客流量/客单价/桌均/堂食外卖占比/就餐人数分布从全范围聚合成一个数字改成按单店返回
+ * 数组分别展示；堂食/外卖占比的数据源从pos_orders现数订单条数改成daily_reports本来就有
+ * 的dine_orders/delivery_orders权威字段（业务方指出"数据都在营业日报里"）。
  */
-const MAX_LINES = 70723;
+const MAX_LINES = 70868;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
