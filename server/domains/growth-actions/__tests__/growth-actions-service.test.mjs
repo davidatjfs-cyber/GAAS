@@ -32,6 +32,7 @@ function baseCtx(overrides = {}) {
     runTouchRuleEngine: async () => ({ ran: true }),
     executeGrowthActionRecord: async () => ({ action: { action_key: 'k' }, execution: {} }),
     appendExecutionLog: async () => {},
+    resolveAgentCanonicalStore: (s) => s,
     ...overrides,
   };
 }
@@ -207,4 +208,26 @@ test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_
   assert.match(insertCall.sql, /'pending_dispatch'/);
   assert.match(insertCall.sql, /'growth_marketing_action'/);
   assert.ok(executeGrowthActionRecordCalled, '真实的发券/发短信等自动化动作应该照常执行，不因为多了任务分配而跳过');
+});
+
+// 2026-07-30：用户反馈"本店未配置店长/前厅主管"——查证生产库growth_actions.store_id
+// 没有统一格式(POS原始长名/增长侧数字ID/官方简称混杂)，写进master_tasks.store前必须
+// 归一化，否则跟employees.store对不上，任务会变成"孤儿"（分组/展示都找不到对应门店）。
+test('assignMarketingActionTask：写入master_tasks.store前用resolveAgentCanonicalStore()归一化store_id', async () => {
+  const calls = [];
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow({ store_id: '洪潮传统潮汕菜【大宁久光中心店】' })] };
+        if (/FROM employees/.test(sql)) return { rows: [{ username: 'front_a', name: '李四', role: 'front_manager', store: '洪潮大宁久光店' }] };
+        return { rows: [] };
+      },
+    },
+    resolveAgentCanonicalStore: (s) => (s === '洪潮传统潮汕菜【大宁久光中心店】' ? '洪潮大宁久光店' : s),
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'front_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 200);
+  const insertCall = calls.find((c) => /INSERT INTO master_tasks/.test(c.sql));
+  assert.equal(insertCall.params[1], '洪潮大宁久光店', 'store字段应该是归一化后的官方简称，不是原始POS长名');
 });

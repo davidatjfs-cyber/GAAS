@@ -215,8 +215,15 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 确认后才算真正执行完成——复用现成的respondToTask/confirmTaskResponse流程；系统侧真实
  * 自动化动作(发券/发短信)仍照常立即执行，只是新增责任人确认这层追溯闭环。新增
  * POST /api/growth/actions/:actionKey/assign-and-execute。
+ * 2026-07-30 第三十二次上调（71288→71296）：责任人分配上线后实测"本店未配置店长/前厅
+ * 主管"几乎每次触发——两处真实bug：① growth_actions.store_id没有统一格式(POS原始长名/
+ * 增长侧数字ID/员工表官方简称混杂)，跟employees.store对不上；② 前端HRMS_STORE本地员工
+ * 数据的role字段有历史遗留中文标签("店长"等)，直接===比较'store_manager'必然漏掉。
+ * 改成：marketing-suggestions.js返回前用resolveAgentCanonicalStore()归一化store字段，
+ * assignMarketingActionTask写master_tasks.store前同样归一化；前端改用现成的
+ * hrmsNormalizeRoleCode()比较角色，不再用原始role字面量。
  */
-const MAX_LINES = 71288;
+const MAX_LINES = 71296;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
