@@ -69335,7 +69335,11 @@ function wsInjectStyles() {
         '.ws-tag{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--ws-accent-soft);color:var(--ws-ink2);}' +
         '.ws-tag--red{background:var(--ws-accent-soft);color:var(--ws-down);} .ws-tag--green{background:var(--ws-accent-soft);color:var(--ws-up);}' +
         '.ws-card__title{font-weight:600;margin-bottom:6px;font-size:14px;color:var(--ws-ink);}' +
-        '.ws-card__desc{font-size:13px;color:var(--ws-ink2);line-height:1.7;margin-bottom:12px;}' +
+        '.ws-card__desc{font-size:13px;color:var(--ws-ink2);line-height:1.7;margin-bottom:12px;overflow-wrap:anywhere;}' +
+        '.ws-detail-collapse summary{cursor:pointer;list-style:none;}' +
+        '.ws-detail-collapse summary::-webkit-details-marker{display:none;}' +
+        '.ws-detail-summary::after{content:" ▾";opacity:.6;}' +
+        '.ws-detail-collapse[open] .ws-detail-summary::after{content:" ▴";}' +
         '.ws-card__acts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}' +
         '.ws-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--ws-line);background:var(--ws-card);color:var(--ws-ink);' +
         'border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;min-height:36px;box-sizing:border-box;}' +
@@ -69433,6 +69437,27 @@ async function wsExecuteAction(cardEl, { confirmText, endpoint, method = 'POST',
 
 function wsEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// 2026-07-30：食品安全类任务的detail字段本身可以有几百字（数据来源速览+原文摘录+处置说明），
+// 之前原样dump成一个<div>，字面的**加粗**标记不生效只显示星号，长文本又没有折叠，卡片被撑得
+// 很长，操作按钮被挤到很下面看不到。这里补两件事：1) **text** 转成真正的<strong>；
+// 2) 超过阈值的用原生<details>/<summary>折叠（同一套模式在09-resignation.js的
+// ack-details已经在用），不新增inline onclick。
+const WS_DETAIL_COLLAPSE_THRESHOLD = 120;
+function wsFormatTaskDetail(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    const rich = wsEsc(raw).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    if (raw.length <= WS_DETAIL_COLLAPSE_THRESHOLD) {
+        return '<div class="ws-card__desc">' + rich + '</div>';
+    }
+    return (
+        '<details class="ws-detail-collapse">' +
+        '<summary class="ws-card__desc ws-detail-summary">详情（约' + raw.length + '字，点击展开）</summary>' +
+        '<div class="ws-card__desc" style="margin-top:4px;">' + rich + '</div>' +
+        '</details>'
+    );
 }
 
 async function wsFetchJson(url) {
@@ -69536,8 +69561,14 @@ function wsRenderTaskCard(task, opts) {
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
     const isPendingReview = task.status === 'pending_review';
+    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道
+    // （目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——不能
+    // 展示"提交完成证据"这类操作按钮，那是给真正的责任人用的。
+    const isCcOnly = !!task._ccOnly;
     let actsHtml;
-    if (isGrowthTask) {
+    if (isCcOnly) {
+        actsHtml = '<span class="ws-tag">仅同步知悉，由责任人处理</span>';
+    } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
     } else if (isPendingReview) {
         actsHtml = '<span class="ws-tag">已提交，等待确认</span>';
@@ -69548,7 +69579,7 @@ function wsRenderTaskCard(task, opts) {
         '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
         '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + (isGrowthTask ? ' <span class="ws-tag">经营诊断</span>' : '') + '</div>' +
         '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
-        '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
+        wsFormatTaskDetail(task.detail) +
         '<div class="ws-card__acts">' +
         actsHtml +
         (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
@@ -70312,7 +70343,7 @@ function wsRenderPendingConfirmations(items) {
     const cards = items.map((it) => (
         '<div class="ws-card" data-confirm-task-id="' + wsEsc(it.task_id) + '">' +
         '<div class="ws-card__title">' + wsEsc(it.title || '') + (it.store ? ' · ' + wsEsc(it.store) : '') + '</div>' +
-        '<div class="ws-card__desc">👤 ' + wsEsc(it.assignee_username || '') + ' 提交：' + wsEsc(it.response_text || '（无文字说明）') + '</div>' +
+        '<div class="ws-card__desc">👤 ' + wsEsc(it.assignee_name || it.assignee_username || '') + ' 提交：' + wsEsc(it.response_text || '（无文字说明）') + '</div>' +
         (Array.isArray(it.response_images) && it.response_images.length
             ? '<div class="ws-card__desc">' + it.response_images.map((u) => '<a href="' + wsEsc(u) + '" target="_blank" class="ws-btn ws-btn--link">证据文件</a>').join(' ') + '</div>'
             : '') +

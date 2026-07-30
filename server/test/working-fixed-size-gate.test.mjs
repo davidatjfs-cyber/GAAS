@@ -119,8 +119,15 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 实收目标改成往前找最近已配置period(不再要求当月精确匹配)、人效排名取整数、门店下拉框
  * 改用真实门店台账而不是master_tasks里的脏文本、新增GET /api/notifications真实列表接口
  * 接入"通知"tab（之前只有未读数没有列表）。
+ * 2026-07-30 第二十一次上调（70687→70718）：① 任务详情(task.detail)之前原样dump成一个
+ * <div>，食品安全类任务detail能有几百字，字面**加粗**标记不生效只显示星号，卡片被撑得
+ * 很长、操作按钮被挤到很下面——新增 wsFormatTaskDetail()：**text**转真正<strong>，超过
+ * 120字用原生<details>/<summary>折叠（同一套模式09-resignation.js的ack-details已在用）；
+ * ② "待确认的任务反馈"里之前直接显示assignee_username(如nnyxyf26)，改成JOIN employees
+ * 显示真实姓名(assignee_name)；③ .ws-card__desc补overflow-wrap:anywhere，避免飞书记录号
+ * 这类长十六进制串撑出横向溢出。
  */
-const MAX_LINES = 70687;
+const MAX_LINES = 70718;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

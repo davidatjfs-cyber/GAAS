@@ -1,6 +1,6 @@
-import test from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkspaceHome } from '../service.js';
+import { getWorkspaceHome, getPendingConfirmations } from '../service.js';
 
 // 2026-07-30：业务方确认的任务路由规则——只有食品安全类任务需要抄送总部经理/管理员，
 // 其余全部只归当事人(assignee_username)。这里锁定：非食安cc角色只看自己的任务，
@@ -58,4 +58,46 @@ test('hq_manager 也能看到食安cc视图，普通 store_manager 不能', asyn
   assert.deepEqual(hq.myTasks.map((t) => t.task_id), ['fs-1']);
   const sm = await getWorkspaceHome(pool, 'default', 'sm_a', { role: 'store_manager' });
   assert.deepEqual(sm.myTasks.map((t) => t.task_id), []);
+});
+
+test('cc视图返回的任务带 _ccOnly 标记，我自己的任务不带', async () => {
+  const pool = makePool({
+    myRows: [{ task_id: 'my-1' }],
+    ccRows: [{ task_id: 'fs-1' }],
+  });
+  const data = await getWorkspaceHome(pool, 'default', 'admin_a', { role: 'admin' });
+  const byId = Object.fromEntries(data.myTasks.map((t) => [t.task_id, t]));
+  assert.equal(byId['my-1']._ccOnly, undefined);
+  assert.equal(byId['fs-1']._ccOnly, true);
+});
+
+describe('getPendingConfirmations', () => {
+  test('非admin/hq_manager 只能确认自己发起(promoted_by)的任务反馈，即使是巡检类', async () => {
+    const calls = [];
+    const pool = {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        return { rows: [] };
+      },
+    };
+    await getPendingConfirmations(pool, 'default', 'store_manager_a', 'store_manager');
+    const sql = calls[0].sql;
+    assert.match(sql, /promoted_by' = \$2/);
+    assert.doesNotMatch(sql, /food_safety/);
+    assert.deepEqual(calls[0].params, ['default', 'store_manager_a']);
+  });
+
+  test('admin/hq_manager 对食安类任务可以越过 promoted_by，但仍然是"自己发起 OR 食安"，不是无条件全看', async () => {
+    const calls = [];
+    const pool = {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        return { rows: [] };
+      },
+    };
+    await getPendingConfirmations(pool, 'default', 'admin_a', 'admin');
+    const sql = calls[0].sql;
+    assert.match(sql, /promoted_by' = \$2/);
+    assert.match(sql, /food_safety/);
+  });
 });
