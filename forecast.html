@@ -426,7 +426,11 @@ let __ALL_BRANDS = [];
 // ─── Init ───
 (async function init() {
     try {
-        TOKEN = String(localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim();
+        // 2026-07-30：优先用父页面(工作台)拼进URL的access_token参数——某些容器WebView
+        // 会把内嵌iframe的localStorage分区隔离，跟父页面同源但读不到父页面写的token，
+        // 单靠localStorage会误判"未登录"。读不到query参数时退回原来的localStorage逻辑。
+        const _qsToken = new URLSearchParams(window.location.search).get('access_token');
+        TOKEN = String(_qsToken || localStorage.getItem('HRMS_API_TOKEN') || localStorage.getItem('hrms_token') || '').trim();
         if (!TOKEN) { showStatus('请先登录主系统后再使用智能助手', 'error'); return; }
 
         let userStore = '', userRole = '';

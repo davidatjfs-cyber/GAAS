@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkspaceHome, getPendingConfirmations, getNotableOpenTasks } from '../service.js';
+import { getWorkspaceHome, getPendingConfirmations, getNotableOpenTasks, getMyOpenTasks } from '../service.js';
 
 // 2026-07-30：业务方确认的任务路由规则——只有食品安全类任务需要抄送总部经理/管理员，
 // 其余全部只归当事人(assignee_username)。这里锁定：非食安cc角色只看自己的任务，
@@ -71,7 +71,7 @@ test('cc视图返回的任务带 _ccOnly 标记，我自己的任务不带', asy
   assert.equal(byId['fs-1']._ccOnly, true);
 });
 
-test('getNotableOpenTasks 的cc视图查询同时覆盖食安类目和运营周报/月评类目', async () => {
+test('getNotableOpenTasks 的cc视图只覆盖食安类目，不再包含运营周报/月评（业务方撤回该决定）', async () => {
   const calls = [];
   const pool = {
     async query(sql, params) {
@@ -82,8 +82,8 @@ test('getNotableOpenTasks 的cc视图查询同时覆盖食安类目和运营周�
   await getNotableOpenTasks(pool, 'default');
   const { sql, params } = calls[0];
   assert.match(sql, /food_safety/);
-  assert.match(sql, /category = ANY/);
-  assert.deepEqual(params[2], ['weekly_report', 'monthly_evaluation']);
+  assert.doesNotMatch(sql, /category = ANY/);
+  assert.equal(params.length, 2);
 });
 
 describe('getPendingConfirmations', () => {
@@ -115,4 +115,16 @@ describe('getPendingConfirmations', () => {
     assert.match(sql, /promoted_by' = \$2/);
     assert.match(sql, /food_safety/);
   });
+});
+
+test('getMyOpenTasks 排除 hr_filed 状态——催办无响应后已备案的任务不再算"开放中"', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  await getMyOpenTasks(pool, 'default', 'someone');
+  assert.match(calls[0].sql, /'hr_filed'/);
 });

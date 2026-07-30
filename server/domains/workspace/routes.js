@@ -92,6 +92,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
         store: String(req.query?.store || '').trim(),
         startDate: String(req.query?.startDate || '').trim(),
         endDate: String(req.query?.endDate || '').trim(),
+        storeFilter: resolveOverviewStoreFilter(req),
       });
       res.json({ ok: true, items });
     } catch (e) {

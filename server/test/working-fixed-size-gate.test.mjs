@@ -142,8 +142,18 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * ⑤ 客流量/客单价/桌均/堂食外卖占比/就餐人数分布从全范围聚合成一个数字改成按单店返回
  * 数组分别展示；堂食/外卖占比的数据源从pos_orders现数订单条数改成daily_reports本来就有
  * 的dine_orders/delivery_orders权威字段（业务方指出"数据都在营业日报里"）。
+ * 2026-07-30 第二十四次上调（70868→70946）：业务方看到效果后撤回上一轮"运营周报保留并
+ * 抄送"的决定，改为整个从任务栏拿掉（agents-service-v2的rhythm-engine-ops-reports.js
+ * 同步移除对应createUnifiedTask调用）；另修复一批实测反馈——① 8大AI督导指挥中心状态
+ * 显示中文（board_status映射，含详情时间线）；② 出品经理任务栏出现的陈年"试味"任务
+ * 根因是hr_filed（催办无响应后已备案）终态漏在几处开放任务过滤条件之外，统一补上；
+ * ③ 培训看板/厨房打点看板展示到员工姓名+状态明细（原数据已有，前端未展示）；④ 差评
+ * 展示补上服务端强制的门店权限范围（之前任何角色不传store参数即可看到全部门店）；
+ * ⑤ 智能备货iframe空白问题的best-effort修复：token通过URL query传递给forecast.html，
+ * 缓解部分容器环境iframe localStorage隔离导致取不到token的情况；⑥ 门店营销活动建议、
+ * 任务栏卡片统一改成details/summary折叠样式，与8大AI督导指挥中心一致。
  */
-const MAX_LINES = 70868;
+const MAX_LINES = 70946;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -21,18 +21,29 @@ const log = childLogger({ domain: 'workspace', handler: 'bad-review-feed' });
 const DATE_EXPR = `to_char(to_timestamp((agent_data->'fields'->>'date')::bigint / 1000), 'YYYY-MM-DD')`;
 const DATE_GUARD = `(agent_data->'fields'->>'date') ~ '^[0-9]+$'`;
 
-export async function getBadReviewFeed(pool, tenantId, { store = '', startDate = '', endDate = '', limit = 30 } = {}) {
+/**
+ * 2026-07-30 修复：马己仙出品经理反馈能在差评展示里看到所有门店的差评——查证发现这里
+ * 之前只接受前端传的 store 单店筛选（可选、可以不传），完全没有服务端强制的权限范围，
+ * 谁都能不传store或者改传别的店名看到全部/别店数据。加 storeFilter（调用方按角色算出的
+ * "允许查看的门店范围"，admin/老板传空数组=不限；其它角色传自己范围内的门店列表）——
+ * store 这个UI下拉筛选如果超出 storeFilter 范围会被忽略，不传时默认收窄到 storeFilter。
+ */
+export async function getBadReviewFeed(pool, tenantId, { store = '', startDate = '', endDate = '', limit = 30, storeFilter = [] } = {}) {
   const lim = Math.min(100, Math.max(1, Number(limit) || 30));
+  const scoped = Array.isArray(storeFilter) && storeFilter.length > 0;
+  const effectiveStore = store && (!scoped || storeFilter.includes(store)) ? store : '';
   try {
     const platformParams = [tenantId];
     let platformWhere = '';
-    if (store) { platformParams.push(store); platformWhere += ` AND agent_data->'fields'->>'store' = $${platformParams.length}`; }
+    if (effectiveStore) { platformParams.push(effectiveStore); platformWhere += ` AND agent_data->'fields'->>'store' = $${platformParams.length}`; }
+    else if (scoped) { platformParams.push(storeFilter); platformWhere += ` AND agent_data->'fields'->>'store' = ANY($${platformParams.length})`; }
     if (startDate) { platformParams.push(startDate); platformWhere += ` AND ${DATE_EXPR} >= $${platformParams.length}`; }
     if (endDate) { platformParams.push(endDate); platformWhere += ` AND ${DATE_EXPR} <= $${platformParams.length}`; }
 
     const visitParams = [tenantId];
     let visitWhere = '';
-    if (store) { visitParams.push(store); visitWhere += ` AND agent_data->'fields'->>'store' = $${visitParams.length}`; }
+    if (effectiveStore) { visitParams.push(effectiveStore); visitWhere += ` AND agent_data->'fields'->>'store' = $${visitParams.length}`; }
+    else if (scoped) { visitParams.push(storeFilter); visitWhere += ` AND agent_data->'fields'->>'store' = ANY($${visitParams.length})`; }
     if (startDate) { visitParams.push(startDate); visitWhere += ` AND ${DATE_EXPR} >= $${visitParams.length}`; }
     if (endDate) { visitParams.push(endDate); visitWhere += ` AND ${DATE_EXPR} <= $${visitParams.length}`; }
 

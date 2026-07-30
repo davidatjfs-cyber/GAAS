@@ -15,11 +15,17 @@ function generateTaskId(now = new Date()) {
   return `WS-${ds}-${String(_taskSeq).padStart(4, '0')}`;
 }
 
+// 2026-07-30 修复：用户反馈出品经理任务列表里出现几个月前(2026-03)的"试味"任务，一直没有
+// 消失——查证发现这些任务的status是'hr_filed'（3次催办无响应后，任务生命周期里的"已备案"
+// 终态，见agents-service-v2的task-orchestrator-board-lifecycle.js），本该是"不再等待
+// 响应"的终止状态，但这里的排除列表里一直没有它，导致这类任务被永久当成"开放中"展示。
+// 所有用同一份排除列表的地方(getOpenTaskSummaryByStore/getMyOpenTasks/getNotableOpenTasks/
+// getPendingConfirmations)统一补上'hr_filed'。
 export async function getOpenTaskSummaryByStore(pool, tenantId) {
   const r = await pool.query(
     `SELECT store,
-            COUNT(*) FILTER (WHERE status NOT IN ('resolved','pending_settlement','settled','closed','rejected')) AS open_count,
-            COUNT(*) FILTER (WHERE severity = 'high' AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')) AS high_count
+            COUNT(*) FILTER (WHERE status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')) AS open_count,
+            COUNT(*) FILTER (WHERE severity = 'high' AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')) AS high_count
        FROM master_tasks
       WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''
       GROUP BY store
@@ -101,7 +107,7 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
     `SELECT task_id, title, detail, severity, store, status, category, source, created_at
        FROM master_tasks
       WHERE tenant_id = $1 AND assignee_username = $2
-        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
         ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4')}
       ORDER BY created_at DESC LIMIT $3`,
     [tenantId, username, lim, WS_ALLOWED_TASK_SOURCES]
@@ -118,18 +124,14 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
 // 只对admin/hq_manager角色额外拼这份"食安cc视图"，其他角色只看 getMyOpenTasks()。
 const WS_FOOD_SAFETY_CC_ROLES = ['admin', 'hq_manager'];
 
-// 2026-07-30 追加：业务方确认"本周/本月运营周报"要保留，且需要抄送总部经理/管理员。
-// 已核实这份周报本身只是聚合展示——它汇总的每一项异常(revenue_achievement/
-// labor_efficiency/table_visit_*/bad_review_*/recharge_zero)在触发时已经由
-// agents-service-v2 的 anomaly-notify-pipeline.js 各自建了带真实责任人的任务(category=
-// 具体异常键，走 pickPrimaryAssignee 按门店/岗位解析)，不需要这里重新拆分。周报本身
-// (category='weekly_report'/'monthly_evaluation'，source='rhythm_engine')没有
-// assignee——它就是给总部看的汇总，同食安一样走cc视图，不归入"当事人"任务。
-const WS_REPORT_CC_CATEGORIES = ['weekly_report', 'monthly_evaluation'];
+// 2026-07-30 追加又撤回：业务方一开始要求"本周/本月运营周报"保留并抄送总部经理/管理员，
+// 后来实测看到效果后改主意——"异常追溯到责任人做的也不好"，明确要求把运营周报从任务里
+// 整个拿掉，不要了。agents-service-v2 那边(rhythm-engine-ops-reports.js)已经同步移除了
+// 产出这类master_tasks记录的createUnifiedTask调用，这里也撤销对应的cc口子。
 
 /**
- * cc 视图：不是"指派给我"的任务，是总部经理/管理员按业务规则需要被抄送知晓的内容——
- * 食品安全异常 + 运营周报/月评，不含其它任务类型（那些只归当事人）。
+ * cc 视图：不是"指派给我"的任务，是总部经理/管理员按业务规则需要被抄送知晓的食品安全
+ * 异常，不含其它任务类型（那些只归当事人）。
  */
 export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
@@ -137,13 +139,10 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
     `SELECT task_id, title, detail, severity, store, status, category, source, created_at
        FROM master_tasks
       WHERE tenant_id = $1
-        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
-        AND (
-          category ILIKE '%food_safety%' OR category ILIKE '%food_quality%'
-          OR category = ANY($3)
-        )
+        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+        AND (category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')
       ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim, WS_REPORT_CC_CATEGORIES]
+    [tenantId, lim]
   );
   return r.rows || [];
 }
@@ -289,7 +288,7 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
     `UPDATE master_tasks SET status = 'pending_review', response_text = $1, response_images = $2::jsonb,
             responded_at = NOW(), updated_at = NOW()
        WHERE task_id = $3 AND tenant_id = $4 AND assignee_username = $5
-         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
+         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
        RETURNING task_id, store, title, source_data`,
     [text, JSON.stringify(images), taskId, tenantId, username]
   );
