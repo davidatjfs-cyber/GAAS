@@ -59,3 +59,31 @@ test('storeFilter 为空数组（admin/老板视角）：不限制门店', async
   assert.equal(platformCall.params.length, 1);
   assert.doesNotMatch(platformCall.sql, /WHERE[\s\S]*store'\s*=/);
 });
+
+// 2026-07-30：用户反馈"差评展示是否100%导入了"——查证是桌访记录量远大于平台差评，
+// 之前合并后统一按lim截断，桌访记录会把平台差评挤出列表。锁定：平台差评必须全部保留，
+// 不能被桌访记录挤掉。
+test('平台差评不应被桌访记录挤出：limit=3时桌访记录有5条，平台差评2条应该全部保留', async () => {
+  const platformRows = [
+    { store: 'A', date: '2026-07-30', content: 'p1', platform: '美团', rating: '1' },
+    { store: 'A', date: '2026-07-25', content: 'p2', platform: '大众点评', rating: '2' },
+  ];
+  const visitRows = [
+    { store: 'A', date: '2026-07-30', product_issue: 'v1' },
+    { store: 'A', date: '2026-07-29', product_issue: 'v2' },
+    { store: 'A', date: '2026-07-28', product_issue: 'v3' },
+    { store: 'A', date: '2026-07-27', product_issue: 'v4' },
+    { store: 'A', date: '2026-07-26', product_issue: 'v5' },
+  ];
+  const pool = {
+    calls: [],
+    async query(sql, params) {
+      this.calls.push({ sql, params });
+      if (/content_type = 'bad_review'/.test(sql)) return { rows: platformRows };
+      return { rows: visitRows };
+    },
+  };
+  const result = await getBadReviewFeed(pool, 'default', { limit: 3 });
+  const platformCount = result.filter((r) => r.source.startsWith('平台差评')).length;
+  assert.equal(platformCount, 2, '平台差评应该全部保留，不能被桌访记录挤掉');
+});

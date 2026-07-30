@@ -630,21 +630,50 @@ function wsMarketingAssigneeOptions(store) {
         empty: false,
     };
 }
+// 2026-07-30：用户问"用户如何知道这个营销方案投放在哪里"——之前只显示线上/线下粗分类，
+// 补上真实渠道名称的中文展示（后端已经透出payload.channel，见marketing-suggestions.js）。
+const WS_CHANNEL_LABELS = {
+    wecom: '企业微信', sms: '短信', dianping: '大众点评', pengyouquan: '朋友圈',
+    xiaohongshu: '小红书', douyin: '抖音', meituan: '美团', member: '会员小程序',
+};
+function wsChannelLabel(it) {
+    const name = String(it?.channelName || '').trim().toLowerCase();
+    return WS_CHANNEL_LABELS[name] || name || '';
+}
+// 2026-07-30：用户要求"滚动更新"后加一个未读标记区分新旧——用localStorage记录已经看过的
+// actionKey，本次渲染时先判断是否已见过，渲染完再把当前这批全部标记为已见，下次刷新只有
+// 真正新出现的建议才会带"新"标签。
+const WS_MARKETING_SEEN_KEY = 'ws_marketing_suggestions_seen';
+function wsMarketingSeenSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(WS_MARKETING_SEEN_KEY) || '[]')); } catch (e) { return new Set(); }
+}
+function wsMarketingMarkSeen(actionKeys) {
+    try {
+        const seen = wsMarketingSeenSet();
+        actionKeys.forEach((k) => seen.add(k));
+        // 只保留最近500个，避免localStorage无限增长
+        localStorage.setItem(WS_MARKETING_SEEN_KEY, JSON.stringify([...seen].slice(-500)));
+    } catch (e) { /* ignore */ }
+}
 async function wsRenderMarketingSuggestions() {
     const data = await wsFetchJson('/api/workspace/marketing-suggestions');
     const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
+    const seen = wsMarketingSeenSet();
     // 2026-07-30：跟任务卡片一样，改成折叠形式——默认只显示一行(渠道标签+门店+标题)，
     // 点开才展开详情和执行/忽略按钮，跟8大AI督导指挥中心的记录展示保持一致。
-    return items.map((it) => {
+    const html = items.map((it) => {
         const assignees = wsMarketingAssigneeOptions(it.store);
+        const isNew = it.actionKey && !seen.has(it.actionKey);
         return (
             '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '" data-marketing-store="' + wsEsc(it.store || '') + '">' +
             '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
-            '<span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span> ' +
+            (isNew ? '<span class="ws-tag" style="background:#e74c3c;color:#fff;">新</span> ' : '') +
+            '<span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + (wsChannelLabel(it) ? '·' + wsEsc(wsChannelLabel(it)) : '') + '</span> ' +
             wsEsc((it.store || '') + ' — ' + (it.title || '')) +
             '</summary>' +
             '<div style="margin-top:10px;">' +
+            (wsChannelLabel(it) ? '<div class="ws-card__desc">发布渠道：' + wsEsc(wsChannelLabel(it)) + '（点击执行后需门店责任人在该渠道手动发布并确认，系统不会自动群发）</div>' : '') +
             wsFormatTaskDetail(it.detail) +
             '<div class="ws-card__acts">' +
             '<button type="button" class="ws-btn ws-btn--primary" data-ws-marketing-execute-toggle="' + wsEsc(it.actionKey || '') + '">执行</button>' +
@@ -662,6 +691,8 @@ async function wsRenderMarketingSuggestions() {
             '</details>'
         );
     }).join('');
+    wsMarketingMarkSeen(items.map((it) => it.actionKey).filter(Boolean));
+    return html;
 }
 
 function wsBindMarketingSuggestionsEvents(root) {
@@ -710,8 +741,18 @@ function wsBindMarketingSuggestionsEvents(root) {
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已忽略</span>';
-                if (card) card.querySelector('.ws-card__acts')?.remove();
+                // 2026-07-30：用户要求"忽略后直接清除补充一条新的建议"——之前忽略成功只是
+                // 隐藏掉这张卡片的按钮，列表里其它建议不动，也不会补上新的一条。改成重新
+                // 拉取整个建议区块：后端已把这条标记为ignored（不再是proposed），重新查询
+                // 会自然把它排除掉，同时把候选池里下一条未展示过的建议顶上来。
+                const container = document.getElementById('ws-marketing-suggestions-body');
+                if (container) {
+                    container.innerHTML = await wsRenderMarketingSuggestions();
+                    wsBindMarketingSuggestionsEvents(container);
+                } else if (resultEl) {
+                    resultEl.innerHTML = '<span class="ws-ok">已忽略</span>';
+                    card?.querySelector('.ws-card__acts')?.remove();
+                }
             } catch (e) {
                 btn.disabled = false;
                 if (resultEl) resultEl.innerHTML = '<span class="ws-err">忽略失败：' + wsEsc(e?.message || e) + '</span>';
@@ -1061,7 +1102,12 @@ async function wsRunCustomAnalyze(store, question) {
             // 真正"看得见"。
             resultEl.querySelector('[data-ws-jump-key]')?.addEventListener('click', (e) => {
                 const key = e.target.getAttribute('data-ws-jump-key');
-                document.getElementById('ws-six-tool-panel')?.setAttribute('data-active-key', key);
+                const panel = document.getElementById('ws-six-tool-panel');
+                // 2026-07-30 二次修复：上次只补了scrollIntoView，但面板默认display:none，
+                // 滚动到一个隐藏元素当然毫无视觉反应——用户反馈"点了还是没反应"是对的。
+                // 必须先把面板显示出来（跟顶部六大管理神器按钮的点击逻辑保持一致）。
+                if (panel) panel.style.display = '';
+                panel?.setAttribute('data-active-key', key);
                 wsLoadSixToolPlan(key, store).then(() => {
                     document.getElementById('ws-six-tool-body')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
@@ -1575,7 +1621,7 @@ async function wsRenderBossOrHq(root, persona) {
     html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
     // 2026-07-30：门店营销活动建议之前只有每条建议内部自己折叠，整个区块本身不折叠——
     // 跟其它区块统一改用wsSection()包一层，区块级别也可以整体收起，不是只有卡片能收起。
-    html += wsSection('门店营销活动建议', marketingHtml);
+    html += wsSection('门店营销活动建议', '<div id="ws-marketing-suggestions-body">' + marketingHtml + '</div>');
     html += wsSection('门店红绿灯（上月）', wsRenderStoreLights(home?.storeLights));
     html += wsSection('六大管理神器', wsRenderSixTools(allStores));
     html += wsSection('餐饮总监', wsRenderCustomDirectorSection(allStores));

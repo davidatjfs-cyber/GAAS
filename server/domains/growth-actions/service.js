@@ -208,7 +208,7 @@ export async function executeAction(ctx, tenantId, actionKeyRaw, operator, body)
 // respondToTask/confirmTaskResponse状态机（跟食品安全等任务卡片同一套UI/流程），不新建
 // 一套。系统侧真实的自动化动作(发券/发短信)仍然在这里立即执行(不因为多了任务分配就延迟
 // 触达客户)，只是新增了"责任人确认执行到位"这一层追溯闭环。
-export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, assigneeUsernameRaw, operator, body) {
+export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, assigneeUsernameRaw, operator, _body) {
   const actionKey = cleanText(actionKeyRaw, 255);
   const assigneeUsername = cleanText(assigneeUsernameRaw, 80);
   if (!assigneeUsername) return { status: 400, body: { ok: false, error: 'missing_assignee' } };
@@ -251,13 +251,18 @@ export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, ass
       ]
     );
 
-    // 系统侧真实自动化动作(发券/发短信等)照常立即执行——只是多了责任人确认这层追溯，
-    // 不因为分配任务而推迟真实触达客户。
-    const executed = await ctx.executeGrowthActionRecord(ctx.pool, action, operator, body?.payload || {}, body?.reason || '');
-    return { taskId, action: executed.action, execution: executed.execution };
+    // 2026-07-30 二次修正：用户明确要求"营销全部手动触发"——点执行只应该把完整方案分配给
+    // 责任人，由责任人自己去对应渠道手动落实，系统不能在分配的同时自动发券/发短信/推送。
+    // 之前这里紧接着调用executeGrowthActionRecord会立即真实触达客户，跟这条要求矛盾，去掉。
+    // growth_actions标记为'assigned'（不再是'proposed'，不会再出现在待处理建议列表里）。
+    const assigned = await ctx.pool.query(
+      `UPDATE growth_actions SET status = 'assigned', updated_at = NOW() WHERE action_key = $1 RETURNING *`,
+      [actionKey]
+    );
+    return { taskId, action: assigned.rows[0] };
   });
   if (outcome.error) return { status: outcome.status || 400, body: { ok: false, error: outcome.error } };
-  return { status: 200, body: { ok: true, taskId: outcome.taskId, action: outcome.action, execution: outcome.execution } };
+  return { status: 200, body: { ok: true, taskId: outcome.taskId, action: outcome.action } };
 }
 
 export async function ignoreAction(ctx, tenantId, actionKeyRaw, operator, body) {

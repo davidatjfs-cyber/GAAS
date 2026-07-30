@@ -33,3 +33,20 @@ test('getMarketingSuggestions：storeFilter非空时展开别名后用ANY匹配�
   assert.match(call.sql, /store_id = ANY/);
   assert.ok(call.params[1].includes('洪潮久光店'), '应该展开出飞书缩写别名，不能只有传入的官方简称');
 });
+
+// 2026-07-30：用户反馈同一家店连续出现好几条几乎一样的建议——查证生产库确认
+// campaign_autopilot每天都为同一批目标客群重新生成建议，旧的从不过期，之前只是简单
+// LIMIT取最新N条，完全没有按门店+目标客群去重。锁定：同一store_id+target_audience
+// 只保留最新一条，且返回的channelName要透出payload.channel（不是online/offline粗分类）。
+test('getMarketingSuggestions：同一门店+同一目标客群的多条建议只保留最新一条', async () => {
+  const pool = makePool([
+    { action_key: 'AK3', action_type: 'promo_task', store_id: 'S1', title: 't3', detail: 'd3', created_at: '2026-07-30', payload: { target_audience: '新客未激活，共65人', channel: 'dianping' } },
+    { action_key: 'AK2', action_type: 'send_message', store_id: 'S1', title: 't2', detail: 'd2', created_at: '2026-07-29', payload: { target_audience: '新客未激活，共65人', channel: 'wecom' } },
+    { action_key: 'AK1', action_type: 'sms_recall', store_id: 'S1', title: 't1', detail: 'd1', created_at: '2026-07-28', payload: { target_audience: '流失预警客户', channel: 'sms' } },
+  ]);
+  const items = await getMarketingSuggestions(pool, 'default', []);
+  assert.equal(items.length, 2, '同一目标客群的重复建议应该只保留最新一条');
+  assert.equal(items[0].actionKey, 'AK3', '应该保留created_at最新的那条');
+  assert.equal(items[0].channelName, 'dianping', '应该透出payload.channel原始渠道');
+  assert.ok(items.some((i) => i.actionKey === 'AK1'), '不同目标客群的建议不应被去重掉');
+});

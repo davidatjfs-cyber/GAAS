@@ -247,8 +247,16 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 堆积了2000+条——respondToTask的UPDATE漏排除pending_review状态导致重复提交能反复
  * 命中生成通知，且提交按钮未disable导致一次点击能连续触发大量重复请求。补上按钮
  * disabled防抖 + respondToTask同任务已有未读通知时跳过插入。
+ * 2026-07-30 第三十七次上调（71351→71356）：上次给"点击查看标准方案"补的scrollIntoView
+ * 修复本身有bug——六大管理神器面板默认display:none，只滚动没显示，用户反馈"点了还是
+ * 没反应"依然成立。补上跳转前先把面板display设为可见（跟顶部按钮点击逻辑一致）。
+ * 2026-07-30 第三十八次上调（71356→71367）：①营销建议补上真实发布渠道展示
+ * (企业微信/短信/大众点评等)+是否系统自动执行的说明文案。
+ * 2026-07-30 第三十九次上调（71367→71397）：用户明确要求"营销全部手动触发"，去掉自动
+ * 执行相关文案；"忽略"改成实时刷新替换新建议（原来只是隐藏按钮，不会补新的）；补上
+ * 未读"新"标签区分滚动更新后的新旧建议(localStorage记录已见过的actionKey)。
  */
-const MAX_LINES = 71351;
+const MAX_LINES = 71397;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
