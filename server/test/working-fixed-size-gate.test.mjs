@@ -222,8 +222,20 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 改成：marketing-suggestions.js返回前用resolveAgentCanonicalStore()归一化store字段，
  * assignMarketingActionTask写master_tasks.store前同样归一化；前端改用现成的
  * hrmsNormalizeRoleCode()比较角色，不再用原始role字面量。
+ * 2026-07-30 第三十三次上调（71296→71323）：用户反馈"马己仙出品经理16:30收到试味定时
+ * 任务，但工作台任务栏里根本没有"——查证生产库真实事件日志发现这条任务确实真实创建、
+ * 通过飞书卡片送达，责任人在飞书里17秒内就回复提交了证据，系统自动审核通过秒级
+ * resolved——不是没打通，是resolved的任务立刻从"任务"tab消失，责任人自己都没法回头
+ * 确认"这件事到底有没有真的处理过"。新增"已完成"tab + GET
+ * /api/workspace/tasks/recently-resolved（默认最近24小时），展示最近解决的任务
+ * （不管是通过工作台还是飞书完成的），弥补这个可见性缺口。
+ * 2026-07-30 第三十四次上调（71323→71329）：用户反馈营销活动责任人下拉框里出现了离职
+ * 员工（武静静/徐曼金）——之前的过滤只看role+store，完全没排除离职/停用员工。前端补上
+ * status='离职'/'inactive'排除（对齐09-resignation.js既有的同款判断）；后端
+ * assignMarketingActionTask查询员工时也补上status='active'过滤，不能只靠前端过滤，
+ * 离职员工哪怕绕过前端直接调接口也要被拒绝。
  */
-const MAX_LINES = 71296;
+const MAX_LINES = 71329;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

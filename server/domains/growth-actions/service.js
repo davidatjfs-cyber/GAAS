@@ -218,8 +218,11 @@ export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, ass
     if (!current.rows.length) return { error: 'action_not_found', status: 404 };
     const action = current.rows[0];
 
+    // 2026-07-30：用户反馈责任人下拉框里出现了离职员工——前端过滤只是UX层面的辅助，真正
+    // 兜底必须在后端：这里查询里补上status='active'，离职/停用的人哪怕绕过前端过滤直接
+    // 调接口也一律拒绝，不能只靠客户端过滤。
     const empR = await ctx.pool.query(
-      `SELECT username, name, role, store FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2 LIMIT 1`,
+      `SELECT username, name, role, store FROM employees WHERE lower(username) = lower($1) AND tenant_id = $2 AND status = 'active' LIMIT 1`,
       [assigneeUsername, tenantId]
     );
     const emp = empR.rows[0];

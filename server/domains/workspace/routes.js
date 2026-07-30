@@ -2,7 +2,7 @@
  * 角色工作台 HTTP 路由：只读聚合 + 批量推广菜品这一个薄写路径。
  */
 import { childLogger } from '../../utils/logger.js';
-import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask } from './service.js';
+import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask, getMyRecentlyResolvedTasks } from './service.js';
 import { getBossOverview, getMonthlyTargetActuals } from './overview.js';
 import { getMarketingSuggestions } from './marketing-suggestions.js';
 import { getBadReviewFeed } from './bad-review-feed.js';
@@ -32,6 +32,9 @@ function resolveOverviewStoreFilter(req) {
 }
 
 /**
+ * 2026-07-30：新增两个路由后 registerWorkspaceRoutes 超过函数行数棘轮上限——按纪律拆成
+ * 两个薄注册函数（本体只保留首页聚合类只读路由），任务相关的路由（提交证据/确认/ack/
+ * 判罚/最近完成）外提到 registerWorkspaceTaskRoutes，不是重新设计路由，只是搬家。
  * @param {{ pool: import('pg').Pool, resolveTenantIdDefault: (req)=>string }} deps
  */
 export function registerWorkspaceRoutes(app, authRequired, deps) {
@@ -144,6 +147,34 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json(result);
     } catch (e) {
       log.error({ msg: 'workspace_promote_dish_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  registerWorkspaceTaskRoutes(app, authRequired, deps);
+}
+
+/**
+ * 任务相关路由外提（提交证据/确认/ack/判罚/最近完成）——从registerWorkspaceRoutes搬出来，
+ * 单纯是为了不超函数行数棘轮，行为完全不变，deps跟主函数用同一份。
+ * @param {{ pool: import('pg').Pool, resolveTenantIdDefault: (req)=>string }} deps
+ */
+function registerWorkspaceTaskRoutes(app, authRequired, deps) {
+  const { pool, resolveTenantIdDefault } = deps;
+
+  // 2026-07-30：任务一旦resolved就从"任务栏"消失，责任人自己都没法回头确认"这件事到底有
+  // 没有真的处理过"——尤其是通过飞书快速回复几秒内就closed的任务，工作台里几乎从来没
+  // 出现过。补一个"最近完成"视图，默认查最近24小时。
+  app.get('/api/workspace/tasks/recently-resolved', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    const username = String(req.user?.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'missing_username' });
+    try {
+      const hours = Number(req.query?.hours) || 24;
+      const items = await getMyRecentlyResolvedTasks(pool, tenantId, username, hours);
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'workspace_recently_resolved_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });

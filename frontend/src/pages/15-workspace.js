@@ -603,14 +603,20 @@ function wsRenderOverview(ov, showRankings) {
 // 发起人确认后才算真正执行完成。这里把原来"点执行直接调用/execute"改成"点执行先展开责任人
 // 选择框"，选完调用新的/assign-and-execute；责任人列表用HRMS_STORE.getEmployees()按门店+
 // 角色(store_manager/front_manager)过滤，不用额外接口。
-// 2026-07-30 修复：几乎每次都提示"本店未配置店长/前厅主管"——查证发现HRMS_STORE本地员工
-// 数据里role字段有不少还是历史遗留的中文标签("店长"/"前厅主管"等)，不是标准化后的role code，
-// 直接用===比较'store_manager'/'front_manager'必然漏掉这些人。改用现成的
+// 2026-07-30 第一次修复：几乎每次都提示"本店未配置店长/前厅主管"——查证发现HRMS_STORE
+// 本地员工数据里role字段有不少还是历史遗留的中文标签("店长"/"前厅主管"等)，不是标准化后
+// 的role code，直接用===比较'store_manager'/'front_manager'必然漏掉这些人。改用现成的
 // hrmsNormalizeRoleCode()（01-boot.js里到处在用的同一套归一化，不新写一套）先转换再比较。
+// 2026-07-30 第二次修复：用户反馈责任人下拉框里出现了离职员工——之前的过滤只看role+store，
+// 完全没有排除已离职/停用的人。跟09-resignation.js里"离职/停用员工不能再被指派"的既有判断
+// 保持一致：status为'离职'或'inactive'的一律排除，只有在职('active'，或未设置时默认视为在职
+// 的历史数据)才能出现在责任人候选里。
 function wsMarketingAssigneeOptions(store) {
     const employees = (typeof HRMS_STORE !== 'undefined' && HRMS_STORE.getEmployees) ? (HRMS_STORE.getEmployees() || []) : [];
     const eligible = employees.filter((e) => {
         if (String(e?.store || '') !== String(store || '')) return false;
+        const status = String(e?.status || 'active');
+        if (status === '离职' || status === 'inactive') return false;
         const role = (typeof hrmsNormalizeRoleCode === 'function') ? hrmsNormalizeRoleCode(e?.role) : String(e?.role || '');
         return ['store_manager', 'front_manager'].includes(role);
     });
@@ -1342,12 +1348,16 @@ async function wsRenderInsightsSection() {
 // （view=assigned&status=pending），不重新实现审批归属判断（那套逻辑很复杂，链式审批
 // 都在里面，容易写错）；"通知"这里只给数量，没做列表下钻（没有现成的"通知列表"接口，
 // 只有未读数，列表本身在 hrms_user_notifications，需要另外做才能下钻）。
+// 2026-07-30：加"已完成"tab——任务一旦resolved就从"任务"tab消失，责任人自己都没法回头
+// 确认"这件事到底有没有真的处理过"，尤其是通过飞书快速回复几秒内就closed的任务，工作台
+// 里几乎从来没出现过。这里不显示数字角标（"最近完成"不是待办，没有"未处理"的紧迫感）。
 function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount) {
     return (
         '<div class="ws-todo">' +
         '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="approval"><span class="ws-todo__n">' + pendingApprovalCount + '</span>待批</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知</button>' +
+        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="done">已完成</button>' +
         '</div>' +
         '<div class="ws-todo-pane" id="ws-todo-pane"></div>'
     );
@@ -1366,6 +1376,29 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
             pane.innerHTML = pendingApprovals.length
                 ? pendingApprovals.map((a) => '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
                 : '<div class="ws-empty">暂无待批事项</div>';
+            return;
+        }
+        // 2026-07-30：用户反馈"马己仙出品经理16:30收到试味定时任务，但工作台任务栏里根本
+        // 没有"——查证发现这条任务是真实通过飞书卡片送达、责任人在飞书里17秒内就回复提交
+        // 证据、系统自动审核通过秒级resolved，不是没打通，是resolved的任务立刻从"任务"tab
+        // 消失、责任人自己都没法回头确认"这件事到底有没有真的处理过"。加"已完成"tab展示最近
+        // 24小时内已解决的任务，弥补这个可见性缺口（不管是通过工作台还是飞书完成的）。
+        if (tab === 'done') {
+            pane.innerHTML = '<div class="ws-loading">加载中...</div>';
+            wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24').then((data) => {
+                const items = Array.isArray(data?.items) ? data.items : [];
+                if (!items.length) { pane.innerHTML = '<div class="ws-empty">最近24小时暂无已完成的任务</div>'; return; }
+                pane.innerHTML = items.map((it) => (
+                    '<div class="ws-card">' +
+                    '<div class="ws-card__title">' + wsEsc(it.title || '') + (it.store ? ' · ' + wsEsc(it.store) : '') + '</div>' +
+                    (it.response_text ? '<div class="ws-card__desc">完成说明：' + wsEsc(it.response_text) + '</div>' : '') +
+                    (Array.isArray(it.response_images) && it.response_images.length
+                        ? '<div class="ws-card__desc">' + it.response_images.map((u) => '<a href="' + wsEsc(u) + '" target="_blank" class="ws-btn ws-btn--link">证据文件</a>').join(' ') + '</div>'
+                        : '') +
+                    '<div class="ws-card__desc" style="font-size:11px;opacity:.6;">完成时间：' + wsEsc(String(it.resolved_at || it.responded_at || '').slice(0, 16).replace('T', ' ')) + '</div>' +
+                    '</div>'
+                )).join('');
+            });
             return;
         }
         // 2026-07-29：用户明确要求admin/hq_manager/store_manager/出品经理今后不再用"我的档案"

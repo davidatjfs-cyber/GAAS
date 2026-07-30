@@ -122,6 +122,29 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   return r.rows || [];
 }
 
+// 2026-07-30 修复：用户反馈"马己仙出品经理16:30收到试味定时任务，但工作台任务栏/通知里
+// 根本没有"——查证生产库真实事件日志发现：这条任务确实真实创建、通过飞书卡片送达，责任人
+// 在飞书里17秒内就回复提交了证据，系统自动审核通过直接resolved——不是没打通，是"任务栏只
+// 显示未完成的开放任务"这个设计本身，跟"任务几秒内就通过飞书完成并关闭"这个真实时效叠加
+// 在一起，导致工作台里几乎永远看不到这类任务存在过，责任人自己都没法回头确认"这件事到底
+// 有没有真的处理过"。加一个"最近完成"视图，让责任人能看到最近处理过的任务（不管是通过
+// 工作台还是飞书完成的），弥补这个可见性缺口。
+export async function getMyRecentlyResolvedTasks(pool, tenantId, username, hours = 24, limit = 20) {
+  const lim = Math.min(50, Math.max(1, Number(limit) || 20));
+  const h = Math.min(168, Math.max(1, Number(hours) || 24));
+  const r = await pool.query(
+    `SELECT task_id, title, detail, store, status, category, source, response_text, response_images, responded_at, resolved_at
+       FROM master_tasks
+      WHERE tenant_id = $1 AND lower(assignee_username) = lower($2)
+        AND status IN ('resolved','pending_settlement','settled','closed')
+        AND COALESCE(resolved_at, responded_at) >= NOW() - ($3 || ' hours')::interval
+        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$5')}
+      ORDER BY COALESCE(resolved_at, responded_at) DESC LIMIT $4`,
+    [tenantId, username, h, lim, WS_ALLOWED_TASK_SOURCES]
+  );
+  return r.rows || [];
+}
+
 // 2026-07-30 修复：业务方明确确认任务路由规则——除食品安全类需要抄送总部经理+管理员，
 // 其余全部只发给当事人(assignee_username)。之前这里是"全租户范围、不管是谁的任务全都给
 // 管理员/老板看"，导致 admin/hq_manager/store_manager/出品经理登录后看到完全一样的
