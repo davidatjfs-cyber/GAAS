@@ -234,8 +234,21 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * status='离职'/'inactive'排除（对齐09-resignation.js既有的同款判断）；后端
  * assignMarketingActionTask查询员工时也补上status='active'过滤，不能只靠前端过滤，
  * 离职员工哪怕绕过前端直接调接口也要被拒绝。
+ * 2026-07-30 第三十五次上调（71329→71347）：一批实测反馈修复——① 餐饮总监"点击查看
+ * 标准方案"按钮实际有效，只是结果写进了页面下方"六大管理神器"区块自己的容器，用户看不到
+ * 变化以为按钮坏了，补scrollIntoView；② "最近查询记录"提交新查询后从未重新拉取过(后端
+ * 其实一直在正确写入)，补上查询成功后刷新；③ "发布任务"到agents-service-v2自动分派
+ * 完成有异步耗时，之前只在发布成功那一刻刷新一次列表，容易拿到过渡态快照，补一次2.5秒
+ * 延迟刷新；④ revenue_targets.store存的是"洪潮久光店"缩写，跟storeFilter/员工表官方
+ * 全称不是同一字符串，导致scoped角色(店长/出品经理)看到的实收目标一直是0——改用
+ * expandAgentStoreLabels()展开别名后ANY匹配；⑤ 强化custom/analyze的AI prompt，禁止
+ * 在已经注入真实数据(差评/离职快照)的情况下仍然输出"当前无本店真实数据"这类说法。
+ * 2026-07-30 第三十六次上调（71347→71351）：用户反馈同一条"任务已提交完成反馈"通知
+ * 堆积了2000+条——respondToTask的UPDATE漏排除pending_review状态导致重复提交能反复
+ * 命中生成通知，且提交按钮未disable导致一次点击能连续触发大量重复请求。补上按钮
+ * disabled防抖 + respondToTask同任务已有未读通知时跳过插入。
  */
-const MAX_LINES = 71329;
+const MAX_LINES = 71351;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

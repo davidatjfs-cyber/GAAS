@@ -381,7 +381,7 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
     `UPDATE master_tasks SET status = 'pending_review', response_text = $1, response_images = $2::jsonb,
             responded_at = NOW(), updated_at = NOW()
        WHERE task_id = $3 AND tenant_id = $4 AND lower(assignee_username) = lower($5)
-         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','pending_review')
        RETURNING task_id, store, title, source_data`,
     [text, JSON.stringify(images), taskId, tenantId, username]
   );
@@ -389,17 +389,29 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
   const task = r.rows[0];
   const dispatcher = String(task.source_data?.promoted_by || task.source_data?.dispatched_by || '').trim();
   if (dispatcher) {
-    await pool.query(
-      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
-       VALUES ($1, $2, $3, 'task_response_submitted', $4::jsonb, $5)`,
-      [
-        dispatcher,
-        '任务已提交完成反馈，待确认',
-        `${username} 已提交「${task.title}」的完成反馈${text ? '：' + text : ''}${images.length ? '（含' + images.length + '个证据文件）' : ''}，请查看并确认。`,
-        JSON.stringify({ task_id: taskId, store: task.store }),
-        tenantId,
-      ]
+    // 2026-07-30：漏排除pending_review状态 + 前端提交按钮未disable，导致同一任务重复提交
+    // 命中UPDATE后无条件INSERT，堆积出98条一模一样的"待确认"通知。这里补一道去重：同一
+    // task_id若已有未读的task_response_submitted通知，跳过再次插入。
+    const dup = await pool.query(
+      `SELECT 1 FROM hrms_user_notifications
+        WHERE type = 'task_response_submitted' AND read_at IS NULL
+          AND COALESCE(meta->>'task_id', '') = $1 AND tenant_id = $2
+        LIMIT 1`,
+      [taskId, tenantId]
     );
+    if (!dup.rows.length) {
+      await pool.query(
+        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+         VALUES ($1, $2, $3, 'task_response_submitted', $4::jsonb, $5)`,
+        [
+          dispatcher,
+          '任务已提交完成反馈，待确认',
+          `${username} 已提交「${task.title}」的完成反馈${text ? '：' + text : ''}${images.length ? '（含' + images.length + '个证据文件）' : ''}，请查看并确认。`,
+          JSON.stringify({ task_id: taskId, store: task.store }),
+          tenantId,
+        ]
+      );
+    }
   }
   return { ok: true, taskId };
 }

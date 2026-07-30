@@ -441,8 +441,12 @@ function wsBindTaskCardEvents(root) {
     });
     root.querySelectorAll('[data-ws-respond-submit]').forEach((btn) => {
         btn.addEventListener('click', () => {
+            // 2026-07-30：网络慢/服务重启期间用户反复点提交，按钮未disable导致同一任务被
+            // 多次POST到/respond，后端又漏排除pending_review状态，堆积出98条重复"待确认"通知。
+            if (btn.disabled) return;
+            btn.disabled = true;
             const taskId = btn.getAttribute('data-ws-respond-submit');
-            wsSubmitTaskResponse(taskId, btn.closest('.ws-card'));
+            wsSubmitTaskResponse(taskId, btn.closest('.ws-card')).finally(() => { btn.disabled = false; });
         });
     });
     root.querySelectorAll('[data-ws-approve]').forEach((btn) => {
@@ -1042,14 +1046,25 @@ async function wsRunCustomAnalyze(store, question) {
     try {
         const r = await fetch('/api/diagnosis/solutions/custom/analyze', { method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ store, question }) });
         const d = await r.json().catch(() => ({}));
+        // 2026-07-30：用户反馈"每次查询后不会留下记录"——查证生产库确认后端其实一直有真实
+        // 写入(saveQueryHistory)，问题出在前端："最近查询记录"只在页面刚打开时加载过一次，
+        // 提交新查询后从来没有重新拉取过，所以看到的永远是上次打开页面时的旧列表。这里补上
+        // 查询成功后重新拉取一次。
+        wsLoadCustomHistory(store);
         if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
         if (d.mode === 'existing') {
             resultEl.innerHTML = '<div class="ws-card"><div class="ws-card__desc">' + wsEsc(d.reason || '') + '</div><div class="ws-card__desc">' + wsEsc(d.analysis || '') + '</div>' +
                 '<div class="ws-card__acts"><button type="button" class="ws-btn ws-btn--link" data-ws-jump-key="' + wsEsc(d.problem_key) + '">这属于"' + wsEsc((WS_SIX_TOOLS.find((t) => t.key === d.problem_key) || {}).label || d.problem_key) + '"标准方案，点击查看 →</button></div></div>';
+            // 2026-07-30：用户反馈"点击查看"没有反应——实际上点击后确实触发了加载，只是结果
+            // 写进了页面下方"六大管理神器"区块自己的容器(#ws-six-tool-body)，跟这里点击的
+            // 位置离得远，用户看不到任何变化、以为按钮坏了。补一个滚动到目标区块，让结果
+            // 真正"看得见"。
             resultEl.querySelector('[data-ws-jump-key]')?.addEventListener('click', (e) => {
                 const key = e.target.getAttribute('data-ws-jump-key');
                 document.getElementById('ws-six-tool-panel')?.setAttribute('data-active-key', key);
-                wsLoadSixToolPlan(key, store);
+                wsLoadSixToolPlan(key, store).then(() => {
+                    document.getElementById('ws-six-tool-body')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
             });
         } else {
             const plan = Array.isArray(d.plan) ? d.plan : [];
@@ -1290,6 +1305,13 @@ function wsBindAgentCommandCenterEvents(root) {
             root.querySelector('#ws-atb-content').value = '';
             showNotification('任务已发布', 'success');
             wsLoadAgentBoardList(root);
+            // 2026-07-30：用户反馈发布的任务"没有流转下去"、状态一直卡在"待解析"——查证
+            // 生产库真实事件日志发现任务其实正常流转到了"已分配"，只是agents-service-v2那边
+            // 从创建到自动分派完成有一小段异步耗时，这里发布成功后立刻刷新的列表拿到的是
+            // 还没走完自动分派的中间状态快照，之后又没有任何机制再刷新一次，所以列表上的
+            // 标签就一直停在那个过渡态，跟点开详情看到的真实状态流转对不上。补一次延迟
+            // 刷新，等自动分派大概率走完再拿一次最新状态。
+            setTimeout(() => wsLoadAgentBoardList(root), 2500);
         } catch (e) {
             showNotification('发布失败：' + (e?.message || e), 'error');
         } finally {

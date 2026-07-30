@@ -9,7 +9,7 @@
  */
 import { childLogger } from '../../utils/logger.js';
 import { getTurnoverRate } from '../../hrms-api-tools.js';
-import { resolveAgentCanonicalStore } from '../../v2-store-alignment.js';
+import { resolveAgentCanonicalStore, expandAgentStoreLabels } from '../../v2-store-alignment.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'overview' });
 
@@ -122,24 +122,33 @@ export async function revenueRollup(pool, tenantId, today, storeFilter) {
   // 2026-04（本月2026-07根本没配），导致目标永远显示¥0——但月度营收目标业务上通常是
   // "设一次、沿用到改为止"，不是每个月都要重新录入。改成"往前找最近一个已配置的period"，
   // 找不到精确当月才会退化到0（不编数字，真没配过就是没有）。
-  // 2026-07-30 修复：上面这版逻辑找的是"全租户范围内最近的单一period"，不是"每个门店各自
-  // 最近的period"——实测生产库洪潮门店最新配置到2026-03，马己仙配置到2026-04，取全局单一
-  // 最近period(2026-04)后只有马己仙有这个period的行，SUM结果里洪潮被完全漏掉，管理员看到
-  // 的"实收目标"变成只等于马己仙一家的目标，误以为"只接入了马己仙门店"。改成按门店各自
-  // 找自己最近可用的period（不同店可以停留在不同月份），再把每店取到的目标加总。
+  // 2026-07-30 第一次修复：上面这版逻辑找的是"全租户范围内最近的单一period"，不是"每个
+  // 门店各自最近的period"——实测生产库洪潮门店最新配置到2026-03，马己仙配置到2026-04，
+  // 取全局单一最近period(2026-04)后只有马己仙有这个period的行，SUM结果里洪潮被完全漏掉，
+  // 管理员看到的"实收目标"变成只等于马己仙一家的目标，误以为"只接入了马己仙门店"。改成
+  // 按门店各自找自己最近可用的period（不同店可以停留在不同月份），再把每店取到的目标加总。
+  // 2026-07-30 第二次修复：洪潮门店(scoped角色，如出品经理/店长)看到的实收目标仍是¥0——
+  // 查证发现revenue_targets.store存的是"洪潮久光店"这个缩写，跟storeFilter/员工表用的
+  // 官方全称"洪潮大宁久光店"不是同一字符串，是这次会话里反复出现的同一类"门店名不统一"
+  // 问题在revenue_targets这张表上又出现了一次——admin不传storeFilter时因为没有WHERE过滤
+  // 侥幸能看到全部，一旦是店长/出品经理这种传了storeFilter的scoped视角，精确匹配必然
+  // 查不到任何行。改用expandAgentStoreLabels()展开别名后ANY匹配，不再要求字符串完全相等。
   const targetParams = [tenantId, periodOf(today)];
-  const targetFilter = storeFilterClause(storeFilter, targetParams.length + 1);
-  if (targetFilter.param) targetParams.push(targetFilter.param);
+  const targetAliasList = Array.isArray(storeFilter) && storeFilter.length
+    ? [...new Set(storeFilter.flatMap((s) => expandAgentStoreLabels(s)))]
+    : null;
+  let targetFilterSql = '';
+  if (targetAliasList) { targetParams.push(targetAliasList); targetFilterSql = ` AND store = ANY($${targetParams.length})`; }
   const targetR = await pool.query(
     `SELECT COALESCE(SUM(rt.target_revenue), 0) AS target
        FROM revenue_targets rt
        JOIN (
          SELECT store, MAX(period) AS latest_period
            FROM revenue_targets
-          WHERE tenant_id = $1 AND period <= $2${targetFilter.sql}
+          WHERE tenant_id = $1 AND period <= $2${targetFilterSql}
           GROUP BY store
        ) latest ON latest.store = rt.store AND latest.latest_period = rt.period
-      WHERE rt.tenant_id = $1${targetFilter.sql.replace('store', 'rt.store')}`,
+      WHERE rt.tenant_id = $1${targetFilterSql.replace(/\bstore\b/, 'rt.store')}`,
     targetParams
   );
   const targetRevenue = Number(targetR.rows[0]?.target || 0);
