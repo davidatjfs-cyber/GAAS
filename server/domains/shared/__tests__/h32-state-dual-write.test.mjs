@@ -17,7 +17,7 @@ test('dualWriteStateToDB no-ops on non-object', async () => {
   assert.equal(calls, 0);
 });
 
-test('dualWriteStateToDB：不再回灌 employees；仍写 leave / reward / notifications', async () => {
+test('dualWriteStateToDB：不再回灌 employees / notifications；仍写 leave / reward', async () => {
   const sqls = [];
   let empCalls = 0;
   const { dualWriteStateToDB } = createStateDualWriteHelpers({
@@ -70,6 +70,10 @@ test('dualWriteStateToDB：不再回灌 employees；仍写 leave / reward / noti
         createdAt: '2026-07-02T00:00:00+08:00',
       },
     ],
+    // 2026-07-30：notifications 字段仍可能残留在传入的 state 里（历史 blob 数据），但
+    // dualWriteStateToDB 不应该再处理它——appendNotifications() 才是通知写入的唯一权威
+    // 路径。这里故意保留这个字段，断言它被完全忽略（不产生任何 hrms_user_notifications
+    // 的 INSERT），而不是删掉这个字段让测试"顺便"通过。
     notifications: [
       { targetUser: 'a', title: 't', message: 'm', type: 'system_notice', meta: { k: 1 } },
       { title: 'no-target' },
@@ -79,7 +83,10 @@ test('dualWriteStateToDB：不再回灌 employees；仍写 leave / reward / noti
   assert.equal(empCalls, 0);
   assert.ok(sqls.some((q) => /hrms_leave_records/.test(q.sql)));
   assert.ok(sqls.some((q) => /hrms_reward_punishment_records/.test(q.sql)));
-  assert.ok(sqls.some((q) => /hrms_user_notifications/.test(q.sql)));
+  assert.ok(
+    !sqls.some((q) => /hrms_user_notifications/.test(q.sql)),
+    'notifications 字段不应该再被 dualWriteStateToDB 写入 hrms_user_notifications（去重键失效导致重复通知的根因，见 state-dual-write.js 顶部注释）'
+  );
   const leave = sqls.find((q) => /hrms_leave_records/.test(q.sql));
   assert.equal(leave.params[0], 'lr1');
   const reward = sqls.find((q) => /hrms_reward_punishment_records/.test(q.sql));
