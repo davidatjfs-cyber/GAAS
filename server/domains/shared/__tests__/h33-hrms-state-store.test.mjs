@@ -414,6 +414,44 @@ test('getSharedState：hydrate 后写入缓存；invalidate 后重新 hydrate', 
   assert.equal(reads, 2);
 });
 
+test('getSharedState：并发 cache-miss 去重（cache stampede 修复），只真正拉取一次', async () => {
+  // 2026-07-29 生产事故复现：同一个2秒窗口内 35 个并发请求全部 cache-miss，各自独立发起
+  // fetch+hydrate，把2核服务器打满。这里模拟 N 个并发调用在第一次 fetch 完成前一起发起，
+  // 断言底层 pool.query / hydrateFn 只被真正调用一次，其余全部复用同一个 in-flight Promise。
+  // 用独占 tenant key（同文件其它测试的既有约定，见下方 'saveSharedState 成功后 invalidate'
+  // 测试的注释）避免撞上其它测试写入的 'default' 缓存条目（2秒TTL内会被共用导致误判）。
+  const tid = '__h33_stampede_isolated__';
+  let reads = 0;
+  let hydrateCalls = 0;
+  let resolveQuery;
+  const queryPromise = new Promise((resolve) => { resolveQuery = resolve; });
+  const { getSharedState } = createHrmsStateStoreHelpers({
+    pool: {
+      async query() {
+        reads += 1;
+        return queryPromise;
+      },
+    },
+    ...deps({
+      resolveTenantIdDefault: (t) => t || tid,
+      hydrateAuthoritativeState: async (_pool, state) => {
+        hydrateCalls += 1;
+        return state;
+      },
+    }),
+  });
+
+  const calls = Array.from({ length: 35 }, () => getSharedState(tid));
+  // 让所有并发调用都先跑到"读缓存未命中"这一步，再放行底层 query
+  await new Promise((r) => setTimeout(r, 0));
+  resolveQuery({ rows: [{ data: { blob: true } }] });
+  const results = await Promise.all(calls);
+
+  assert.equal(reads, 1, '35 个并发 cache-miss 应该只触发 1 次真实 DB 查询');
+  assert.equal(hydrateCalls, 1, '35 个并发 cache-miss 应该只触发 1 次 hydrate');
+  assert.ok(results.every((r) => r.blob === true));
+});
+
 test('saveSharedState 成功后 invalidate，下次 get 会重新读库+hydrate', async () => {
   let hydrateCalls = 0;
   const handlers = {

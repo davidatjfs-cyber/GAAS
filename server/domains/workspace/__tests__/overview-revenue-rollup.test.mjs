@@ -1,0 +1,193 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { revenueRollup, operationalMetrics } from '../overview.js';
+
+// 2026-07-30：业务方反复反馈"今日营收"应该是"昨日营收"，且周/月环比同比一直对不上——
+// 根因是当前区间的结束日一直锚在today（当天日报几乎必然还没出，永远是0，把当周/当月
+// 拉低，制造假的环比下跌）。这里用固定的today（不依赖真实系统时间）锁定：当前区间和
+// 对比区间的结束日都改锚在yesterday。
+
+function makePool(rows) {
+  const calls = [];
+  return {
+    calls,
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: [rows.daily || {}] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 0 }] };
+      if (/FROM pos_orders/.test(sql)) return { rows: [rows.pos || {}] };
+      return { rows: [] };
+    },
+  };
+}
+
+function makeMultiStorePool({ dailyRows = [], posRows = [] } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: dailyRows };
+      if (/FROM pos_orders/.test(sql)) return { rows: posRows };
+      return { rows: [] };
+    },
+  };
+}
+
+test('revenueRollup：普通工作日，本周至今和上周同期都锚在"昨天"，长度一致', async () => {
+  // 2026-07-30 是周四；weekStart(本周一)=07-27，yesterday=07-29
+  const pool = makePool({ daily: {} });
+  await revenueRollup(pool, 'default', '2026-07-30', []);
+  const dailyCall = pool.calls.find((c) => /FROM daily_reports/.test(c.sql));
+  const [, , , , weekStart, weekEnd, weekStartLW, weekEndLW] = dailyCall.params;
+  assert.equal(weekStart, '2026-07-27');
+  assert.equal(weekEnd, '2026-07-29'); // 昨天，不是today(07-30)
+  assert.equal(weekStartLW, '2026-07-20');
+  assert.equal(weekEndLW, '2026-07-22'); // 上周一起同样3天(07-20~07-22)，不是整周
+});
+
+test('revenueRollup：今天是周一时，本周至今是0天（昨天还在上周），退化成空区间', async () => {
+  const pool = makePool({ daily: {} });
+  await revenueRollup(pool, 'default', '2026-07-27', []); // 07-27 是周一
+  const dailyCall = pool.calls.find((c) => /FROM daily_reports/.test(c.sql));
+  const [, , , , weekStart, weekEnd, , weekEndLW] = dailyCall.params;
+  assert.equal(weekStart, '2026-07-27');
+  assert.equal(weekEnd, null);
+  assert.equal(weekEndLW, null);
+});
+
+test('revenueRollup：返回字段是 yesterday 不是 today，mom跟前天比，yoy跟去年昨天比', async () => {
+  const pool = makePool({
+    daily: {
+      yesterday_revenue: 100,
+      day_before_yesterday_revenue: 80,
+      yesterday_ly_revenue: 50,
+      week_revenue: 0, week_lw_revenue: 0, week_ly_revenue: 0,
+      month_revenue: 0, month_lm_revenue: 0, month_ly_revenue: 0,
+    },
+  });
+  const result = await revenueRollup(pool, 'default', '2026-07-30', []);
+  assert.ok(result.yesterday, '应该有 yesterday 字段');
+  assert.equal(result.today, undefined, '不应该再有 today 字段');
+  assert.equal(result.yesterday.revenue, 100);
+  assert.equal(result.yesterday.mom, 25); // (100-80)/80*100
+  assert.equal(result.yesterday.yoy, 100); // (100-50)/50*100
+});
+
+test('operationalMetrics：本月至今同样锚在昨天，不含today', async () => {
+  const pool = makeMultiStorePool({});
+  await operationalMetrics(pool, 'default', '2026-07-30', []);
+  const dailyCall = pool.calls.find((c) => /FROM daily_reports/.test(c.sql));
+  const posCall = pool.calls.find((c) => /FROM pos_orders/.test(c.sql));
+  assert.equal(dailyCall.params[2], '2026-07-29'); // monthEnd = yesterday
+  assert.equal(posCall.params[2], '2026-07-29');
+});
+
+test('operationalMetrics：按单店返回数组，堂食/外卖占比来自daily_reports的dine_orders/delivery_orders（不是pos_orders现数）', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80 },
+      { store: '马己仙上海音乐广场店', traffic: 50, dine_revenue: 5000, dine_orders: 40, delivery_orders: 10, traffic_lm: 45, traffic_ly: 40 },
+    ],
+    posRows: [
+      { store: '洪潮大宁久光店', p1: 10, p2: 20, p3_4: 30, p5_6: 5, p6plus: 5, dine_party_cnt: 70 },
+    ],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', []);
+  assert.equal(result.length, 2, '应该按店返回2条');
+  const hc = result.find((r) => r.store === '洪潮大宁久光店');
+  assert.equal(hc.dineInSharePct, 80); // 80/(80+20)*100，来自daily_reports的dine_orders/delivery_orders
+  assert.equal(hc.deliverySharePct, 20);
+  assert.equal(hc.partySizeSharePct.p2, 28.6); // 20/70*100，按pos_orders算（daily_reports没有分桌人数字段）
+  const mjx = result.find((r) => r.store === '马己仙上海音乐广场店');
+  assert.equal(mjx.dineInSharePct, 80); // 40/(40+10)*100
+  assert.equal(mjx.partySizeSharePct.p1, null, '这家店pos_orders里没有匹配行，应该是null不是报错');
+});
+
+// 2026-07-30：就餐人数分布一直是0——真实生产库 pos_orders.store_name 存的是POS原始长名
+// （"洪潮传统潮汕菜【大宁久光中心店】"），不是daily_reports/员工表用的官方简称，之前精确
+// 按store_name分组/过滤会永远查不到匹配。锁定：即使pos_orders行的store名是这种原始长名，
+// 归一化后也要能跟daily_reports的官方简称对上。
+test('operationalMetrics：pos_orders的store_name是POS原始长名，归一化后仍能匹配daily_reports的官方简称', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80 },
+    ],
+    posRows: [
+      { store: '洪潮传统潮汕菜【大宁久光中心店】', p1: 10, p2: 20, p3_4: 30, p5_6: 5, p6plus: 5, dine_party_cnt: 70 },
+    ],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', []);
+  const hc = result.find((r) => r.store === '洪潮大宁久光店');
+  assert.ok(hc, '应该按官方简称匹配到这家店');
+  assert.equal(hc.partySizeSharePct.p2, 28.6, '归一化后应该能取到就餐人数分布，不是null/0');
+});
+
+// 2026-07-30：管理员反馈"实收目标"只接入了马己仙门店——查证生产库发现洪潮门店的
+// revenue_targets最新period停在2026-03，马己仙停在2026-04，之前的SQL找"全租户范围内
+// 唯一最近的period"，取到2026-04后只有马己仙有这一行，洪潮被完全漏掉。锁定：revenue_targets
+// 查询必须按门店各自的MAX(period)分别取值再求和，不能对齐成一个全局period。
+test('revenueRollup：营业日目标必须按门店各自的最近period分别取值求和，不能所有店对齐到同一个全局period', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 1450000 }] };
+      return { rows: [] };
+    },
+  };
+  await revenueRollup(pool, 'default', '2026-07-30', []);
+  const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
+  assert.match(targetCall.sql, /JOIN[\s\S]*MAX\(period\) AS latest_period/, '必须按store分组取各自MAX(period)，不能是全局唯一period');
+  assert.match(targetCall.sql, /GROUP BY store/);
+});
+
+// 2026-07-30：洪潮门店(scoped角色如出品经理/店长)看到的实收目标一直是0——查证生产库
+// revenue_targets.store存的是"洪潮久光店"缩写，跟storeFilter/员工表官方全称"洪潮大宁
+// 久光店"不是同一字符串，之前精确匹配在有门店范围限制时必然查不到行。锁定：storeFilter
+// 非空时必须展开别名后用ANY匹配，不能要求字符串完全相等。
+test('revenueRollup：storeFilter非空时revenue_targets必须展开门店别名后ANY匹配，不能精确相等', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 850000 }] };
+      return { rows: [] };
+    },
+  };
+  await revenueRollup(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
+  const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
+  assert.match(targetCall.sql, /store = ANY/);
+  const aliasParam = targetCall.params.find((p) => Array.isArray(p));
+  assert.ok(aliasParam.includes('洪潮久光店'), '应该展开出revenue_targets里实际使用的缩写别名，否则scoped角色查不到任何行');
+});
+
+test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤掉pos_orders里POS原始长名不在范围内的门店', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80 },
+    ],
+    posRows: [
+      { store: '洪潮传统潮汕菜【大宁久光中心店】', p1: 10, p2: 20, p3_4: 30, p5_6: 5, p6plus: 5, dine_party_cnt: 70 },
+      { store: '马己仙广东小馆·荔枝木烧鹅（大宁音乐广场店）', p1: 99, p2: 99, p3_4: 99, p5_6: 99, p6plus: 99, dine_party_cnt: 99 },
+    ],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
+  const hc = result.find((r) => r.store === '洪潮大宁久光店');
+  assert.equal(hc.partySizeSharePct.p2, 28.6, '范围内门店应正常计算');
+});
+
+// 2026-07-30：用户要求门店经营明细里加"门店人效值"——跟人效排名同一份数据源
+// (daily_reports.efficiency)，锁定每店都能拿到这个字段。
+test('operationalMetrics：每店返回efficiency字段（人效值，取整）', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80, efficiency: 1234.6 },
+    ],
+    posRows: [],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', []);
+  assert.equal(result[0].efficiency, 1235);
+});

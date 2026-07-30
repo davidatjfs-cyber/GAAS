@@ -174,6 +174,7 @@ let _slotMonthlyCalc = '';
 let _slotMonthlyPush = '';
 let _slotDishMonthlyDay1 = '';
 let _slotDishWeekly = '';
+let _slotStoreRatingDay10 = '';
 
 /**
  * 失败时通知 admin/hq_manager（与 agents-service runWithCronLog 告警风格一致）。
@@ -201,6 +202,47 @@ async function notifyHrmsPerfAdmins(taskName, err, tenantId = 'default') {
   } catch (e) {
     log.error({ msg: 'perf_jobs_notifyhrmsperfadmins_failed', err: e?.message || e });
   }
+}
+
+/**
+ * 2026-07-30 修复：门店红绿灯长期显示"无评级"——查证发现 store_ratings 表自
+ * 2026-05 期（2026-06-27 写入）后再没有新记录。根因：2026-04 那次改造把
+ * runMonthlyPerformanceClose() 整个从调度里摘掉了，理由是"月度绩效统一由
+ * agents-service-v2 monthly-comprehensive-rating 生成"——但实测
+ * agents-service-v2 那边（monthly-comprehensive-rating-queries.js）只有
+ * `SELECT ... FROM store_ratings` 读取，从来没有写入 store_ratings 的代码，
+ * 它只是在门店评级表已有数据时拿来用、没有就退回从 daily_reports 现算。也就是说
+ * "改由 agents 生成"这个交接从未真正发生在"门店评级"这一项上——HRMS 这边正确地
+ * 停止了会跟 agents 员工评分冲突的那部分（calculateEmployeeScore + agent_scores
+ * 写入），但连带把不冲突、也没人接手的门店评级计算一起停掉了，导致这张表被遗弃。
+ *
+ * 修复：只重新启用"门店评级"这一段（不重新启用会员工评分重复的那部分），复用
+ * runMonthlyPerformanceClose() 里原本就有的门店去重+计算逻辑。
+ */
+export async function runMonthlyStoreRatingOnly() {
+  const cal = shanghaiCalendar();
+  const period = prevMonthPeriod(cal);
+  const users = await pool().query(
+    `SELECT username, TRIM(store) AS store, role
+     FROM ${SHARED_TABLES.FEISHU_USERS}
+     WHERE registered = true
+       AND role IN ('store_manager', 'store_production_manager')
+       AND TRIM(COALESCE(store, '')) <> ''`
+  );
+  const eligible = filterUsersForMonthlyPerformanceClose(users.rows || []);
+  const seen = new Set();
+  let calculated = 0;
+  for (const u of eligible) {
+    const store = u.store;
+    const k = normalizeStoreKey(store);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const brand = inferBrandFromStoreName(store);
+    await calculateStoreRating(store, brand, period);
+    calculated += 1;
+  }
+  log.info({ msg: 'perf_jobs_monthly_store_rating_only_done', detail: [period, 'stores', calculated] });
+  return { period, stores: calculated };
 }
 
 export async function runMonthlyPerformanceClose() {
@@ -647,6 +689,21 @@ export function startHrmsPerformanceJobs(options = {}) {
 
       // 2026-04 起：月度绩效统一由 agents-service-v2 monthly-comprehensive-rating 生成并发送。
       // HRMS runMonthlyPerformanceClose/sendFeishuPerformanceDigest 若继续运行，会与 agents 月报并行写库/发卡，造成错分与重复。
+      // 2026-07-30 补：上面这句停用范围过大，连带把"门店评级(store_ratings)"这个 agents 那边
+      // 从未真正接手写入(只读)的部分也一起停了，导致该表自2026-05期后再未更新，工作台门店
+      // 红绿灯长期显示"无评级"。只重新启用这一段，不涉及员工评分那部分。
+      if (d === 10 && hour === 1) {
+        const slotKey = `store-rating-${y}-${m}-${d}`;
+        if (_slotStoreRatingDay10 !== slotKey) {
+          _slotStoreRatingDay10 = slotKey;
+          try {
+            await runMonthlyStoreRatingOnly();
+          } catch (e) {
+            log.error({ msg: 'perf_jobs_monthly_store_rating_only_failed', err: e?.message || e });
+            await notifyHrmsPerfAdmins('门店评级计算（每月10日01:00）', e);
+          }
+        }
+      }
 
       if (hour === 8 && minute < 12) {
         // 菜品优化周/月报默认由 agents-service-v2 rhythm-engine 发送；仅当 HRMS_ENABLE_DISH_OPTIMIZATION_CRON=true 时本进程才发，避免双发与旧版式

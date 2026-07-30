@@ -87,27 +87,20 @@ export function createStateDualWriteHelpers({
         );
       }
 
-      // 4. notifications → hrms_user_notifications 表
-      const notifArr = Array.isArray(state.notifications) ? state.notifications : [];
-      for (const n of notifArr) {
-        const target = String(n?.targetUser || n?.targetUsername || n?.to || '').trim();
-        if (!target) continue;
-        const nType = String(n?.type || 'system_notice').trim();
-        await pool.query(
-          `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT DO NOTHING`,
-          [
-            target,
-            String(n?.title || '').trim(),
-            String(n?.message || '').trim(),
-            nType,
-            JSON.stringify(n?.meta || n?.data || {}),
-            n?.createdAt ? new Date(n.createdAt).toISOString() : hrmsNowISO(),
-            resolveTenantIdDefault(),
-          ]
-        );
-      }
+      // 2026-07-30 移除：notifications → hrms_user_notifications 的回填曾经在这里，但
+      // appendNotifications() 早已改为直接写 hrms_user_notifications（"权威"，不再 merge
+      // blob，见 server/domains/notifications/append.js 顶部注释）——这里处理的
+      // state.notifications 只是历史遗留在 blob 里的旧数组，每次任何地方调用
+      // saveSharedState() 都会把这份旧数组原样重新跑一遍。而下面这条 INSERT 用的
+      // `ON CONFLICT DO NOTHING` 没有指定冲突目标，hrms_user_notifications 表本身也没有
+      // 除自增id外的唯一约束——`id`每次都是新值，永远不会真正命中冲突，等于完全没有去重，
+      // 造成同一条通知反复被插入第二份重复记录（生产实测：'积分申请待审批'等通知从
+      // 2026-07-21起持续每条2份，两份created_at相同但id相差几百，符合"每次某次全量
+      // saveSharedState被调用就重插一次blob里的旧通知"这个机制）。同函数里
+      // leaveRecords/salaryAdjustments 两段之所以没有这个问题，是因为它们用了自己的
+      // id做真正的ON CONFLICT (id)冲突目标；notifications在blob里从来没有这样的稳定
+      // 幂等键。直接删除这段回填——通知的写入路径已经完全收口到appendNotifications()，
+      // 这里不需要、也不应该再从blob重新同步。
     } catch (e) {
       log.error({
         msg: 'dual_write_state_to_db_failed',
@@ -115,7 +108,7 @@ export function createStateDualWriteHelpers({
         stack: e?.stack || null,
       });
       void notifyAdminsDualWriteFailure(
-        '全量双写（employees / hrms_leave_records / hrms_reward_punishment_records / hrms_user_notifications）',
+        '全量双写（employees / hrms_leave_records / hrms_reward_punishment_records）',
         e
       );
     }

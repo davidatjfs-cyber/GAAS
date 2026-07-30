@@ -113,11 +113,153 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 'workspace'）——但 wsRemoveNavItem 这个函数在合并 15-workspace.js 时已经被删掉了（连着
  * 那份未完成的壳一起丢弃），导致调用点在调用一个不存在的函数、什么都不做，侧栏"工作台"
  * 入口消失。改回调用 wsInjectNavItem()，'workspace' 加回白名单。
- * 2026-07-31 第二十次上调（70663→70667）：正式晋升申请资格判断补上 trainingProgress.passed
- * 这条兜底（此前只认 assessmentStatus === 'passed'，考核通过但该字段没同步的场景会显示
- * "暂无可申请记录"）。
+ * 2026-07-29 第二十次上调（70663→70687）：生产实测发现的多处真实bug修复——任务栏加
+ * source/category白名单过滤（去掉growth_monitor营销/data_auditor审计等噪音）、
+ * 本周本月环比改成跟上周上月"同样长度区间"对齐（之前拿本月未过完天数比上月整月）、
+ * 实收目标改成往前找最近已配置period(不再要求当月精确匹配)、人效排名取整数、门店下拉框
+ * 改用真实门店台账而不是master_tasks里的脏文本、新增GET /api/notifications真实列表接口
+ * 接入"通知"tab（之前只有未读数没有列表）。
+ * 2026-07-30 第二十一次上调（70687→70718）：① 任务详情(task.detail)之前原样dump成一个
+ * <div>，食品安全类任务detail能有几百字，字面**加粗**标记不生效只显示星号，卡片被撑得
+ * 很长、操作按钮被挤到很下面——新增 wsFormatTaskDetail()：**text**转真正<strong>，超过
+ * 120字用原生<details>/<summary>折叠（同一套模式09-resignation.js的ack-details已在用）；
+ * ② "待确认的任务反馈"里之前直接显示assignee_username(如nnyxyf26)，改成JOIN employees
+ * 显示真实姓名(assignee_name)；③ .ws-card__desc补overflow-wrap:anywhere，避免飞书记录号
+ * 这类长十六进制串撑出横向溢出。
+ * 2026-07-30 第二十二次上调（70718→70723）：业务方确认"本周/本月运营周报"保留，且需要
+ * 抄送总部经理/管理员——周报汇总的每项异常(营收达成/人效/桌访系列/差评系列等)触发时
+ * 已经由agents-service-v2的anomaly-notify-pipeline.js各自建了带真实责任人的任务，周报
+ * 本身没有单独责任人，cc视图收窄查询里加上category IN (weekly_report,
+ * monthly_evaluation)；前端_ccOnly文案按类目区分：食安显示"仅同步知悉，由责任人处理"，
+ * 周报/月评显示"运营汇总，仅供查阅"（不能说"由责任人处理"，周报本来就没有单独责任人）。
+ * 2026-07-30 第二十三次上调（70723→70868）：一批用户实测反馈的修复——① 门店红绿灯
+ * "无评级"：恢复被2026-04误停的月度门店评级计算调度（详见performance-jobs.js）；
+ * ② 8大AI督导指挥中心的记录加点击展开详情（状态流转+证据+审核记录），之前closed等
+ * 状态点了没反应；③ 门店营销活动建议加长文本折叠 + 执行/忽略操作（复用增长看板同一套
+ * /api/growth/actions/:key/execute与/ignore接口）；④ "今日营收"改成"昨日营收"（当天
+ * 日报几乎总是还没出，显示今日会永远是¥0且环比永远-100%）；本周/本月"至今"的统计口径
+ * 也从锚定today改成锚定yesterday，避免用still-zero的"今天"把当周/当月拉低、制造假环比；
+ * ⑤ 客流量/客单价/桌均/堂食外卖占比/就餐人数分布从全范围聚合成一个数字改成按单店返回
+ * 数组分别展示；堂食/外卖占比的数据源从pos_orders现数订单条数改成daily_reports本来就有
+ * 的dine_orders/delivery_orders权威字段（业务方指出"数据都在营业日报里"）。
+ * 2026-07-30 第二十四次上调（70868→70946）：业务方看到效果后撤回上一轮"运营周报保留并
+ * 抄送"的决定，改为整个从任务栏拿掉（agents-service-v2的rhythm-engine-ops-reports.js
+ * 同步移除对应createUnifiedTask调用）；另修复一批实测反馈——① 8大AI督导指挥中心状态
+ * 显示中文（board_status映射，含详情时间线）；② 出品经理任务栏出现的陈年"试味"任务
+ * 根因是hr_filed（催办无响应后已备案）终态漏在几处开放任务过滤条件之外，统一补上；
+ * ③ 培训看板/厨房打点看板展示到员工姓名+状态明细（原数据已有，前端未展示）；④ 差评
+ * 展示补上服务端强制的门店权限范围（之前任何角色不传store参数即可看到全部门店）；
+ * ⑤ 智能备货iframe空白问题的best-effort修复：token通过URL query传递给forecast.html，
+ * 缓解部分容器环境iframe localStorage隔离导致取不到token的情况；⑥ 门店营销活动建议、
+ * 任务栏卡片统一改成details/summary折叠样式，与8大AI督导指挥中心一致。
+ * 2026-07-30 第二十五次上调（70946→71018）：上一轮部分修复实测仍不生效，深挖到根因后
+ * 的真正修复——① 通知栏/任务栏一直是0：生产库target_username/assignee_username大小写
+ * 不统一(如NNYXWSB39 vs登录名nnyxwsb39)，之前是大小写敏感精确匹配，改成lower()两边比较；
+ * ② 差评展示单店范围内仍是空：agent_messages里飞书门店名是缩写("洪潮久光店")跟员工表
+ * 官方全称("洪潮大宁久光店")不是同一字符串，改用expandAgentStoreLabels()展开别名后ANY匹配；
+ * ③ 就餐人数分布一直是0（不分角色，admin也一样）：pos_orders.store_name是POS原始长名
+ * ("洪潮传统潮汕菜【大宁久光中心店】")，用resolveAgentCanonicalStore()在JS里归一化后再
+ * 分组/过滤；④ 本月离职率一直是0：employment_records表从未被写入过(生产库0行，跟之前
+ * bad_reviews同类"设计后没接上"的遗留表)，users表压根没有store列(SQL直接报错被吞掉)，
+ * 改成从employees表(status='离职'+extra_json.offboardingDate)真实计算；⑤ 当月目标追踪
+ * 只有营业额：用户在"目标管理"页面(08-materials-tasks.js)录入的毛利率/充值/点评星级/
+ * 企微新增等目标存在HRMS_STORE.settings.monthlyTargets里，跟这里原先查询的kpi_targets表
+ * 完全是两套独立机制，之前从未读取前者，现在两边都读并合并展示；⑥ 培训看板按培训主题
+ * 分组导致同一人记录分散、看不出"这人到底完成几项"，改成反向按员工分组(姓名+岗位)，
+ * 主题作为该员工下的明细；⑦ 厨房打点看板补上日期标题；⑧ 智能备货iframe空白的真正根因
+ * 定位——不是localStorage分区(上一轮的猜测)，是nginx对所有.html文件统一加了
+ * X-Frame-Options: DENY，浏览器据此拒绝任何iframe渲染，跟同源与否无关；已给
+ * /forecast.html单独加精确匹配location改成SAMEORIGIN(nginx配置改动，不在本仓库版本
+ * 控制范围内，另行记录于部署记录)；⑨ 各区块(差评展示/当月目标追踪/员工绩效/培训看板/
+ * 厨房打点看板等)统一包成details/summary可折叠，默认展开。
+ * 2026-07-30 第二十六次上调（71018→71138）：用户实测反馈"任务栏是要清空的队列，不是
+ * 展示区"及一批数据/UI问题——① 任务栏各类完成动作(提交证据/批准/确认收到/判罚)成功后
+ * 直接从DOM移除卡片而不是留一行"已完成"文案；食品安全cc任务新增per-user"确认收到"
+ * (master_task_acks表)与hq_manager专属"提交判罚结果"(真正status=resolved，对所有cc
+ * 收件人都消失)两条路径；② 8大AI督导时间线里"未知"改成"任务创建前"(status_before是
+ * task_created事件的空字符串，不是异常)；③ 智能备货放弃iframe内嵌改成新标签页直接打开
+ * (nginx X-Frame-Options修复后安卓WebView仍反馈空白，二级嵌套iframe在部分容器下本身不
+ * 可靠，改成普通同源跳转彻底绕开这整类问题)；④ 差评展示门店筛选框单店角色不再显示
+ * "全部门店"，直接显示自己门店名(disabled select)；⑤ 实收目标只算出马己仙——生产库洪潮
+ * revenue_targets最新period停在2026-03、马己仙在2026-04，之前取"全租户唯一最近period"
+ * 只命中马己仙那行，改成按门店各自MAX(period)分别取值求和；⑥ 当月目标追踪"系统暂未接入
+ * 该指标的自动核算"改成真实从daily_reports聚合(充值/堂食营收/点评星级/企微新增等)+
+ * monthly_margins(毛利)，新增GET /api/workspace/monthly-target-actuals；⑦ 客流量/客单价/
+ * 桌均等门店经营明细改成门店选择下拉框驱动，不再是逐店平铺卡片；⑧ 门店营销活动建议
+ * 区块本身也包一层details可整体折叠。
+ * 2026-07-30 第二十七次上调（71138→71163）：管理员反馈工作台通知角标一直是0，跟"我的
+ * 档案"看到的数字对不上——大小写问题修过一轮后角标还是0，再查证发现是两边"未读数"的
+ * 定义根本不一样："我的档案"显示的是"今天创建了几条"(todayCount，不看read_at)，工作台
+ * 这边之前是"read_at IS NULL的真未读数"——很多通知几分钟内就被自动ack过，这个口径几乎
+ * 总是0。改成跟"我的档案"完全一致的口径(当天创建数量，Asia/Shanghai时区)；"通知"tab的
+ * 内容也补上/api/announcements(公司公告)的merge，之前只有hrms_user_notifications、
+ * 也没排除*_request类型，跟"我的档案"的内容对不齐。
+ * 2026-07-30 第二十八次上调（71163→71215）：用户要求工作台最下方新增"我的绩效"模块
+ * （综合得分+执行力/工作态度/工作能力三项进度条+等级徽章）——复用现成的
+ * GET /api/agent-scores/me（"我的档案"个人绩效页已经在用同一接口），不新建接口。
+ * 2026-07-30 第二十九次上调（71215→71245）：① admin/hq视角的工作台(wsRenderBossOrHq)
+ * 之前没有"我的绩效"模块——上一轮只加到了店长/出品经理的wsRenderStore()，两条渲染路径
+ * 各自独立维护区块列表，这里补齐；② "餐饮总监"最近查询记录/8大AI督导指挥中心的记录
+ * 补上任务日期(之前只有标题，条数多了根本认不出哪天的)，8大AI督导补状态筛选下拉框
+ * (默认只显示"进行中"，隐藏已结案系列状态，避免历史记录淹没正在处理的任务)。
+ * 2026-07-30 第三十次上调（71245→71251）：① 门店经营明细加"门店人效值"（跟人效排名
+ * 同一份daily_reports.efficiency数据源）；② "本月离职率"从工作台顶层挪进门店经营明细，
+ * 按店各自展示（不再是跨全部门店的一个聚合数字，turnoverSummary()改成接受具体门店名单
+ * 逐店查询）；③ 店长/出品经理视角取消营业额/客流量/人效排名，管理员/总部经理视角保留
+ * （wsRenderOverview新增showRankings参数，由调用方按角色传入）。
+ * 2026-07-30 第三十一次上调（71251→71288）：用户反馈"门店营销活动建议"点"执行"等于什么
+ * 都没发生——promo_task类内容创作建议之前只是往growth_content_calendar插一行'planned'，
+ * 没有责任人、没人知道要做、没有追踪。业务方明确要求所有类型营销建议"执行"都必须先选
+ * 责任人(该门店店长/前厅主管)，生成master_tasks任务(source='growth_marketing_action'，
+ * 已加入WS_ALLOWED_TASK_SOURCES白名单)，责任人任务栏能看到、需要提交完成证据、发起人
+ * 确认后才算真正执行完成——复用现成的respondToTask/confirmTaskResponse流程；系统侧真实
+ * 自动化动作(发券/发短信)仍照常立即执行，只是新增责任人确认这层追溯闭环。新增
+ * POST /api/growth/actions/:actionKey/assign-and-execute。
+ * 2026-07-30 第三十二次上调（71288→71296）：责任人分配上线后实测"本店未配置店长/前厅
+ * 主管"几乎每次触发——两处真实bug：① growth_actions.store_id没有统一格式(POS原始长名/
+ * 增长侧数字ID/员工表官方简称混杂)，跟employees.store对不上；② 前端HRMS_STORE本地员工
+ * 数据的role字段有历史遗留中文标签("店长"等)，直接===比较'store_manager'必然漏掉。
+ * 改成：marketing-suggestions.js返回前用resolveAgentCanonicalStore()归一化store字段，
+ * assignMarketingActionTask写master_tasks.store前同样归一化；前端改用现成的
+ * hrmsNormalizeRoleCode()比较角色，不再用原始role字面量。
+ * 2026-07-30 第三十三次上调（71296→71323）：用户反馈"马己仙出品经理16:30收到试味定时
+ * 任务，但工作台任务栏里根本没有"——查证生产库真实事件日志发现这条任务确实真实创建、
+ * 通过飞书卡片送达，责任人在飞书里17秒内就回复提交了证据，系统自动审核通过秒级
+ * resolved——不是没打通，是resolved的任务立刻从"任务"tab消失，责任人自己都没法回头
+ * 确认"这件事到底有没有真的处理过"。新增"已完成"tab + GET
+ * /api/workspace/tasks/recently-resolved（默认最近24小时），展示最近解决的任务
+ * （不管是通过工作台还是飞书完成的），弥补这个可见性缺口。
+ * 2026-07-30 第三十四次上调（71323→71329）：用户反馈营销活动责任人下拉框里出现了离职
+ * 员工（武静静/徐曼金）——之前的过滤只看role+store，完全没排除离职/停用员工。前端补上
+ * status='离职'/'inactive'排除（对齐09-resignation.js既有的同款判断）；后端
+ * assignMarketingActionTask查询员工时也补上status='active'过滤，不能只靠前端过滤，
+ * 离职员工哪怕绕过前端直接调接口也要被拒绝。
+ * 2026-07-30 第三十五次上调（71329→71347）：一批实测反馈修复——① 餐饮总监"点击查看
+ * 标准方案"按钮实际有效，只是结果写进了页面下方"六大管理神器"区块自己的容器，用户看不到
+ * 变化以为按钮坏了，补scrollIntoView；② "最近查询记录"提交新查询后从未重新拉取过(后端
+ * 其实一直在正确写入)，补上查询成功后刷新；③ "发布任务"到agents-service-v2自动分派
+ * 完成有异步耗时，之前只在发布成功那一刻刷新一次列表，容易拿到过渡态快照，补一次2.5秒
+ * 延迟刷新；④ revenue_targets.store存的是"洪潮久光店"缩写，跟storeFilter/员工表官方
+ * 全称不是同一字符串，导致scoped角色(店长/出品经理)看到的实收目标一直是0——改用
+ * expandAgentStoreLabels()展开别名后ANY匹配；⑤ 强化custom/analyze的AI prompt，禁止
+ * 在已经注入真实数据(差评/离职快照)的情况下仍然输出"当前无本店真实数据"这类说法。
+ * 2026-07-30 第三十六次上调（71347→71351）：用户反馈同一条"任务已提交完成反馈"通知
+ * 堆积了2000+条——respondToTask的UPDATE漏排除pending_review状态导致重复提交能反复
+ * 命中生成通知，且提交按钮未disable导致一次点击能连续触发大量重复请求。补上按钮
+ * disabled防抖 + respondToTask同任务已有未读通知时跳过插入。
+ * 2026-07-30 第三十七次上调（71351→71356）：上次给"点击查看标准方案"补的scrollIntoView
+ * 修复本身有bug——六大管理神器面板默认display:none，只滚动没显示，用户反馈"点了还是
+ * 没反应"依然成立。补上跳转前先把面板display设为可见（跟顶部按钮点击逻辑一致）。
+ * 2026-07-30 第三十八次上调（71356→71367）：①营销建议补上真实发布渠道展示
+ * (企业微信/短信/大众点评等)+是否系统自动执行的说明文案。
+ * 2026-07-30 第三十九次上调（71367→71397）：用户明确要求"营销全部手动触发"，去掉自动
+ * 执行相关文案；"忽略"改成实时刷新替换新建议（原来只是隐藏按钮，不会补新的）；补上
+ * 未读"新"标签区分滚动更新后的新旧建议(localStorage记录已见过的actionKey)。
+ * 2026-07-31 第四十次上调（71397→71401）：合并 origin/main 到 feature/workspace-shell-p1；
+ * 正式晋升申请资格判断补上 trainingProgress.passed 这条兜底（此前只认
+ * assessmentStatus === 'passed'，考核通过但该字段没同步的场景会显示"暂无可申请记录"）。
  */
-const MAX_LINES = 70667;
+const MAX_LINES = 71401;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

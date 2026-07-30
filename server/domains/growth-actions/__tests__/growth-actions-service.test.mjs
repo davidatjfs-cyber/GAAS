@@ -11,6 +11,7 @@ import {
   ignoreAction,
   listActions,
   submitActionFeedback,
+  assignMarketingActionTask,
 } from '../service.js';
 
 function passthroughTenantContext() {
@@ -31,6 +32,7 @@ function baseCtx(overrides = {}) {
     runTouchRuleEngine: async () => ({ ran: true }),
     executeGrowthActionRecord: async () => ({ action: { action_key: 'k' }, execution: {} }),
     appendExecutionLog: async () => {},
+    resolveAgentCanonicalStore: (s) => s,
     ...overrides,
   };
 }
@@ -123,4 +125,138 @@ test('submitActionFeedback: action_not_found', async () => {
   );
   assert.equal(result.status, 404);
   assert.equal(result.body.error, 'action_not_found');
+});
+
+// 2026-07-30：用户反馈"营销活动建议"点执行等于什么都没发生——没有责任人、没有任务、没有
+// 追踪。锁定新流程：assign-and-execute必须先校验责任人存在且是store_manager/front_manager，
+// 生成master_tasks任务(assignee_username=责任人)，然后才照常调用真实的executeGrowthActionRecord。
+
+function actionRow(overrides = {}) {
+  return { action_key: 'AK1', title: '新客召回', detail: '详情文本', store_id: '洪潮大宁久光店', action_type: 'promo_task', ...overrides };
+}
+
+test('assignMarketingActionTask：缺少assigneeUsername直接400，不查库', async () => {
+  const calls = [];
+  const ctx = baseCtx({ pool: { async query(sql, params) { calls.push({ sql, params }); return { rows: [] }; } } });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', '', { username: 'admin_a' }, {});
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'missing_assignee');
+  assert.equal(calls.length, 0);
+});
+
+test('assignMarketingActionTask：action不存在返回404', async () => {
+  const ctx = baseCtx({ pool: { async query() { return { rows: [] }; } } });
+  const result = await assignMarketingActionTask(ctx, 'default', 'missing', 'front_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 404);
+  assert.equal(result.body.error, 'action_not_found');
+});
+
+test('assignMarketingActionTask：责任人不存在返回400', async () => {
+  const calls = [];
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
+        if (/FROM employees/.test(sql)) return { rows: [] };
+        return { rows: [] };
+      },
+    },
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'nobody', { username: 'admin_a' }, {});
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'assignee_not_found');
+});
+
+test('assignMarketingActionTask：责任人角色不是store_manager/front_manager时拒绝', async () => {
+  const ctx = baseCtx({
+    pool: {
+      async query(sql) {
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
+        if (/FROM employees/.test(sql)) return { rows: [{ username: 'kitchen_a', name: '张三', role: 'store_production_manager', store: '洪潮大宁久光店' }] };
+        return { rows: [] };
+      },
+    },
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'kitchen_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'assignee_role_invalid');
+});
+
+// 2026-07-30：用户反馈责任人下拉框里出现了离职员工（前端本地缓存过滤被绕过/数据未同步的
+// 情况下客户端过滤不可靠）——锁定后端查询必须带status='active'过滤，离职/停用员工哪怕
+// 直接调接口也一律按"责任人不存在"拒绝（不单独暴露"这个人存在但已离职"这类信息）。
+test('assignMarketingActionTask：查询员工时必须带status=\'active\'过滤，离职员工必须被拒绝', async () => {
+  const calls = [];
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
+        // 模拟真实WHERE条件生效：离职员工不满足status='active'，查询返回空
+        if (/FROM employees/.test(sql)) return { rows: [] };
+        return { rows: [] };
+      },
+    },
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'departed_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'assignee_not_found');
+  const empCall = calls.find((c) => /FROM employees/.test(c.sql));
+  assert.match(empCall.sql, /status\s*=\s*'active'/);
+});
+
+// 2026-07-30 二次修正：用户明确要求"营销全部手动触发"——点执行只应该把完整方案分配给
+// 责任人，系统不能自动发券/发短信/推送。锁定：assignMarketingActionTask不再调用
+// executeGrowthActionRecord，只把growth_actions标记为'assigned'。
+test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_username=责任人)，不自动执行，只标记assigned', async () => {
+  const calls = [];
+  let executeGrowthActionRecordCalled = false;
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
+        if (/FROM employees/.test(sql)) return { rows: [{ username: 'front_a', name: '李四', role: 'front_manager', store: '洪潮大宁久光店' }] };
+        if (/INSERT INTO master_tasks/.test(sql)) return { rows: [] };
+        if (/UPDATE growth_actions/.test(sql)) return { rows: [{ action_key: 'AK1', status: 'assigned' }] };
+        return { rows: [] };
+      },
+    },
+    executeGrowthActionRecord: async () => { executeGrowthActionRecordCalled = true; return { action: { status: 'executed' }, execution: { real_executions: [] } }; },
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'front_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 200);
+  assert.equal(result.body.ok, true);
+  assert.ok(result.body.taskId.startsWith('MKT-'));
+  const insertCall = calls.find((c) => /INSERT INTO master_tasks/.test(c.sql));
+  assert.match(insertCall.sql, /assignee_username/);
+  assert.equal(insertCall.params[4], 'front_a');
+  assert.match(insertCall.sql, /'pending_dispatch'/);
+  assert.match(insertCall.sql, /'growth_marketing_action'/);
+  assert.ok(!executeGrowthActionRecordCalled, '不应该再自动发券/发短信，一切必须由责任人手动执行');
+  const updateCall = calls.find((c) => /UPDATE growth_actions/.test(c.sql));
+  assert.match(updateCall.sql, /'assigned'/);
+});
+
+// 2026-07-30：用户反馈"本店未配置店长/前厅主管"——查证生产库growth_actions.store_id
+// 没有统一格式(POS原始长名/增长侧数字ID/官方简称混杂)，写进master_tasks.store前必须
+// 归一化，否则跟employees.store对不上，任务会变成"孤儿"（分组/展示都找不到对应门店）。
+test('assignMarketingActionTask：写入master_tasks.store前用resolveAgentCanonicalStore()归一化store_id', async () => {
+  const calls = [];
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow({ store_id: '洪潮传统潮汕菜【大宁久光中心店】' })] };
+        if (/FROM employees/.test(sql)) return { rows: [{ username: 'front_a', name: '李四', role: 'front_manager', store: '洪潮大宁久光店' }] };
+        return { rows: [] };
+      },
+    },
+    resolveAgentCanonicalStore: (s) => (s === '洪潮传统潮汕菜【大宁久光中心店】' ? '洪潮大宁久光店' : s),
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'front_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 200);
+  const insertCall = calls.find((c) => /INSERT INTO master_tasks/.test(c.sql));
+  assert.equal(insertCall.params[1], '洪潮大宁久光店', 'store字段应该是归一化后的官方简称，不是原始POS长名');
 });

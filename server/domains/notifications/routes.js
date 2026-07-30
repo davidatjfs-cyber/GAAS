@@ -17,6 +17,49 @@ const log = childLogger({ domain: 'notifications', handler: 'routes' });
 export function registerNotificationsWriteRoutes(app, authRequired, deps) {
   const { pool, resolveTenantIdDefault } = deps;
 
+  // 2026-07-29 新增：之前只有未读数(getUnreadInboxCount)，没有"列表"接口——工作台"通知"tab
+  // 一直只能显示数字、点了看不到内容。hrms_user_notifications 是权威表(service.js里的注释)，
+  // 不是从 hrms_state.notifications 镜像读，直接查真实表。
+  // 2026-07-30 修复：target_username 大小写在生产库里不统一（部分写入是大写用户名），
+  // 这里原先大小写敏感匹配会漏掉——跟"我的档案"(listMyNotifications，一直用lower())保持一致。
+  app.get('/api/notifications', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    const username = String(req.user?.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'missing_username' });
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit) || 30));
+    try {
+      const r = await pool.query(
+        `SELECT id, title, message, type, meta, created_at, read_at
+           FROM hrms_user_notifications
+          WHERE tenant_id = $1 AND lower(target_username) = lower($2)
+          ORDER BY created_at DESC LIMIT $3`,
+        [tenantId, username, limit]
+      );
+      res.json({ ok: true, items: r.rows || [] });
+    } catch (e) {
+      log.error({ msg: 'notifications_list_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  app.post('/api/notifications/:id/read', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    const username = String(req.user?.username || '').trim();
+    const notifId = String(req.params.id || '').trim();
+    if (!notifId) return res.status(400).json({ error: 'missing_id' });
+    try {
+      await pool.query(
+        `UPDATE hrms_user_notifications SET read_at = NOW()
+          WHERE id = $1 AND tenant_id = $2 AND lower(target_username) = lower($3) AND read_at IS NULL`,
+        [notifId, tenantId, username]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      log.error({ msg: 'notifications_mark_read_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
   app.delete('/api/notifications/:id', authRequired, async (req, res) => {
     if (String(req.user?.role || '') !== 'admin') {
       return res.status(403).json({ error: 'forbidden' });
