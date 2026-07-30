@@ -113,8 +113,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 'workspace'）——但 wsRemoveNavItem 这个函数在合并 15-workspace.js 时已经被删掉了（连着
  * 那份未完成的壳一起丢弃），导致调用点在调用一个不存在的函数、什么都不做，侧栏"工作台"
  * 入口消失。改回调用 wsInjectNavItem()，'workspace' 加回白名单。
+ * 2026-07-31 第二十次上调（70663→70667）：正式晋升申请资格判断补上 trainingProgress.passed
+ * 这条兜底（此前只认 assessmentStatus === 'passed'，考核通过但该字段没同步的场景会显示
+ * "暂无可申请记录"）。
  */
-const MAX_LINES = 70663;
+const MAX_LINES = 70667;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

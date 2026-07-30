@@ -92,6 +92,7 @@ export async function sweepPromotionTracksForTenant(deps) {
   const {
     getSharedState,
     saveSharedState,
+    mergeSharedStateFields,
     getPromotionTrackProgress,
     getPromotionTrackRecipients,
     addStateNotification,
@@ -105,6 +106,7 @@ export async function sweepPromotionTracksForTenant(deps) {
   if (!allTracks.length) return;
 
   let changedTrack = false;
+  const trackPatches = [];
   const cutoff90 = Date.now() - 90 * 86400000;
   const freshTracks = allTracks.filter((tr) => {
     const s = String(tr?.status || '');
@@ -114,7 +116,8 @@ export async function sweepPromotionTracksForTenant(deps) {
     }
     return true;
   });
-  if (freshTracks.length < allTracks.length) {
+  const archived = freshTracks.length < allTracks.length;
+  if (archived) {
     state2 = { ...state2, promotionTracks: freshTracks };
     allTracks = freshTracks;
     changedTrack = true;
@@ -150,7 +153,9 @@ export async function sweepPromotionTracksForTenant(deps) {
       const idx2 = state2.promotionTracks.findIndex((t) => String(t?.id || '') === trackId);
       if (idx2 >= 0) {
         const updated2 = state2.promotionTracks.slice();
-        updated2[idx2] = { ...updated2[idx2], readyNotifiedAt: hrmsNowISO() };
+        const patched = { ...updated2[idx2], readyNotifiedAt: hrmsNowISO() };
+        updated2[idx2] = patched;
+        trackPatches.push(patched);
         state2 = { ...state2, promotionTracks: updated2 };
       }
       changedTrack = true;
@@ -181,11 +186,13 @@ export async function sweepPromotionTracksForTenant(deps) {
         const idx2 = state2.promotionTracks.findIndex((t) => String(t?.id || '') === trackId);
         if (idx2 >= 0) {
           const updated2 = state2.promotionTracks.slice();
-          updated2[idx2] = {
+          const patched = {
             ...updated2[idx2],
             lastOverdueReminderAt: hrmsNowISO(),
             overdueReminderCount: overdueCount + 1,
           };
+          updated2[idx2] = patched;
+          trackPatches.push(patched);
           state2 = { ...state2, promotionTracks: updated2 };
         }
         changedTrack = true;
@@ -193,7 +200,24 @@ export async function sweepPromotionTracksForTenant(deps) {
     }
   }
 
-  if (changedTrack) await saveSharedState(state2, tenantId);
+  if (!changedTrack) return;
+
+  // 优先按 id 合并 track 补丁，避免 saveSharedState 浅合并整数组抹掉并发新增的 track。
+  // 归档（删除旧 promoted）仍需整数组替换，但只写 promotionTracks / notifications 字段。
+  if (!archived && trackPatches.length && typeof mergeSharedStateFields === 'function') {
+    await mergeSharedStateFields({ promotionTracks: trackPatches }, { promotionTracks: 'id' }, tenantId);
+    if (Array.isArray(state2.notifications)) {
+      await saveSharedState({ notifications: state2.notifications }, tenantId);
+    }
+    return;
+  }
+  await saveSharedState(
+    {
+      promotionTracks: state2.promotionTracks,
+      ...(Array.isArray(state2.notifications) ? { notifications: state2.notifications } : {}),
+    },
+    tenantId
+  );
 }
 
 export async function markOffboardingItemsExecuted(pool, items) {
@@ -253,6 +277,7 @@ export async function runOffboardingPromotionTenantTick(deps, tenantId) {
     await sweepPromotionTracksForTenant({
       getSharedState,
       saveSharedState,
+      mergeSharedStateFields: deps.mergeSharedStateFields,
       getPromotionTrackProgress,
       getPromotionTrackRecipients,
       addStateNotification,

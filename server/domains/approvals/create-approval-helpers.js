@@ -261,7 +261,15 @@ export async function insertPendingApprovalRequest({ pool, type, username, chain
   return r.rows?.[0] || null;
 }
 
-export async function syncFormalPromotionTrackOnCreate({ type, payload, state, item, saveSharedState, hrmsNowISO }) {
+export async function syncFormalPromotionTrackOnCreate({
+  type,
+  payload,
+  state,
+  item,
+  mergeSharedStateFields,
+  saveSharedState,
+  hrmsNowISO,
+}) {
   if (!item || type !== 'promotion') return state;
   const stage = String(payload?.promotionStage || '').trim().toLowerCase();
   const trackId = String(payload?.promotionTrackId || '').trim();
@@ -275,9 +283,13 @@ export async function syncFormalPromotionTrackOnCreate({ type, payload, state, i
     formalApprovalId: String(item?.id || ''),
     updatedAt: hrmsNowISO(),
   };
-  const next = { ...state, promotionTracks: tracks };
-  await saveSharedState(next);
-  return next;
+  // 禁止 saveSharedState 整份覆盖 promotionTracks（浅合并会抹掉并发写入的其他 track）
+  if (typeof mergeSharedStateFields === 'function') {
+    await mergeSharedStateFields({ promotionTracks: [tracks[idxTrack]] }, { promotionTracks: 'id' });
+  } else if (typeof saveSharedState === 'function') {
+    await saveSharedState({ ...state, promotionTracks: tracks });
+  }
+  return { ...state, promotionTracks: tracks };
 }
 
 export async function notifyApprovalCreated({

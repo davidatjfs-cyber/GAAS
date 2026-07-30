@@ -5,6 +5,9 @@ import {
   handlePromotionRejected,
   notifyPromotionPendingAssignee,
 } from '../promotion-after-decide-helpers.js';
+import { childLogger } from '../../../utils/logger.js';
+
+const log = childLogger({ domain: 'approvals', handler: 'promotion-after-decide' });
 
 export async function beforeUpdate(ctx) {
   const {
@@ -119,5 +122,12 @@ export async function afterDecide(ctx) {
     if (String(updated.status || '') === 'pending' && nextAssignee) {
       await notifyPromotionPendingAssignee({ deps, updated, nextAssignee, ctx: promoCtx, state });
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // 不可再静默吞掉：曾导致资格已批、培训已派，但 promotionTracks 未落库
+    log.error({
+      msg: 'promotion_after_decide_failed',
+      approval_id: updated?.id,
+      err: String(e?.message || e),
+    });
+  }
 }

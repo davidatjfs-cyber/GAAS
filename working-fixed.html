@@ -40824,7 +40824,11 @@ ${knowledgeContent.slice(0, 30000)}`;
                 ? __PROMOTION_TRACKS
                 : ((HRMS_STORE.ensure ? HRMS_STORE.ensure() : {})?.promotionTracks || []);
             const mine = tracks.filter(t => String(t?.applicantUsername || '').toLowerCase() === String(currentUser?.username || '').toLowerCase());
-            const eligible = mine.filter(t => String(t?.assessmentStatus || '') === 'passed' && !t?.formalApplied);
+            const eligible = mine.filter(t => {
+                const passed = String(t?.assessmentStatus || '') === 'passed'
+                    || !!(t?.trainingProgress && t.trainingProgress.passed);
+                return passed && !t?.formalApplied;
+            });
             if (!eligible.length) {
                 sel.innerHTML = '<option value="">暂无可申请记录（需先完成培训并通过考核）</option>';
                 return;
