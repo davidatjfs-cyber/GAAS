@@ -69561,17 +69561,13 @@ function wsRenderTaskCard(task, opts) {
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
     const isPendingReview = task.status === 'pending_review';
-    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道——
-    // 食品安全类：仅hq_manager可判罚处理，管理员只是同步知悉，实际责任人是别人；
-    // weekly_report/monthly_evaluation：运营周报/月评本身就是给总部看的汇总，没有单独
-    // 的责任人（周报里汇总的每项异常已经各自建了带真实责任人的任务），文案不能说"由责任人
-    // 处理"，改成"运营汇总，仅供查阅"。都不展示"提交完成证据"这类操作按钮。
+    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道
+    // （目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——不能
+    // 展示"提交完成证据"这类操作按钮，那是给真正的责任人用的。运营周报此前也走过cc视图，
+    // 后来业务方明确要求把周报从任务里整个拿掉，已在后端不再产出，这里不需要区分了。
     const isCcOnly = !!task._ccOnly;
-    const isReportCc = isCcOnly && (task.category === 'weekly_report' || task.category === 'monthly_evaluation');
     let actsHtml;
-    if (isReportCc) {
-        actsHtml = '<span class="ws-tag">运营汇总，仅供查阅</span>';
-    } else if (isCcOnly) {
+    if (isCcOnly) {
         actsHtml = '<span class="ws-tag">仅同步知悉，由责任人处理</span>';
     } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
@@ -69580,10 +69576,14 @@ function wsRenderTaskCard(task, opts) {
     } else {
         actsHtml = '<button type="button" class="ws-btn ws-btn--primary" data-ws-respond-toggle="' + wsEsc(task.task_id) + '">提交完成证据</button>';
     }
-    return (
-        '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
-        '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + (isGrowthTask ? ' <span class="ws-tag">经营诊断</span>' : '') + '</div>' +
-        '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
+    // 2026-07-30：用户明确要求任务栏改成跟"8大AI督导指挥中心"一样的折叠形式——默认只显示
+    // 一行(标签+标题)，点开才展开详情/操作按钮，而不是像之前那样标题+标签+按钮always可见、
+    // 只有超长detail文本才折叠。用<details>包一层，summary放"一行摘要"。
+    const summaryLine =
+        sevTag + ' ' + (task.store ? '<span class="ws-tag">' + wsEsc(task.store) + '</span> ' : '') +
+        (isGrowthTask ? '<span class="ws-tag">经营诊断</span> ' : '') +
+        wsEsc((showStoreSeparately ? task.store + ' — ' : '') + titleText);
+    const bodyHtml =
         wsFormatTaskDetail(task.detail) +
         '<div class="ws-card__acts">' +
         actsHtml +
@@ -69596,8 +69596,12 @@ function wsRenderTaskCard(task, opts) {
             '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" style="margin-top:6px;" data-ws-respond-submit="' + wsEsc(task.task_id) + '">提交</button>' +
             '</div>'
         ) +
-        '<div class="ws-action-result"></div>' +
-        '</div>'
+        '<div class="ws-action-result"></div>';
+    return (
+        '<details class="ws-card ws-detail-collapse" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
+        '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' + summaryLine + '</summary>' +
+        '<div style="margin-top:10px;">' + bodyHtml + '</div>' +
+        '</details>'
     );
 }
 
@@ -69787,17 +69791,23 @@ async function wsRenderMarketingSuggestions() {
     const data = await wsFetchJson('/api/workspace/marketing-suggestions');
     const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
+    // 2026-07-30：跟任务卡片一样，改成折叠形式——默认只显示一行(渠道标签+门店+标题)，
+    // 点开才展开详情和执行/忽略按钮，跟8大AI督导指挥中心的记录展示保持一致。
     return items.map((it) => (
-        '<div class="ws-card" data-action-key="' + wsEsc(it.actionKey || '') + '">' +
-        '<div class="ws-card__tag"><span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span></div>' +
-        '<div class="ws-card__title">' + wsEsc(it.store || '') + ' — ' + wsEsc(it.title || '') + '</div>' +
+        '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '">' +
+        '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
+        '<span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span> ' +
+        wsEsc((it.store || '') + ' — ' + (it.title || '')) +
+        '</summary>' +
+        '<div style="margin-top:10px;">' +
         wsFormatTaskDetail(it.detail) +
         '<div class="ws-card__acts">' +
         '<button type="button" class="ws-btn ws-btn--primary" data-ws-marketing-execute="' + wsEsc(it.actionKey || '') + '">执行</button>' +
         '<button type="button" class="ws-btn" data-ws-marketing-ignore="' + wsEsc(it.actionKey || '') + '">忽略</button>' +
         '</div>' +
         '<div class="ws-action-result"></div>' +
-        '</div>'
+        '</div>' +
+        '</details>'
     )).join('');
 }
 
@@ -70268,9 +70278,28 @@ async function wsLoadAgentBoardList(container) {
     list.innerHTML = items.map((it) => (
         '<div class="ws-rank-row ws-atb-row" data-atb-task-id="' + wsEsc(it.task_id || it.id || '') + '" style="cursor:pointer;">' +
         '<span class="ws-rank-row__store">' + wsEsc(it.title || it.content || '') + '</span>' +
-        '<span class="ws-tag">' + wsEsc(it.status || '') + '</span></div>' +
+        '<span class="ws-tag">' + wsEsc(it.board_status || it.status || '') + '</span></div>' +
         '<div class="ws-atb-detail" data-atb-detail-for="' + wsEsc(it.task_id || it.id || '') + '" style="display:none;"></div>'
     )).join('');
+}
+
+// 2026-07-30：跟后端 task-parser.js 的 mapBoardStatus() 保持一致的中文映射，用在时间线上
+// （列表本身已经改用后端算好的 board_status 字段，这里events.status_before/after是原始
+// 状态枚举，后端没有顺带映射，前端补一份一致的翻译，不新开接口）。
+const WS_BOARD_STATUS_ZH = {
+    pending_audit: '待解析', auditing: '待解析',
+    pending_dispatch: '已领取',
+    dispatched: '已分配', viewed: '已分配',
+    in_progress: '已执行', waiting_evidence: '已执行',
+    pending_response: '已完成',
+    pending_review: '待验收',
+    resolved: '已结案', pending_settlement: '已结案', settled: '已结案', closed: '已结案',
+    rejected: '已打回',
+    escalated: '已升级',
+    hr_filed: '已备案',
+};
+function wsBoardStatusZh(s) {
+    return WS_BOARD_STATUS_ZH[s] || s || '未知';
 }
 
 function wsFormatAgentBoardDetail(task) {
@@ -70284,7 +70313,7 @@ function wsFormatAgentBoardDetail(task) {
         rows.push(events.map((e) =>
             '<div class="ws-card__desc" style="margin-bottom:2px;">' +
             wsEsc(String(e.created_at || '').slice(0, 16).replace('T', ' ')) + ' ' +
-            wsEsc(e.status_before || '') + ' → ' + wsEsc(e.status_after || '') +
+            wsEsc(wsBoardStatusZh(e.status_before)) + ' → ' + wsEsc(wsBoardStatusZh(e.status_after)) +
             (e.to_agent ? '（' + wsEsc(e.to_agent) + '）' : '') + '</div>'
         ).join(''));
     }
@@ -70632,33 +70661,74 @@ function wsRenderEmployeePerformanceList(team) {
     )).join('');
 }
 
-async function wsRenderTrainingBoard(store) {
-    const data = await wsFetchJson('/api/training/dashboard?store=' + encodeURIComponent(store));
-    const rows = data?.success && Array.isArray(data.dashboard) ? data.dashboard : [];
+// 2026-07-30：之前只显示"1/1 已认证"这种聚合数字，看不出是谁、什么岗位——用户反馈"这种
+// 记录毫无意义"。后端 /api/training/dashboard 每一行其实已经带了 members 数组
+// (username/name/status/is_overdue)，/api/kitchen/dashboard 每个station也带了
+// completed_details/unchecked_details(含employee_name/assignee_name)，只是前端没用。
+// 改成用<details>折叠：外层还是"1/1 已认证"这行摘要，点开展示每个人的姓名+状态。
+function wsRenderTrainingBoard(rows) {
     if (!rows.length) return '<div class="ws-empty">本店暂无培训计划</div>';
-    return rows.map((r) => (
-        '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(r.title) + (r.position ? '（' + wsEsc(r.position) + '）' : '') + '</span>' +
-        '<span class="ws-stat-row__v">' + (r.certified_count || 0) + '/' + (r.assigned_count || 0) + ' 已认证' + (Number(r.overdue_count) > 0 ? '<span class="ws-down"> · ' + r.overdue_count + '人逾期</span>' : '') + '</span></div>'
-    )).join('');
+    return rows.map((r) => {
+        const members = Array.isArray(r.members) ? r.members : [];
+        const memberLines = members.map((m) => (
+            '<div class="ws-stat-row" style="padding:6px 0;"><span class="ws-stat-row__l">' + wsEsc(m.name || m.username || '') + '</span>' +
+            '<span class="ws-stat-row__v" style="font-size:11.5px;">' +
+            (m.status === 'certified' ? '<span class="ws-ok">已认证</span>' : m.is_overdue ? '<span class="ws-down">逾期未认证</span>' : '未认证') +
+            '</span></div>'
+        )).join('');
+        const summaryLine =
+            '<span class="ws-stat-row__l">' + wsEsc(r.title) + (r.position ? '（' + wsEsc(r.position) + '）' : '') + '</span>' +
+            '<span class="ws-stat-row__v">' + (r.certified_count || 0) + '/' + (r.assigned_count || 0) + ' 已认证' + (Number(r.overdue_count) > 0 ? '<span class="ws-down"> · ' + r.overdue_count + '人逾期</span>' : '') + '</span>';
+        return (
+            '<details class="ws-detail-collapse"><summary class="ws-stat-row ws-detail-summary" style="cursor:pointer;">' + summaryLine + '</summary>' +
+            (memberLines || '<div class="ws-empty" style="padding:6px 0;">暂无指派人员</div>') +
+            '</details>'
+        );
+    }).join('');
 }
 
-async function wsRenderKitchenBoard(store) {
-    const data = await wsFetchJson('/api/kitchen/dashboard?store=' + encodeURIComponent(store));
-    const summary = data?.success && Array.isArray(data.summary) ? data.summary : [];
+function wsRenderKitchenBoard(summary) {
     if (!summary.length) return '<div class="ws-empty">暂无厨房打点数据</div>';
-    return summary.map((s) => (
-        '<div class="ws-stat-row"><span class="ws-stat-row__l">' + wsEsc(s.station || '') + '</span>' +
-        '<span class="ws-stat-row__v">' + (s.confirmed || 0) + '/' + (s.total || 0) + ' (' + (s.rate ?? 0) + '%)</span></div>'
-    )).join('');
+    return summary.map((s) => {
+        const completed = Array.isArray(s.completed_details) ? s.completed_details : [];
+        const unchecked = Array.isArray(s.unchecked_details) ? s.unchecked_details : [];
+        const detailLines = [
+            ...completed.map((d) => (
+                '<div class="ws-stat-row" style="padding:6px 0;"><span class="ws-stat-row__l">' + wsEsc(d.employee_name || d.employee_username || '') + ' · ' + wsEsc(d.dish_name || '') + '（' + wsEsc(String(d.schedule_time || '')) + '）' + '</span>' +
+                '<span class="ws-stat-row__v ws-ok" style="font-size:11.5px;">已打点</span></div>'
+            )),
+            ...unchecked.map((d) => (
+                '<div class="ws-stat-row" style="padding:6px 0;"><span class="ws-stat-row__l">' + wsEsc(d.assignee_name || d.assignee_username || '未指派') + ' · ' + wsEsc(d.dish_name || '') + '（' + wsEsc(String(d.schedule_time || '')) + '）' + '</span>' +
+                '<span class="ws-stat-row__v ws-down" style="font-size:11.5px;">未打点</span></div>'
+            )),
+        ].join('');
+        const summaryLine =
+            '<span class="ws-stat-row__l">' + wsEsc(s.station || '') + '</span>' +
+            '<span class="ws-stat-row__v">' + (s.confirmed || 0) + '/' + (s.total || 0) + ' (' + (s.rate ?? 0) + '%)</span>';
+        return (
+            '<details class="ws-detail-collapse"><summary class="ws-stat-row ws-detail-summary" style="cursor:pointer;">' + summaryLine + '</summary>' +
+            (detailLines || '<div class="ws-empty" style="padding:6px 0;">暂无打点记录</div>') +
+            '</details>'
+        );
+    }).join('');
 }
 
 // 智能备货：用户明确要求"把目前智能助手的备货整套功能直接放到这里"——预测接口内部参数/
 // 权限逻辑较复杂(server/domains/inventory-forecast)，与其重新拼接一遍容易拼错，改成直接
 // 内嵌现有独立页面 /forecast.html(iframe)，完整复用真实功能，不重新实现。
+// 2026-07-30：出品经理/店长反馈点开"智能备货"是空白——forecast.html 里读取登录token
+// 靠的是localStorage(HRMS_API_TOKEN/hrms_token)，理论上iframe跟父页面同源应该共享，但
+// 工作台是被企业微信/公司App这类容器WebView内嵌打开的，部分WebView出于隐私限制会把
+// 嵌套iframe的localStorage分区隔离，跟父页面看起来同源但实际上是空的storage——iframe内
+// 就读不到token，直接判定"未登录"。改成把token直接拼进iframe的src查询参数里传过去，
+// 不依赖iframe自己的localStorage能不能读到父页面写的东西，forecast.html这边优先读这个
+// 参数，读不到才退回localStorage（保留原逻辑，非WebView环境行为不变）。
 function wsRenderSmartRestock() {
+    const token = localStorage.getItem('hrms_token') || '';
+    const src = '/forecast.html' + (token ? '?access_token=' + encodeURIComponent(token) : '');
     return '<button type="button" class="ws-btn" data-ws-toggle="ws-restock-frame">展开/收起智能备货</button>' +
         '<div id="ws-restock-frame" style="display:none;margin-top:10px;height:600px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">' +
-        '<iframe src="/forecast.html" style="width:100%;height:100%;border:0;"></iframe></div>';
+        '<iframe src="' + wsEsc(src) + '" style="width:100%;height:100%;border:0;"></iframe></div>';
 }
 
 async function wsRenderStore(root) {
@@ -70694,8 +70764,16 @@ async function wsRenderStore(root) {
     wsBindBadReviewEvents(root);
     wsLoadBadReviews(root);
     if (store) {
-        wsRenderTrainingBoard(store).then((h) => { const el = document.getElementById('ws-training-board'); if (el) el.innerHTML = h; });
-        wsRenderKitchenBoard(store).then((h) => { const el = document.getElementById('ws-kitchen-board'); if (el) el.innerHTML = h; });
+        wsFetchJson('/api/training/dashboard?store=' + encodeURIComponent(store)).then((data) => {
+            const rows = data?.success && Array.isArray(data.dashboard) ? data.dashboard : [];
+            const el = document.getElementById('ws-training-board');
+            if (el) el.innerHTML = wsRenderTrainingBoard(rows);
+        });
+        wsFetchJson('/api/kitchen/dashboard?store=' + encodeURIComponent(store)).then((data) => {
+            const summary = data?.success && Array.isArray(data.summary) ? data.summary : [];
+            const el = document.getElementById('ws-kitchen-board');
+            if (el) el.innerHTML = wsRenderKitchenBoard(summary);
+        });
         wsRenderTargetTracking(overview, store).then((h) => { const el = document.getElementById('ws-target-tracking'); if (el) el.innerHTML = h; });
     }
 }
