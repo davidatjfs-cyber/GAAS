@@ -230,12 +230,16 @@ export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, ass
 
     const taskId = `MKT-${Date.now()}`;
     const title = `营销活动执行：${cleanText(action.title, 300)}`;
+    // 2026-07-30：growth_actions.store_id没有统一格式(POS原始长名/增长侧数字ID/官方简称
+    // 混杂)，跟employees.store(官方简称)不是同一个字符串——归一化后再写进master_tasks.store，
+    // 否则这条任务在"门店红绿灯"等按门店分组的视图里会因为店名对不上而显示成孤儿/未知门店。
+    const canonicalStore = ctx.resolveAgentCanonicalStore ? (ctx.resolveAgentCanonicalStore(action.store_id) || action.store_id) : action.store_id;
     await ctx.pool.query(
       `INSERT INTO master_tasks (task_id, status, source, current_agent, category, severity, store, title, detail, assignee_username, source_data, tenant_id)
        VALUES ($1, 'pending_dispatch', 'growth_marketing_action', 'workspace', 'marketing_action', 'medium', $2, $3, $4, $5, $6::jsonb, $7)`,
       [
         taskId,
-        action.store_id,
+        canonicalStore,
         title,
         cleanText(action.detail, 4000),
         emp.username,

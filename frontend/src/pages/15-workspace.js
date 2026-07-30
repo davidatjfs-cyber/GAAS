@@ -603,9 +603,17 @@ function wsRenderOverview(ov, showRankings) {
 // 发起人确认后才算真正执行完成。这里把原来"点执行直接调用/execute"改成"点执行先展开责任人
 // 选择框"，选完调用新的/assign-and-execute；责任人列表用HRMS_STORE.getEmployees()按门店+
 // 角色(store_manager/front_manager)过滤，不用额外接口。
+// 2026-07-30 修复：几乎每次都提示"本店未配置店长/前厅主管"——查证发现HRMS_STORE本地员工
+// 数据里role字段有不少还是历史遗留的中文标签("店长"/"前厅主管"等)，不是标准化后的role code，
+// 直接用===比较'store_manager'/'front_manager'必然漏掉这些人。改用现成的
+// hrmsNormalizeRoleCode()（01-boot.js里到处在用的同一套归一化，不新写一套）先转换再比较。
 function wsMarketingAssigneeOptions(store) {
     const employees = (typeof HRMS_STORE !== 'undefined' && HRMS_STORE.getEmployees) ? (HRMS_STORE.getEmployees() || []) : [];
-    const eligible = employees.filter((e) => String(e?.store || '') === String(store || '') && ['store_manager', 'front_manager'].includes(String(e?.role || '')));
+    const eligible = employees.filter((e) => {
+        if (String(e?.store || '') !== String(store || '')) return false;
+        const role = (typeof hrmsNormalizeRoleCode === 'function') ? hrmsNormalizeRoleCode(e?.role) : String(e?.role || '');
+        return ['store_manager', 'front_manager'].includes(role);
+    });
     if (!eligible.length) return { html: '', empty: true };
     return {
         html: eligible.map((e) => '<option value="' + wsEsc(e.username) + '">' + wsEsc(e.name || e.username) + '（' + wsEsc(getRoleDisplayName ? getRoleDisplayName(e.role) : e.role) + '）</option>').join(''),

@@ -12,6 +12,7 @@ import {
   executeGrowthActionRecord,
   appendExecutionLog,
 } from '../../growth-api.js';
+import { resolveAgentCanonicalStore } from '../../v2-store-alignment.js';
 import {
   runRuleEngine,
   listActions,
@@ -33,6 +34,7 @@ function buildCtx(pool) {
     runTouchRuleEngine,
     executeGrowthActionRecord,
     appendExecutionLog,
+    resolveAgentCanonicalStore,
   };
 }
 
