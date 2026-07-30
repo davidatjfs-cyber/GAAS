@@ -202,8 +202,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 各自独立维护区块列表，这里补齐；② "餐饮总监"最近查询记录/8大AI督导指挥中心的记录
  * 补上任务日期(之前只有标题，条数多了根本认不出哪天的)，8大AI督导补状态筛选下拉框
  * (默认只显示"进行中"，隐藏已结案系列状态，避免历史记录淹没正在处理的任务)。
+ * 2026-07-30 第三十次上调（71245→71251）：① 门店经营明细加"门店人效值"（跟人效排名
+ * 同一份daily_reports.efficiency数据源）；② "本月离职率"从工作台顶层挪进门店经营明细，
+ * 按店各自展示（不再是跨全部门店的一个聚合数字，turnoverSummary()改成接受具体门店名单
+ * 逐店查询）；③ 店长/出品经理视角取消营业额/客流量/人效排名，管理员/总部经理视角保留
+ * （wsRenderOverview新增showRankings参数，由调用方按角色传入）。
  */
-const MAX_LINES = 71245;
+const MAX_LINES = 71251;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

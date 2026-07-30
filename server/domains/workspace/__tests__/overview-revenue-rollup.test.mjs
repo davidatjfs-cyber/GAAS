@@ -157,3 +157,16 @@ test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤
   const hc = result.find((r) => r.store === '洪潮大宁久光店');
   assert.equal(hc.partySizeSharePct.p2, 28.6, '范围内门店应正常计算');
 });
+
+// 2026-07-30：用户要求门店经营明细里加"门店人效值"——跟人效排名同一份数据源
+// (daily_reports.efficiency)，锁定每店都能拿到这个字段。
+test('operationalMetrics：每店返回efficiency字段（人效值，取整）', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80, efficiency: 1234.6 },
+    ],
+    posRows: [],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', []);
+  assert.equal(result[0].efficiency, 1235);
+});
