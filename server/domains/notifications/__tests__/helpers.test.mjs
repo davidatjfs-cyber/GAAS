@@ -76,7 +76,7 @@ test('appendNotifications([]) no-op (insert not called)', async () => {
   assert.equal(calls.query.length, 0);
 });
 
-test('appendNotifications with one notif calls pool.query INSERT', async () => {
+test('appendNotifications with one notif calls pool.query dedup-check then INSERT', async () => {
   const { helpers, calls } = buildHelpers();
   await helpers.appendNotifications([
     {
@@ -86,9 +86,22 @@ test('appendNotifications with one notif calls pool.query INSERT', async () => {
       type: 'system_notice',
     },
   ]);
-  assert.equal(calls.query.length, 1);
-  assert.match(String(calls.query[0][0]), /INSERT INTO hrms_user_notifications/);
+  assert.equal(calls.query.length, 2);
+  assert.match(String(calls.query[0][0]), /SELECT 1 FROM hrms_user_notifications/);
+  assert.match(String(calls.query[1][0]), /INSERT INTO hrms_user_notifications/);
   assert.equal(calls.merge.length, 0);
+});
+
+// 2026-07-30：实测发现同一批通知(排班/培训/离职等多种类型)在同一秒内被插入了十几万条重复行，
+// 拖垮数据库最终拖垮整机——根因是这个共用的落库入口完全没有去重，上层调用方一旦被并发/重复
+// 触发多次，这里就无脑各插一遍。锁定：10分钟内同用户+同类型+同文案的未读通知已存在时跳过插入。
+test('appendNotifications：10分钟内同用户+同类型+同文案已有未读通知时跳过插入', async () => {
+  const { helpers, calls } = buildHelpers({ poolQueryResult: { rows: [{}] } });
+  await helpers.appendNotifications([
+    { targetUser: 'bob', title: 'Hi', message: 'body', type: 'system_notice' },
+  ]);
+  assert.equal(calls.query.length, 1, '命中去重后不应该再执行INSERT');
+  assert.match(String(calls.query[0][0]), /SELECT 1 FROM hrms_user_notifications/);
 });
 
 test('notifyAdminsDualWriteFailure with mocked pool returning one open_id calls sendLarkMessage once', async () => {
@@ -122,8 +135,8 @@ test('insertHrmsUserNotifications with one notif calls pool.query', async () => 
       createdAt: '2026-07-24T12:00:00+08:00',
     },
   ]);
-  assert.equal(calls.query.length, 1);
-  assert.match(String(calls.query[0][0]), /INSERT INTO hrms_user_notifications/);
-  assert.equal(calls.query[0][1][0], 'alice');
-  assert.equal(calls.query[0][1][6], 'default');
+  assert.equal(calls.query.length, 2);
+  assert.match(String(calls.query[1][0]), /INSERT INTO hrms_user_notifications/);
+  assert.equal(calls.query[1][1][0], 'alice');
+  assert.equal(calls.query[1][1][6], 'default');
 });
