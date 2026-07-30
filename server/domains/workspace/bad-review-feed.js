@@ -14,6 +14,7 @@
  * 这里改成直接读 agent_messages，不再依赖两张事实上没有实时写入的表。
  */
 import { childLogger } from '../../utils/logger.js';
+import { expandAgentStoreLabels } from '../../v2-store-alignment.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'bad-review-feed' });
 
@@ -27,23 +28,34 @@ const DATE_GUARD = `(agent_data->'fields'->>'date') ~ '^[0-9]+$'`;
  * 谁都能不传store或者改传别的店名看到全部/别店数据。加 storeFilter（调用方按角色算出的
  * "允许查看的门店范围"，admin/老板传空数组=不限；其它角色传自己范围内的门店列表）——
  * store 这个UI下拉筛选如果超出 storeFilter 范围会被忽略，不传时默认收窄到 storeFilter。
+ *
+ * 2026-07-30 修复：马己仙出品经理反馈差评展示"没有任何数据"（不是全部门店的问题——那个已经
+ * 修过了，这次是单店范围内也是空的）。查证发现 agent_messages 里飞书写入的门店名是缩写
+ * （"洪潮久光店"/"马己仙大宁店"），跟 employees.store 的官方全称（"洪潮大宁久光店"/
+ * "马己仙上海音乐广场店"）不是同一个字符串——store/storeFilter 传的是员工表全称，之前
+ * 精确匹配 `= $n` 在有门店范围限制时必然查不到行（只有 admin 不传限制时才因为没有WHERE
+ * 过滤侥幸能看到数据）。改用 expandAgentStoreLabels()（v2-store-alignment.js，全系统已有的
+ * 门店名/飞书别名双向映射，store_name_aliases表驱动）把每个门店名展开成所有已知别名，
+ * 再用 ANY() 匹配，不再要求字符串完全相等。
  */
 export async function getBadReviewFeed(pool, tenantId, { store = '', startDate = '', endDate = '', limit = 30, storeFilter = [] } = {}) {
   const lim = Math.min(100, Math.max(1, Number(limit) || 30));
   const scoped = Array.isArray(storeFilter) && storeFilter.length > 0;
   const effectiveStore = store && (!scoped || storeFilter.includes(store)) ? store : '';
+  const storeAliasList = effectiveStore
+    ? expandAgentStoreLabels(effectiveStore)
+    : (scoped ? [...new Set(storeFilter.flatMap((s) => expandAgentStoreLabels(s)))] : []);
+  const hasStoreFilter = storeAliasList.length > 0;
   try {
     const platformParams = [tenantId];
     let platformWhere = '';
-    if (effectiveStore) { platformParams.push(effectiveStore); platformWhere += ` AND agent_data->'fields'->>'store' = $${platformParams.length}`; }
-    else if (scoped) { platformParams.push(storeFilter); platformWhere += ` AND agent_data->'fields'->>'store' = ANY($${platformParams.length})`; }
+    if (hasStoreFilter) { platformParams.push(storeAliasList); platformWhere += ` AND agent_data->'fields'->>'store' = ANY($${platformParams.length})`; }
     if (startDate) { platformParams.push(startDate); platformWhere += ` AND ${DATE_EXPR} >= $${platformParams.length}`; }
     if (endDate) { platformParams.push(endDate); platformWhere += ` AND ${DATE_EXPR} <= $${platformParams.length}`; }
 
     const visitParams = [tenantId];
     let visitWhere = '';
-    if (effectiveStore) { visitParams.push(effectiveStore); visitWhere += ` AND agent_data->'fields'->>'store' = $${visitParams.length}`; }
-    else if (scoped) { visitParams.push(storeFilter); visitWhere += ` AND agent_data->'fields'->>'store' = ANY($${visitParams.length})`; }
+    if (hasStoreFilter) { visitParams.push(storeAliasList); visitWhere += ` AND agent_data->'fields'->>'store' = ANY($${visitParams.length})`; }
     if (startDate) { visitParams.push(startDate); visitWhere += ` AND ${DATE_EXPR} >= $${visitParams.length}`; }
     if (endDate) { visitParams.push(endDate); visitWhere += ` AND ${DATE_EXPR} <= $${visitParams.length}`; }
 

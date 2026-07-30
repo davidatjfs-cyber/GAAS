@@ -9,6 +9,7 @@
  */
 import { childLogger } from '../../utils/logger.js';
 import { getTurnoverRate } from '../../hrms-api-tools.js';
+import { resolveAgentCanonicalStore } from '../../v2-store-alignment.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'overview' });
 
@@ -183,6 +184,15 @@ async function marginTracking(pool, tenantId, today, storeFilter) {
  * 权威字段（人工日报口径，跟营收目标同一份数据源），改成从这里取，不再用pos_orders现数。
  * 就餐人数分布(diners分桶)daily_reports没有对应字段，只能继续用pos_orders——但也补了
  * GROUP BY store_name做到按店。
+ *
+ * 2026-07-30 修复：就餐人数分布一直是0——查证发现 pos_orders.store_name 存的是POS原始
+ * 长名（如"洪潮传统潮汕菜【大宁久光中心店】"），跟 daily_reports.store/员工表的官方简称
+ * （"洪潮大宁久光店"）不是同一个字符串，且跟差评展示同款问题——之前按 store_name 精确/ANY
+ * 过滤storeFilter必然查不到行，就算不限门店(admin)，下面按 row.store 做 Map 查找也会
+ * 因为key不一致而永远查不到，所以这是全员都会中招的bug，不只是店长/出品经理范围过滤的锅。
+ * 改成不在SQL层过滤/分组store_name，取回全量后用 resolveAgentCanonicalStore()
+ * （同一套v2-store-alignment.js门店别名映射，差评展示同款修复已经在用）在JS里归一化成
+ * 官方店名再做分组/过滤/Map查找。
  */
 export async function operationalMetrics(pool, tenantId, today, storeFilter) {
   // 同 revenueRollup 的修复——"本月至今"锚点从 today 改成 yesterday（今天的日报/POS当天
@@ -214,8 +224,6 @@ export async function operationalMetrics(pool, tenantId, today, storeFilter) {
   );
 
   const posParams = [tenantId, monthStart, monthEnd];
-  const posFilter = storeFilterClause(storeFilter, posParams.length + 1, 'store_name');
-  if (posFilter.param) posParams.push(posFilter.param);
   const posR = await pool.query(
     `SELECT store_name AS store,
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners = 1) AS p1,
@@ -225,11 +233,20 @@ export async function operationalMetrics(pool, tenantId, today, storeFilter) {
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners > 6) AS p6plus,
         COUNT(*) FILTER (WHERE order_type = '堂食') AS dine_party_cnt
        FROM pos_orders
-      WHERE tenant_id = $1 AND biz_date >= $2 AND biz_date <= $3${posFilter.sql}
+      WHERE tenant_id = $1 AND biz_date >= $2 AND biz_date <= $3
       GROUP BY store_name`,
     posParams
   );
-  const posByStore = new Map((posR.rows || []).map((row) => [row.store, row]));
+  const storeFilterSet = Array.isArray(storeFilter) && storeFilter.length ? new Set(storeFilter) : null;
+  const posByStore = new Map();
+  const numFields = ['p1', 'p2', 'p3_4', 'p5_6', 'p6plus', 'dine_party_cnt'];
+  for (const row of posR.rows || []) {
+    const canon = resolveAgentCanonicalStore(row.store) || row.store;
+    if (storeFilterSet && !storeFilterSet.has(canon)) continue;
+    const existing = posByStore.get(canon);
+    if (!existing) { posByStore.set(canon, { ...row, store: canon }); continue; }
+    for (const f of numFields) existing[f] = Number(existing[f] || 0) + Number(row[f] || 0);
+  }
 
   return (r.rows || []).map((row) => {
     const traffic = Number(row.traffic);

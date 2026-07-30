@@ -13,7 +13,7 @@ function makePool({ myRows = [], ccRows = [] } = {}) {
       // 注意：getMyOpenTasks 的 SQL 里也含 "food_safety" 字样（它的 OR 子句里有），
       // 必须先判断 assignee_username 再判断 food_safety，否则会把 getMyOpenTasks
       // 误判成 getNotableOpenTasks 的查询。
-      if (/assignee_username = \$2/.test(sql)) return { rows: myRows };
+      if (/lower\(assignee_username\) = lower\(\$2\)/.test(sql)) return { rows: myRows };
       if (/food_safety/.test(sql)) return { rows: ccRows };
       if (/select data from hrms_state/.test(sql)) return { rows: [{ data: { stores: [] } }] };
       if (/store_ratings/.test(sql)) return { rows: [] };
@@ -97,7 +97,7 @@ describe('getPendingConfirmations', () => {
     };
     await getPendingConfirmations(pool, 'default', 'store_manager_a', 'store_manager');
     const sql = calls[0].sql;
-    assert.match(sql, /promoted_by' = \$2/);
+    assert.match(sql, /promoted_by'\) = lower\(\$2\)/);
     assert.doesNotMatch(sql, /food_safety/);
     assert.deepEqual(calls[0].params, ['default', 'store_manager_a']);
   });
@@ -112,7 +112,7 @@ describe('getPendingConfirmations', () => {
     };
     await getPendingConfirmations(pool, 'default', 'admin_a', 'admin');
     const sql = calls[0].sql;
-    assert.match(sql, /promoted_by' = \$2/);
+    assert.match(sql, /promoted_by'\) = lower\(\$2\)/);
     assert.match(sql, /food_safety/);
   });
 });

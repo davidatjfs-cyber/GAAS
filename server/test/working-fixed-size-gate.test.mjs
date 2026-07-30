@@ -152,8 +152,28 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * ⑤ 智能备货iframe空白问题的best-effort修复：token通过URL query传递给forecast.html，
  * 缓解部分容器环境iframe localStorage隔离导致取不到token的情况；⑥ 门店营销活动建议、
  * 任务栏卡片统一改成details/summary折叠样式，与8大AI督导指挥中心一致。
+ * 2026-07-30 第二十五次上调（70946→71018）：上一轮部分修复实测仍不生效，深挖到根因后
+ * 的真正修复——① 通知栏/任务栏一直是0：生产库target_username/assignee_username大小写
+ * 不统一(如NNYXWSB39 vs登录名nnyxwsb39)，之前是大小写敏感精确匹配，改成lower()两边比较；
+ * ② 差评展示单店范围内仍是空：agent_messages里飞书门店名是缩写("洪潮久光店")跟员工表
+ * 官方全称("洪潮大宁久光店")不是同一字符串，改用expandAgentStoreLabels()展开别名后ANY匹配；
+ * ③ 就餐人数分布一直是0（不分角色，admin也一样）：pos_orders.store_name是POS原始长名
+ * ("洪潮传统潮汕菜【大宁久光中心店】")，用resolveAgentCanonicalStore()在JS里归一化后再
+ * 分组/过滤；④ 本月离职率一直是0：employment_records表从未被写入过(生产库0行，跟之前
+ * bad_reviews同类"设计后没接上"的遗留表)，users表压根没有store列(SQL直接报错被吞掉)，
+ * 改成从employees表(status='离职'+extra_json.offboardingDate)真实计算；⑤ 当月目标追踪
+ * 只有营业额：用户在"目标管理"页面(08-materials-tasks.js)录入的毛利率/充值/点评星级/
+ * 企微新增等目标存在HRMS_STORE.settings.monthlyTargets里，跟这里原先查询的kpi_targets表
+ * 完全是两套独立机制，之前从未读取前者，现在两边都读并合并展示；⑥ 培训看板按培训主题
+ * 分组导致同一人记录分散、看不出"这人到底完成几项"，改成反向按员工分组(姓名+岗位)，
+ * 主题作为该员工下的明细；⑦ 厨房打点看板补上日期标题；⑧ 智能备货iframe空白的真正根因
+ * 定位——不是localStorage分区(上一轮的猜测)，是nginx对所有.html文件统一加了
+ * X-Frame-Options: DENY，浏览器据此拒绝任何iframe渲染，跟同源与否无关；已给
+ * /forecast.html单独加精确匹配location改成SAMEORIGIN(nginx配置改动，不在本仓库版本
+ * 控制范围内，另行记录于部署记录)；⑨ 各区块(差评展示/当月目标追踪/员工绩效/培训看板/
+ * 厨房打点看板等)统一包成details/summary可折叠，默认展开。
  */
-const MAX_LINES = 70946;
+const MAX_LINES = 71018;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
