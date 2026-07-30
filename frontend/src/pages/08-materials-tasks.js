@@ -2574,7 +2574,7 @@ ${String(text || '').slice(0, 9000)}`;
                     }
                 } catch (e) {}
                 const newBadge = isNew ? '<span class="emp-new-badge">新</span>' : '';
-                const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(207,161,74,0.25),rgba(207,161,74,0.15));color:rgba(207,161,74,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
+                const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(224,166,180,0.25),rgba(224,166,180,0.15));color:rgba(224,166,180,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
 
                 return `<tr>
                     <td>${name}${newBadge}${coreTalentBadge}</td>
@@ -2642,7 +2642,7 @@ ${String(text || '').slice(0, 9000)}`;
                             }
                         } catch (e) {}
                         const newBadge = isNew ? '<span class="emp-new-badge">新</span>' : '';
-                        const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(207,161,74,0.25),rgba(207,161,74,0.15));color:rgba(207,161,74,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
+                        const coreTalentBadge = emp.coreTalent ? '<span style="display:inline-block;background:linear-gradient(135deg,rgba(224,166,180,0.25),rgba(224,166,180,0.15));color:rgba(224,166,180,0.95);font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;margin-left:4px;">核心</span>' : '';
 
                         const searchKey = [username, name, store, dept, pos, level, manager, role, statusBadge, joinDate, phone, email, gender, birthday, salary, tenure].join(' ');
 
