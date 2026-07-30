@@ -53,6 +53,7 @@ export function registerTrainingDashboardRoutes(app, authMiddleware, _uploadMidd
                    json_build_object(
                      'username', a.employee_username,
                      'name', COALESCE(e.name, a.employee_username),
+                     'position', COALESCE(e.position, ''),
                      'status', COALESCE(s.status, 'not_started'),
                      'quiz_score', s.quiz_score,
                      'quiz_history', COALESCE(s.quiz_history, '[]'::jsonb),

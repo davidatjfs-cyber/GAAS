@@ -223,20 +223,29 @@ export async function updateEmploymentStatus(id, status, approvedBy) {
 }
 
 // ─── 离职率计算 ───
+// 2026-07-30 修复：本月离职率一直显示0——查证发现 employment_records 表(入离职记录)从未被
+// 任何写入路径实际写入过(生产库0行，是设计后从没接上真实数据的遗留表，跟之前发现的
+// bad_reviews/table_visit_records同类问题)；users 表更是压根没有 store 列，这条SQL本身就会
+// 报错、被catch吞掉变成success:false。真正的离职数据在离职审批通过后写进 employees 表
+// （server/domains/approvals/handlers/offboarding.js#afterDecide）：status='离职' +
+// extra_json.offboardingDate，且这张表本来就在职员工也在，可以同时算分子分母。
 export async function getTurnoverRate(store, months = 3) {
   try {
     const r = await pool().query(
-      `SELECT COUNT(*) FILTER (WHERE action_type='resign' OR action_type='terminate')::int as departures,
-              COUNT(*) FILTER (WHERE action_type='onboard')::int as hires
-       FROM employment_records
-       WHERE ($1='' OR store=$1) AND action_date >= CURRENT_DATE - ($2||' months')::interval AND status='approved'`,
+      `SELECT COUNT(*) FILTER (
+         WHERE status = '离职'
+           AND (extra_json->>'offboardingDate') ~ '^\\d{4}-\\d{2}-\\d{2}$'
+           AND (extra_json->>'offboardingDate')::date >= CURRENT_DATE - ($2||' months')::interval
+       )::int AS departures
+       FROM employees
+       WHERE ($1='' OR store=$1)`,
       [store || '', months]
     );
     const row = r.rows[0] || {};
-    const emp = await pool().query(`SELECT COUNT(*)::int as total FROM users WHERE ($1='' OR store=$1) AND is_active=true`, [store||'']);
+    const emp = await pool().query(`SELECT COUNT(*)::int as total FROM employees WHERE ($1='' OR store=$1) AND status='active'`, [store||'']);
     const total = emp.rows[0]?.total || 1;
     const rate = total > 0 ? ((row.departures || 0) / total * 100).toFixed(1) : '0.0';
-    return { success: true, departures: row.departures||0, hires: row.hires||0, totalEmployees: total, turnoverRate: parseFloat(rate), periodMonths: months };
+    return { success: true, departures: row.departures||0, hires: 0, totalEmployees: total, turnoverRate: parseFloat(rate), periodMonths: months };
   } catch (e) { return { success: false, error: e?.message }; }
 }
 

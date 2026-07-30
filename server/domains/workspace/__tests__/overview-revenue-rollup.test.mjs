@@ -103,3 +103,37 @@ test('operationalMetrics：按单店返回数组，堂食/外卖占比来自dail
   assert.equal(mjx.dineInSharePct, 80); // 40/(40+10)*100
   assert.equal(mjx.partySizeSharePct.p1, null, '这家店pos_orders里没有匹配行，应该是null不是报错');
 });
+
+// 2026-07-30：就餐人数分布一直是0——真实生产库 pos_orders.store_name 存的是POS原始长名
+// （"洪潮传统潮汕菜【大宁久光中心店】"），不是daily_reports/员工表用的官方简称，之前精确
+// 按store_name分组/过滤会永远查不到匹配。锁定：即使pos_orders行的store名是这种原始长名，
+// 归一化后也要能跟daily_reports的官方简称对上。
+test('operationalMetrics：pos_orders的store_name是POS原始长名，归一化后仍能匹配daily_reports的官方简称', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80 },
+    ],
+    posRows: [
+      { store: '洪潮传统潮汕菜【大宁久光中心店】', p1: 10, p2: 20, p3_4: 30, p5_6: 5, p6plus: 5, dine_party_cnt: 70 },
+    ],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', []);
+  const hc = result.find((r) => r.store === '洪潮大宁久光店');
+  assert.ok(hc, '应该按官方简称匹配到这家店');
+  assert.equal(hc.partySizeSharePct.p2, 28.6, '归一化后应该能取到就餐人数分布，不是null/0');
+});
+
+test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤掉pos_orders里POS原始长名不在范围内的门店', async () => {
+  const pool = makeMultiStorePool({
+    dailyRows: [
+      { store: '洪潮大宁久光店', traffic: 100, dine_revenue: 10000, dine_orders: 80, delivery_orders: 20, traffic_lm: 90, traffic_ly: 80 },
+    ],
+    posRows: [
+      { store: '洪潮传统潮汕菜【大宁久光中心店】', p1: 10, p2: 20, p3_4: 30, p5_6: 5, p6plus: 5, dine_party_cnt: 70 },
+      { store: '马己仙广东小馆·荔枝木烧鹅（大宁音乐广场店）', p1: 99, p2: 99, p3_4: 99, p5_6: 99, p6plus: 99, dine_party_cnt: 99 },
+    ],
+  });
+  const result = await operationalMetrics(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
+  const hc = result.find((r) => r.store === '洪潮大宁久光店');
+  assert.equal(hc.partySizeSharePct.p2, 28.6, '范围内门店应正常计算');
+});

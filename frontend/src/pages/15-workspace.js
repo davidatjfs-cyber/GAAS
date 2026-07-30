@@ -1341,6 +1341,39 @@ async function wsRenderBossOrHq(root, persona) {
 // metric_key，逐条展示目标值——但如实说明：这套通用目标机制目前只存了"目标值"，没有对应
 // 的"任意指标自动核算实际值"的机制(那是另一套工程量，calculateKpiAchievement只覆盖agent
 // 质量类固定指标，不含大众点评/企微这类业务指标)，所以这里只能展示目标、不能展示实际达成率。
+// 2026-07-30 修复：出品经理/店长反馈"当月目标追踪"只有营业额一项——查证发现"目标管理"页面
+// （08-materials-tasks.js的monthlyTargets弹窗，实收营业额/毛利率/充值金额/点评星级/企微
+// 新增等任意目标项）存的是 HRMS_STORE 本地状态里的 settings.monthlyTargets（{ym,store,
+// targets:{key:value}}结构），跟这里原先查询的 /api/tenant-settings/kpi-targets（另一套
+// 走agents-service-v2 kpi_targets表的通用KPI机制，是"任务和绩效"页面另一个入口维护的，
+// 两套目标机制完全独立、互不知道对方）完全是两张不同的表——用户在"目标管理"里录的那些目标，
+// 这里之前根本没读过，所以除了营业额(revenue_targets另一张表，走ov.revenue.target)以外
+// 全部显示"暂未配置"。这里改成额外读取monthlyTargets当前月本店那一条，MT_FIELD_MAP/
+// MT_ALL_FIELDS定义在07-promotion.js（同一份bundle里全局可见，沿用现成的label/unit元数据，
+// 不重新定义一遍）。
+function wsCurrentYm() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+function wsRenderMonthlyTargetFields(store) {
+    if (!store || typeof HRMS_STORE === 'undefined' || typeof MT_FIELD_MAP === 'undefined') return '';
+    const ym = wsCurrentYm();
+    const list = Array.isArray(HRMS_STORE.getSettings?.()?.monthlyTargets) ? HRMS_STORE.getSettings().monthlyTargets : [];
+    const rec = list.find((x) => String(x?.ym || '').trim() === ym && String(x?.store || '').trim() === store);
+    const targets = rec?.targets || {};
+    const keys = Object.keys(targets).filter((k) => targets[k] != null && MT_FIELD_MAP[k]);
+    if (!keys.length) return '';
+    return '<div class="ws-stat-list" style="margin-top:10px;">' +
+        keys.map((k) => {
+            const meta = MT_FIELD_MAP[k];
+            const v = targets[k];
+            const display = meta.unit === '元' ? '¥' + wsFmtMoney(v) : (v + meta.unit);
+            return wsStatRow(wsEsc(meta.label), display, '实际值：系统暂未接入该指标的自动核算，需人工核对');
+        }).join('') +
+        '</div>';
+}
+
 async function wsRenderTargetTracking(ov, store) {
     const t = ov?.revenue?.target || {};
     const theo = t.theoreticalAchievementRate;
@@ -1351,14 +1384,17 @@ async function wsRenderTargetTracking(ov, store) {
         wsStatRow('营业日目标', '¥' + wsFmtMoney(t.targetRevenue), '理论达成 ' + (theo ?? '—') + '% · 实际达成 ' + (actual ?? '—') + '% · ' + status) +
         wsStatRow('毛利目标（本月日均）', (m.targetMargin != null ? m.targetMargin + '%' : '—'), '实际 ' + (m.actualMargin != null ? m.actualMargin + '%' : '—')) +
         '</div>';
+    const monthlyFieldsHtml = wsRenderMonthlyTargetFields(store);
     const kpiData = store ? await wsFetchJson('/api/tenant-settings/kpi-targets?store=' + encodeURIComponent(store)) : null;
     const kpiTargets = Array.isArray(kpiData?.targets) ? kpiData.targets : [];
-    if (kpiTargets.length) {
-        html += '<div class="ws-stat-list" style="margin-top:10px;">' +
+    const kpiFieldsHtml = kpiTargets.length
+        ? '<div class="ws-stat-list" style="margin-top:10px;">' +
             kpiTargets.map((k) => wsStatRow(wsEsc(k.metric_key), (k.target_value ?? '—') + (k.unit ? wsEsc(k.unit) : ''), '实际值：系统暂未接入该指标的自动核算，需人工核对')).join('') +
-            '</div>';
-    } else {
-        html += '<div class="ws-empty">本店在"任务和绩效"目标设置里暂未配置其他目标（如大众点评/企微）</div>';
+            '</div>'
+        : '';
+    html += monthlyFieldsHtml + kpiFieldsHtml;
+    if (!monthlyFieldsHtml && !kpiFieldsHtml) {
+        html += '<div class="ws-empty">本店在"目标管理"/"任务和绩效"目标设置里暂未配置其他目标（如大众点评/企微）</div>';
     }
     return html;
 }
@@ -1371,35 +1407,59 @@ function wsRenderEmployeePerformanceList(team) {
     )).join('');
 }
 
-// 2026-07-30：之前只显示"1/1 已认证"这种聚合数字，看不出是谁、什么岗位——用户反馈"这种
-// 记录毫无意义"。后端 /api/training/dashboard 每一行其实已经带了 members 数组
+// 2026-07-30 第一次修复：之前只显示"1/1 已认证"这种聚合数字，看不出是谁、什么岗位——用户
+// 反馈"这种记录毫无意义"。后端 /api/training/dashboard 每一行其实已经带了 members 数组
 // (username/name/status/is_overdue)，/api/kitchen/dashboard 每个station也带了
 // completed_details/unchecked_details(含employee_name/assignee_name)，只是前端没用。
 // 改成用<details>折叠：外层还是"1/1 已认证"这行摘要，点开展示每个人的姓名+状态。
+//
+// 2026-07-30 第二次修复：按培训主题分组（"客诉培训 1/1已认证"点开列人）实测反馈"太混乱"——
+// 同一个人的记录分散在好几个主题下面，看不出"这个人到底完成了几项"，且没有岗位。用户明确
+// 要求"看的是员工的培训记录，姓名+岗位"，即以人为单位、不是以培训主题为单位。这里改成
+// 反向分组：按 members[].username 聚合出每个员工，展示其姓名+岗位（后端已补充
+// members[].position，见routes-dashboard.js），点开看这个人被指派的每个培训主题及认证状态。
 function wsRenderTrainingBoard(rows) {
     if (!rows.length) return '<div class="ws-empty">本店暂无培训计划</div>';
-    return rows.map((r) => {
-        const members = Array.isArray(r.members) ? r.members : [];
-        const memberLines = members.map((m) => (
-            '<div class="ws-stat-row" style="padding:6px 0;"><span class="ws-stat-row__l">' + wsEsc(m.name || m.username || '') + '</span>' +
+    const byEmployee = new Map();
+    rows.forEach((r) => {
+        (Array.isArray(r.members) ? r.members : []).forEach((m) => {
+            const key = m.username || m.name;
+            if (!key) return;
+            if (!byEmployee.has(key)) byEmployee.set(key, { name: m.name || m.username, position: m.position || '', topics: [] });
+            byEmployee.get(key).topics.push({ title: r.title, status: m.status, is_overdue: m.is_overdue });
+        });
+    });
+    const employees = [...byEmployee.values()].sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
+    if (!employees.length) return '<div class="ws-empty">本店暂无培训计划</div>';
+    return employees.map((emp) => {
+        const total = emp.topics.length;
+        const certified = emp.topics.filter((t) => t.status === 'certified').length;
+        const overdue = emp.topics.filter((t) => t.is_overdue).length;
+        const topicLines = emp.topics.map((t) => (
+            '<div class="ws-stat-row" style="padding:6px 0;"><span class="ws-stat-row__l">' + wsEsc(t.title) + '</span>' +
             '<span class="ws-stat-row__v" style="font-size:11.5px;">' +
-            (m.status === 'certified' ? '<span class="ws-ok">已认证</span>' : m.is_overdue ? '<span class="ws-down">逾期未认证</span>' : '未认证') +
+            (t.status === 'certified' ? '<span class="ws-ok">已认证</span>' : t.is_overdue ? '<span class="ws-down">逾期未认证</span>' : '未认证') +
             '</span></div>'
         )).join('');
         const summaryLine =
-            '<span class="ws-stat-row__l">' + wsEsc(r.title) + (r.position ? '（' + wsEsc(r.position) + '）' : '') + '</span>' +
-            '<span class="ws-stat-row__v">' + (r.certified_count || 0) + '/' + (r.assigned_count || 0) + ' 已认证' + (Number(r.overdue_count) > 0 ? '<span class="ws-down"> · ' + r.overdue_count + '人逾期</span>' : '') + '</span>';
+            '<span class="ws-stat-row__l">' + wsEsc(emp.name) + (emp.position ? '（' + wsEsc(emp.position) + '）' : '') + '</span>' +
+            '<span class="ws-stat-row__v">' + certified + '/' + total + ' 已认证' + (overdue > 0 ? '<span class="ws-down"> · ' + overdue + '项逾期</span>' : '') + '</span>';
         return (
             '<details class="ws-detail-collapse"><summary class="ws-stat-row ws-detail-summary" style="cursor:pointer;">' + summaryLine + '</summary>' +
-            (memberLines || '<div class="ws-empty" style="padding:6px 0;">暂无指派人员</div>') +
+            topicLines +
             '</details>'
         );
     }).join('');
 }
 
-function wsRenderKitchenBoard(summary) {
+// 2026-07-30：用户要求厨房打点看板能看到"日期，打点内容，员工姓名，岗位，完成与否"——
+// station本身就是岗位（分组维度），dish_name/employee_name/完成状态已有，缺的是日期——
+// getStationDashboard()按单一task_date查询，本来就在返回体顶层带了date字段，之前前端没有
+// 展示，这里加一行日期标题。
+function wsRenderKitchenBoard(summary, date) {
     if (!summary.length) return '<div class="ws-empty">暂无厨房打点数据</div>';
-    return summary.map((s) => {
+    const dateLine = date ? '<div class="ws-card__desc" style="opacity:.65;margin-bottom:6px;">日期：' + wsEsc(date) + '</div>' : '';
+    return dateLine + summary.map((s) => {
         const completed = Array.isArray(s.completed_details) ? s.completed_details : [];
         const unchecked = Array.isArray(s.unchecked_details) ? s.unchecked_details : [];
         const detailLines = [
@@ -1441,6 +1501,15 @@ function wsRenderSmartRestock() {
         '<iframe src="' + wsEsc(src) + '" style="width:100%;height:100%;border:0;"></iframe></div>';
 }
 
+// 折叠版 ws-section：与"8大AI督导指挥中心"同款 <details>/<summary> 效果，默认展开，
+// 复用现成的 .ws-detail-collapse/.ws-detail-summary CSS，不新增样式。
+function wsSection(title, contentHtml) {
+    return '<details class="ws-section ws-detail-collapse" open>' +
+        '<summary class="ws-section__title ws-detail-summary">' + wsEsc(title) + '</summary>' +
+        contentHtml +
+        '</details>';
+}
+
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const store = String(currentUser?.current_store || currentUser?.store || '').trim();
@@ -1455,13 +1524,16 @@ async function wsRenderStore(root) {
     const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无') + '·门店级别' + (storeLight?.rating || '暂无');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
-    html += '<div class="ws-section"><div class="ws-section__title">今日经营总览</div>' + wsRenderOverview(overview) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">差评展示</div>' + wsRenderBadReviewSection(store ? [store] : []) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">当月目标追踪</div><div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div></div>';
-    html += '<div class="ws-section"><div class="ws-section__title">智能备货</div>' + wsRenderSmartRestock() + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">员工绩效</div>' + wsRenderEmployeePerformanceList(overview?.team) + '</div>';
-    html += '<div class="ws-section"><div class="ws-section__title">员工培训看板</div><div id="ws-training-board"><div class="ws-loading">加载中...</div></div></div>';
-    html += '<div class="ws-section"><div class="ws-section__title">厨房打点看板</div><div id="ws-kitchen-board"><div class="ws-loading">加载中...</div></div></div>';
+    // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
+    // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
+    // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
+    html += wsSection('今日经营总览', wsRenderOverview(overview));
+    html += wsSection('差评展示', wsRenderBadReviewSection(store ? [store] : []));
+    html += wsSection('当月目标追踪', '<div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div>');
+    html += wsSection('智能备货', wsRenderSmartRestock());
+    html += wsSection('员工绩效', wsRenderEmployeePerformanceList(overview?.team));
+    html += wsSection('员工培训看板', '<div id="ws-training-board"><div class="ws-loading">加载中...</div></div>');
+    html += wsSection('厨房打点看板', '<div id="ws-kitchen-board"><div class="ws-loading">加载中...</div></div>');
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
@@ -1482,7 +1554,7 @@ async function wsRenderStore(root) {
         wsFetchJson('/api/kitchen/dashboard?store=' + encodeURIComponent(store)).then((data) => {
             const summary = data?.success && Array.isArray(data.summary) ? data.summary : [];
             const el = document.getElementById('ws-kitchen-board');
-            if (el) el.innerHTML = wsRenderKitchenBoard(summary);
+            if (el) el.innerHTML = wsRenderKitchenBoard(summary, data?.date);
         });
         wsRenderTargetTracking(overview, store).then((h) => { const el = document.getElementById('ws-target-tracking'); if (el) el.innerHTML = h; });
     }

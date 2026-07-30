@@ -20,6 +20,8 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
   // 2026-07-29 新增：之前只有未读数(getUnreadInboxCount)，没有"列表"接口——工作台"通知"tab
   // 一直只能显示数字、点了看不到内容。hrms_user_notifications 是权威表(service.js里的注释)，
   // 不是从 hrms_state.notifications 镜像读，直接查真实表。
+  // 2026-07-30 修复：target_username 大小写在生产库里不统一（部分写入是大写用户名），
+  // 这里原先大小写敏感匹配会漏掉——跟"我的档案"(listMyNotifications，一直用lower())保持一致。
   app.get('/api/notifications', authRequired, async (req, res) => {
     const tenantId = resolveTenantIdDefault(req.tenantId);
     const username = String(req.user?.username || '').trim();
@@ -29,7 +31,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
       const r = await pool.query(
         `SELECT id, title, message, type, meta, created_at, read_at
            FROM hrms_user_notifications
-          WHERE tenant_id = $1 AND target_username = $2
+          WHERE tenant_id = $1 AND lower(target_username) = lower($2)
           ORDER BY created_at DESC LIMIT $3`,
         [tenantId, username, limit]
       );
@@ -48,7 +50,7 @@ export function registerNotificationsWriteRoutes(app, authRequired, deps) {
     try {
       await pool.query(
         `UPDATE hrms_user_notifications SET read_at = NOW()
-          WHERE id = $1 AND tenant_id = $2 AND target_username = $3 AND read_at IS NULL`,
+          WHERE id = $1 AND tenant_id = $2 AND lower(target_username) = lower($3) AND read_at IS NULL`,
         [notifId, tenantId, username]
       );
       res.json({ ok: true });

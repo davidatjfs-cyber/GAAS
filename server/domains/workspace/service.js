@@ -101,12 +101,16 @@ export async function getStoreHealthLights(pool, tenantId) {
 const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board'];
 const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')`;
 
+// 2026-07-30 修复：出品经理/店长反馈任务栏一直是0，跟通知栏同一个根因——生产库里
+// master_tasks.assignee_username 大小写不统一（如 NNYXWSB39 全大写 vs 登录用户名
+// nnyxwsb39），这里之前是大小写敏感的精确匹配，实际匹配不到任何行。respondToTask()/
+// getPendingConfirmations() 的 assignee_username/promoted_by 比较同理一并改成 lower()。
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
     `SELECT task_id, title, detail, severity, store, status, category, source, created_at
        FROM master_tasks
-      WHERE tenant_id = $1 AND assignee_username = $2
+      WHERE tenant_id = $1 AND lower(assignee_username) = lower($2)
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
         ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4')}
       ORDER BY created_at DESC LIMIT $3`,
@@ -147,9 +151,13 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   return r.rows || [];
 }
 
+// 2026-07-30 修复：出品经理/店长反馈工作台通知栏/任务角标一直是0，跟"我的档案"里能看到的
+// 通知不一致——查证生产库发现 target_username 大小写不统一（如 NNYXWSB39 vs 登录用户名
+// nnyxwsb39），"我的档案"走的 listMyNotifications() 一直用 lower() 做大小写不敏感匹配，
+// 这里之前是大小写敏感的精确匹配，同一个人两处查出来的结果不一致。改成同样用 lower()。
 export async function getUnreadInboxCount(pool, tenantId, username) {
   const r = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM hrms_user_notifications WHERE tenant_id = $1 AND target_username = $2 AND read_at IS NULL`,
+    `SELECT COUNT(*)::int AS n FROM hrms_user_notifications WHERE tenant_id = $1 AND lower(target_username) = lower($2) AND read_at IS NULL`,
     [tenantId, username]
   ).catch((e) => {
     // 兼容旧库无 read_at 列
@@ -175,8 +183,8 @@ export async function getPendingConfirmations(pool, tenantId, username, role) {
   const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
   const params = [tenantId, username];
   const whereExtra = isFoodSafetyCcRole
-    ? ` AND (t.source_data->>'promoted_by' = $2 OR t.category ILIKE '%food_safety%' OR t.category ILIKE '%food_quality%')`
-    : ` AND t.source_data->>'promoted_by' = $2`;
+    ? ` AND (lower(t.source_data->>'promoted_by') = lower($2) OR t.category ILIKE '%food_safety%' OR t.category ILIKE '%food_quality%')`
+    : ` AND lower(t.source_data->>'promoted_by') = lower($2)`;
   const r = await pool.query(
     `SELECT t.task_id, t.title, t.detail, t.store, t.assignee_username,
             COALESCE(NULLIF(e.name, ''), t.assignee_username) AS assignee_name,
@@ -287,7 +295,7 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
   const r = await pool.query(
     `UPDATE master_tasks SET status = 'pending_review', response_text = $1, response_images = $2::jsonb,
             responded_at = NOW(), updated_at = NOW()
-       WHERE task_id = $3 AND tenant_id = $4 AND assignee_username = $5
+       WHERE task_id = $3 AND tenant_id = $4 AND lower(assignee_username) = lower($5)
          AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
        RETURNING task_id, store, title, source_data`,
     [text, JSON.stringify(images), taskId, tenantId, username]
