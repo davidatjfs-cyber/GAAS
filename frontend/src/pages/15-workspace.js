@@ -509,13 +509,18 @@ function wsStatRow(label, value, sub) {
 // 2026-07-28 重排：原来营收/客流/人数分布各占一整块 grid，视觉很碎——改成
 // KPI 卡只保留营收今日/本周/本月/目标这4个最重要的数字，其余全部用紧凑的 label-value
 // 单行列表（wsStatRow）呈现，一屏能看完，不再是一堆方块。
+// 2026-07-30：用户要求门店经营明细里补上"门店人效值"、把顶层"本月离职率"挪进来按店展示——
+// 后端operationalMetrics()已经把efficiency/turnoverRate直接merge进每条门店记录，这里直接
+// 取用，不用再单独请求一次。
 function wsRenderStoreOperationalBody(row) {
     const p = row.partySizeSharePct || {};
     return wsStatRow('客流量（本月累计）', row.traffic ?? '—', '上月' + wsFmtPct(row.trafficMom) + ' 去年' + wsFmtPct(row.trafficYoy)) +
         wsStatRow('客单价', '¥' + (row.avgSpendPerGuest ?? '—')) +
         wsStatRow('桌均', '¥' + (row.avgSpendPerTable ?? '—')) +
+        wsStatRow('门店人效值', row.efficiency ?? '—') +
         wsStatRow('堂食 / 外卖占比', (row.dineInSharePct ?? '—') + '% / ' + (row.deliverySharePct ?? '—') + '%') +
-        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%');
+        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%') +
+        wsStatRow('本月离职率', (row.turnoverRate ?? '—') + '%', row.turnoverRate != null ? '离职' + row.turnoverDepartures + '人 · 在职' + row.turnoverTotalEmployees + '人' : '');
 }
 
 // 2026-07-30 第一次修复：客流量/客单价/桌均/堂食外卖占比/就餐人数分布之前是全范围聚合成
@@ -545,7 +550,12 @@ function wsBindOperationalStoreSelector(root) {
     });
 }
 
-function wsRenderOverview(ov) {
+// 2026-07-30：用户要求① 门店经营明细里加"门店人效值"、把"本月离职率"从顶层挪进去（每店
+// 各自展示，不再是跨全部门店的一个聚合数字，operationalMetrics现在已经把efficiency/
+// turnoverRate直接merge进每条门店记录里，这里直接渲染，不用单独再拼一份）；② 店长/出品
+// 经理视角取消营业额/客流量/人效排名，管理员/总部经理视角保留——用showRankings区分，
+// 由调用方(wsRenderStore传false，wsRenderBossOrHq传true)按角色决定，不是这里猜角色。
+function wsRenderOverview(ov, showRankings) {
     if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
     const rev = ov.revenue || {};
     const opRows = Array.isArray(ov.operational) ? ov.operational : [];
@@ -560,15 +570,11 @@ function wsRenderOverview(ov) {
 
     html += wsRenderOperationalSection(opRows);
 
-    html += '<div class="ws-rank-grid">' +
-        wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
-        wsRenderStoreRankList('客流量排名', rk.byTraffic, (r) => r.traffic) +
-        wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
-        '</div>';
-
-    if (ov.turnover) {
-        html += '<div class="ws-stat-list" style="margin-top:10px;">' +
-            wsStatRow('本月离职率', (ov.turnover.turnoverRate ?? '—') + '%', '离职' + ov.turnover.departures + '人 · 在职' + ov.turnover.totalEmployees + '人') +
+    if (showRankings) {
+        html += '<div class="ws-rank-grid">' +
+            wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
+            wsRenderStoreRankList('客流量排名', rk.byTraffic, (r) => r.traffic) +
+            wsRenderStoreRankList('人效排名', rk.byEfficiency, (r) => r.efficiency) +
             '</div>';
     }
 
@@ -1465,7 +1471,7 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
     html += wsRenderPendingConfirmations(pendingConfirmations);
-    html += wsSection('今日经营总览', wsRenderOverview(overview));
+    html += wsSection('今日经营总览', wsRenderOverview(overview, true));
     html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
     // 2026-07-30：门店营销活动建议之前只有每条建议内部自己折叠，整个区块本身不折叠——
     // 跟其它区块统一改用wsSection()包一层，区块级别也可以整体收起，不是只有卡片能收起。
@@ -1714,7 +1720,7 @@ async function wsRenderStore(root) {
     // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
     // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
     // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
-    html += wsSection('今日经营总览', wsRenderOverview(overview));
+    html += wsSection('今日经营总览', wsRenderOverview(overview, false));
     html += wsSection('差评展示', wsRenderBadReviewSection(store ? [store] : []));
     html += wsSection('当月目标追踪', '<div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div>');
     html += wsSection('智能备货', wsRenderSmartRestock());

@@ -225,7 +225,8 @@ export async function operationalMetrics(pool, tenantId, today, storeFilter) {
         COALESCE(SUM(dine_orders) FILTER (WHERE date >= $2 AND date <= $3), 0) AS dine_orders,
         COALESCE(SUM(delivery_orders) FILTER (WHERE date >= $2 AND date <= $3), 0) AS delivery_orders,
         COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $4 AND date <= $5), 0) AS traffic_lm,
-        COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $6 AND date <= $7), 0) AS traffic_ly
+        COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $6 AND date <= $7), 0) AS traffic_ly,
+        AVG(NULLIF(efficiency, 0)) FILTER (WHERE date >= $2 AND date <= $3) AS efficiency
        FROM daily_reports
       WHERE tenant_id = $1${opFilter.sql}
       GROUP BY store`,
@@ -273,6 +274,10 @@ export async function operationalMetrics(pool, tenantId, today, storeFilter) {
       trafficYoy: pctChange(traffic, row.traffic_ly),
       avgSpendPerGuest: traffic > 0 ? Number((dineRevenue / traffic).toFixed(2)) : null,
       avgSpendPerTable: dineOrders > 0 ? Number((dineRevenue / dineOrders).toFixed(2)) : null,
+      // 2026-07-30：用户要求门店经营明细里补上人效值——跟storeRankings的人效排名同一份数据源
+      // (daily_reports.efficiency，本月AVG，取整)，这里直接算一份，不复用storeRankings返回的
+      // 数组（那边只保留有效值门店、且已排序，这里要求"每店都有一条"，字段单独查更直接）。
+      efficiency: row.efficiency != null ? Math.round(Number(row.efficiency)) : null,
       dineInSharePct: totalOrders > 0 ? Number(((dineOrders / totalOrders) * 100).toFixed(1)) : null,
       deliverySharePct: totalOrders > 0 ? Number(((deliveryOrders / totalOrders) * 100).toFixed(1)) : null,
       partySizeSharePct: {
@@ -316,14 +321,20 @@ async function storeRankings(pool, tenantId, today, storeFilter) {
 }
 
 /** 门店员工离职率（当月累计）——复用已有的 getTurnoverRate()（server/hrms-api-tools.js），
- * 不重新实现一套计算逻辑。多门店时逐店查询后汇总（该函数本身按单个 store 计算）。 */
-async function turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate) {
+ * 不重新实现一套计算逻辑。按门店名单逐店查询，返回汇总+按店明细。
+ * 2026-07-30：用户要求把"本月离职率"从工作台顶层挪进"门店经营明细"，每店各自一条，
+ * 不再是一个跨全部门店的聚合数字——storeNames 现在必须是具体门店名单，不能再用
+ * storeFilter为空时退化成单次全量查询(旧逻辑那样admin看不到分店明细)。
+ */
+async function turnoverSummary(pool, tenantId, storeNames, getTurnoverRate) {
   if (typeof getTurnoverRate !== 'function') return null;
-  const stores = Array.isArray(storeFilter) && storeFilter.length ? storeFilter : [''];
+  const stores = Array.isArray(storeNames) && storeNames.length ? storeNames : [''];
   const results = await Promise.all(stores.map((s) => getTurnoverRate(s, 1)));
+  const byStore = stores.map((s, i) => ({ store: s, ...results[i] })).filter((x) => x.store);
   const totalDepartures = results.reduce((s, r) => s + (r?.departures || 0), 0);
   const totalEmployees = results.reduce((s, r) => s + (r?.totalEmployees || 0), 0);
   return {
+    byStore,
     departures: totalDepartures,
     totalEmployees,
     turnoverRate: totalEmployees > 0 ? Number(((totalDepartures / totalEmployees) * 100).toFixed(1)) : null,
@@ -356,14 +367,25 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
 export async function getBossOverview(pool, tenantId, storeFilter = []) {
   const today = shanghaiToday();
   try {
-    const [revenue, operational, rankings, turnover, team, margin] = await Promise.all([
+    const [revenue, operational, rankings, team, margin] = await Promise.all([
       revenueRollup(pool, tenantId, today, storeFilter),
       operationalMetrics(pool, tenantId, today, storeFilter),
       storeRankings(pool, tenantId, today, storeFilter),
-      turnoverSummary(pool, tenantId, storeFilter, getTurnoverRate),
       teamPerformanceSummary(pool, tenantId, storeFilter, periodOf(today)),
       marginTracking(pool, tenantId, today, storeFilter),
     ]);
+    // 2026-07-30：用户要求"本月离职率"从顶层挪进"门店经营明细"，按店各自展示——离职率查询
+    // 需要具体门店名单才能算出每店各自的值，storeFilter为空(admin不限门店)时不能再退化成
+    // 单次全量查询，改成用operational结果里已经解析出的真实门店名单(每店一条)。
+    const storeNames = operational.map((o) => o.store).filter(Boolean);
+    const turnover = await turnoverSummary(pool, tenantId, storeNames, getTurnoverRate);
+    const turnoverByStore = new Map((turnover?.byStore || []).map((t) => [t.store, t]));
+    for (const row of operational) {
+      const t = turnoverByStore.get(row.store);
+      row.turnoverRate = t?.turnoverRate ?? null;
+      row.turnoverDepartures = t?.departures ?? null;
+      row.turnoverTotalEmployees = t?.totalEmployees ?? null;
+    }
     return { ok: true, asOf: today, scoped: storeFilter.length > 0, revenue, operational, rankings, turnover, team, margin };
   } catch (e) {
     log.error({ msg: 'boss_overview_failed', err: e?.message || String(e) });
