@@ -143,6 +143,27 @@ test('revenueRollup：营业日目标必须按门店各自的最近period分别�
   assert.match(targetCall.sql, /GROUP BY store/);
 });
 
+// 2026-07-30：洪潮门店(scoped角色如出品经理/店长)看到的实收目标一直是0——查证生产库
+// revenue_targets.store存的是"洪潮久光店"缩写，跟storeFilter/员工表官方全称"洪潮大宁
+// 久光店"不是同一字符串，之前精确匹配在有门店范围限制时必然查不到行。锁定：storeFilter
+// 非空时必须展开别名后用ANY匹配，不能要求字符串完全相等。
+test('revenueRollup：storeFilter非空时revenue_targets必须展开门店别名后ANY匹配，不能精确相等', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 850000 }] };
+      return { rows: [] };
+    },
+  };
+  await revenueRollup(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
+  const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
+  assert.match(targetCall.sql, /store = ANY/);
+  const aliasParam = targetCall.params.find((p) => Array.isArray(p));
+  assert.ok(aliasParam.includes('洪潮久光店'), '应该展开出revenue_targets里实际使用的缩写别名，否则scoped角色查不到任何行');
+});
+
 test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤掉pos_orders里POS原始长名不在范围内的门店', async () => {
   const pool = makeMultiStorePool({
     dailyRows: [
