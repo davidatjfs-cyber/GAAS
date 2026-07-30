@@ -118,9 +118,18 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
 // 只对admin/hq_manager角色额外拼这份"食安cc视图"，其他角色只看 getMyOpenTasks()。
 const WS_FOOD_SAFETY_CC_ROLES = ['admin', 'hq_manager'];
 
+// 2026-07-30 追加：业务方确认"本周/本月运营周报"要保留，且需要抄送总部经理/管理员。
+// 已核实这份周报本身只是聚合展示——它汇总的每一项异常(revenue_achievement/
+// labor_efficiency/table_visit_*/bad_review_*/recharge_zero)在触发时已经由
+// agents-service-v2 的 anomaly-notify-pipeline.js 各自建了带真实责任人的任务(category=
+// 具体异常键，走 pickPrimaryAssignee 按门店/岗位解析)，不需要这里重新拆分。周报本身
+// (category='weekly_report'/'monthly_evaluation'，source='rhythm_engine')没有
+// assignee——它就是给总部看的汇总，同食安一样走cc视图，不归入"当事人"任务。
+const WS_REPORT_CC_CATEGORIES = ['weekly_report', 'monthly_evaluation'];
+
 /**
- * 食品安全类任务的「抄送视图」：不是"指派给我"的任务，是总部经理/管理员按业务规则
- * 需要被抄送知晓的食安异常，不含其它任务类型（那些只归当事人）。
+ * cc 视图：不是"指派给我"的任务，是总部经理/管理员按业务规则需要被抄送知晓的内容——
+ * 食品安全异常 + 运营周报/月评，不含其它任务类型（那些只归当事人）。
  */
 export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
@@ -129,9 +138,12 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
        FROM master_tasks
       WHERE tenant_id = $1
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
-        AND (category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')
+        AND (
+          category ILIKE '%food_safety%' OR category ILIKE '%food_quality%'
+          OR category = ANY($3)
+        )
       ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim]
+    [tenantId, lim, WS_REPORT_CC_CATEGORIES]
   );
   return r.rows || [];
 }

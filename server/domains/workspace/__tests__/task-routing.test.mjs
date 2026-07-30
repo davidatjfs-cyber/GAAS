@@ -1,6 +1,6 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkspaceHome, getPendingConfirmations } from '../service.js';
+import { getWorkspaceHome, getPendingConfirmations, getNotableOpenTasks } from '../service.js';
 
 // 2026-07-30：业务方确认的任务路由规则——只有食品安全类任务需要抄送总部经理/管理员，
 // 其余全部只归当事人(assignee_username)。这里锁定：非食安cc角色只看自己的任务，
@@ -69,6 +69,21 @@ test('cc视图返回的任务带 _ccOnly 标记，我自己的任务不带', asy
   const byId = Object.fromEntries(data.myTasks.map((t) => [t.task_id, t]));
   assert.equal(byId['my-1']._ccOnly, undefined);
   assert.equal(byId['fs-1']._ccOnly, true);
+});
+
+test('getNotableOpenTasks 的cc视图查询同时覆盖食安类目和运营周报/月评类目', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  await getNotableOpenTasks(pool, 'default');
+  const { sql, params } = calls[0];
+  assert.match(sql, /food_safety/);
+  assert.match(sql, /category = ANY/);
+  assert.deepEqual(params[2], ['weekly_report', 'monthly_evaluation']);
 });
 
 describe('getPendingConfirmations', () => {

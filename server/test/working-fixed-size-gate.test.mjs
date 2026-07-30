@@ -126,8 +126,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * ② "待确认的任务反馈"里之前直接显示assignee_username(如nnyxyf26)，改成JOIN employees
  * 显示真实姓名(assignee_name)；③ .ws-card__desc补overflow-wrap:anywhere，避免飞书记录号
  * 这类长十六进制串撑出横向溢出。
+ * 2026-07-30 第二十二次上调（70718→70723）：业务方确认"本周/本月运营周报"保留，且需要
+ * 抄送总部经理/管理员——周报汇总的每项异常(营收达成/人效/桌访系列/差评系列等)触发时
+ * 已经由agents-service-v2的anomaly-notify-pipeline.js各自建了带真实责任人的任务，周报
+ * 本身没有单独责任人，cc视图收窄查询里加上category IN (weekly_report,
+ * monthly_evaluation)；前端_ccOnly文案按类目区分：食安显示"仅同步知悉，由责任人处理"，
+ * 周报/月评显示"运营汇总，仅供查阅"（不能说"由责任人处理"，周报本来就没有单独责任人）。
  */
-const MAX_LINES = 70718;
+const MAX_LINES = 70723;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -271,12 +271,17 @@ function wsRenderTaskCard(task, opts) {
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
     const isPendingReview = task.status === 'pending_review';
-    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道
-    // （目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——不能
-    // 展示"提交完成证据"这类操作按钮，那是给真正的责任人用的。
+    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道——
+    // 食品安全类：仅hq_manager可判罚处理，管理员只是同步知悉，实际责任人是别人；
+    // weekly_report/monthly_evaluation：运营周报/月评本身就是给总部看的汇总，没有单独
+    // 的责任人（周报里汇总的每项异常已经各自建了带真实责任人的任务），文案不能说"由责任人
+    // 处理"，改成"运营汇总，仅供查阅"。都不展示"提交完成证据"这类操作按钮。
     const isCcOnly = !!task._ccOnly;
+    const isReportCc = isCcOnly && (task.category === 'weekly_report' || task.category === 'monthly_evaluation');
     let actsHtml;
-    if (isCcOnly) {
+    if (isReportCc) {
+        actsHtml = '<span class="ws-tag">运营汇总，仅供查阅</span>';
+    } else if (isCcOnly) {
         actsHtml = '<span class="ws-tag">仅同步知悉，由责任人处理</span>';
     } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
