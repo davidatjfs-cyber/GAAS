@@ -119,8 +119,31 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 实收目标改成往前找最近已配置period(不再要求当月精确匹配)、人效排名取整数、门店下拉框
  * 改用真实门店台账而不是master_tasks里的脏文本、新增GET /api/notifications真实列表接口
  * 接入"通知"tab（之前只有未读数没有列表）。
+ * 2026-07-30 第二十一次上调（70687→70718）：① 任务详情(task.detail)之前原样dump成一个
+ * <div>，食品安全类任务detail能有几百字，字面**加粗**标记不生效只显示星号，卡片被撑得
+ * 很长、操作按钮被挤到很下面——新增 wsFormatTaskDetail()：**text**转真正<strong>，超过
+ * 120字用原生<details>/<summary>折叠（同一套模式09-resignation.js的ack-details已在用）；
+ * ② "待确认的任务反馈"里之前直接显示assignee_username(如nnyxyf26)，改成JOIN employees
+ * 显示真实姓名(assignee_name)；③ .ws-card__desc补overflow-wrap:anywhere，避免飞书记录号
+ * 这类长十六进制串撑出横向溢出。
+ * 2026-07-30 第二十二次上调（70718→70723）：业务方确认"本周/本月运营周报"保留，且需要
+ * 抄送总部经理/管理员——周报汇总的每项异常(营收达成/人效/桌访系列/差评系列等)触发时
+ * 已经由agents-service-v2的anomaly-notify-pipeline.js各自建了带真实责任人的任务，周报
+ * 本身没有单独责任人，cc视图收窄查询里加上category IN (weekly_report,
+ * monthly_evaluation)；前端_ccOnly文案按类目区分：食安显示"仅同步知悉，由责任人处理"，
+ * 周报/月评显示"运营汇总，仅供查阅"（不能说"由责任人处理"，周报本来就没有单独责任人）。
+ * 2026-07-30 第二十三次上调（70723→70868）：一批用户实测反馈的修复——① 门店红绿灯
+ * "无评级"：恢复被2026-04误停的月度门店评级计算调度（详见performance-jobs.js）；
+ * ② 8大AI督导指挥中心的记录加点击展开详情（状态流转+证据+审核记录），之前closed等
+ * 状态点了没反应；③ 门店营销活动建议加长文本折叠 + 执行/忽略操作（复用增长看板同一套
+ * /api/growth/actions/:key/execute与/ignore接口）；④ "今日营收"改成"昨日营收"（当天
+ * 日报几乎总是还没出，显示今日会永远是¥0且环比永远-100%）；本周/本月"至今"的统计口径
+ * 也从锚定today改成锚定yesterday，避免用still-zero的"今天"把当周/当月拉低、制造假环比；
+ * ⑤ 客流量/客单价/桌均/堂食外卖占比/就餐人数分布从全范围聚合成一个数字改成按单店返回
+ * 数组分别展示；堂食/外卖占比的数据源从pos_orders现数订单条数改成daily_reports本来就有
+ * 的dine_orders/delivery_orders权威字段（业务方指出"数据都在营业日报里"）。
  */
-const MAX_LINES = 70687;
+const MAX_LINES = 70868;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

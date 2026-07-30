@@ -64,38 +64,53 @@ function storeFilterClause(storeFilter, paramIndex, column = 'store') {
   return { sql: ` AND ${column} = ANY($${paramIndex})`, param: storeFilter };
 }
 
-async function revenueRollup(pool, tenantId, today, storeFilter) {
+export async function revenueRollup(pool, tenantId, today, storeFilter) {
   const yesterday = addDays(today, -1);
-  const weekStart = mondayOf(today);
-  const weekStartLW = addDays(weekStart, -7);
-  // 2026-07-29 修复：之前 weekEndLW 固定是"上周日"（上周整周），但 week_revenue 是
-  // "本周一到今天"（本周至今，可能只过了几天）——本周部分周期 vs 上周整周，同比基数对不上，
-  // 用户反馈"周三时不该拿本周一到周三跟上周一整周比"。改成"上周同样长度"：上周一 + 本周已经
-  // 过去的天数，跟月度同理。
-  const weekEndLW = addDays(weekStartLW, diffDays(today, weekStart));
-  const monthStart = monthStartOf(today);
-  const monthStartLM = monthStartOf(addDays(monthStart, -1));
-  const monthEndLM = addDays(monthStartLM, diffDays(today, monthStart));
-  const todayLY = addYears(today, -1);
-  const weekStartLY = addYears(weekStart, -1);
-  const weekEndLY = addYears(today, -1);
-  const monthStartLY = addYears(monthStart, -1);
-  const monthEndLY = addYears(today, -1);
+  // 2026-07-30 修复：之前"今日营收"字面锚在today——但当天日报几乎总是还没出（daily_reports
+  // 里"今天"这一行往往要到当天结束才会有），业务方要求直接改成"昨日营收"（最近一个已经
+  // 完整出报的自然日），同环比也都跟着改成"前天"/"去年昨日同天"。
+  // 同理：之前"本周至今" week_revenue 的区间是"本周一到today"，today这一天几乎总是0，
+  // 会把本周拉低、制造假的"环比下跌"（实测：周三查看时，因为周三当天还没出报，被误判成
+  // 只有"周一+周二"两天的营收去跟上周一整周比，环比显示大跌，其实只是数据还没来）。
+  // 2026-07-29 那次修复只把对比区间"长度"对齐了（上周同样天数），但当前区间的结束日
+  // 仍然是today，没有解决"今天必然是0"这个根本问题。这次改成两头都锚定在"昨天"：
+  // 本周至今 = 本周一 ~ 昨天，上周同期 = 上周一 ~ (上周一+同样天数)。
+  const dayBeforeYesterday = addDays(today, -2);
+  const yesterdayLY = addYears(yesterday, -1);
 
-  const revParams = [tenantId, today, yesterday, todayLY, weekStart, weekStartLW, weekEndLW, weekStartLY, weekEndLY, monthStart, monthStartLM, monthEndLM, monthStartLY, monthEndLY];
+  const weekStart = mondayOf(today);
+  // 到"昨天"为止本周已经完整过了几天；如果今天是周一，昨天(周日)还在上周，本周至今是0天
+  // （SQL端用 date >= weekStart AND date <= weekEnd 在 weekEnd 传 null 时天然不命中任何行，
+  // 不需要额外分支处理，COALESCE 会正确退化成0）。
+  const weekElapsed = diffDays(yesterday, weekStart) + 1;
+  const weekEnd = weekElapsed > 0 ? yesterday : null;
+  const weekStartLW = addDays(weekStart, -7);
+  const weekEndLW = weekElapsed > 0 ? addDays(weekStartLW, weekElapsed - 1) : null;
+  const weekStartLY = addYears(weekStart, -1);
+  const weekEndLY = weekEnd ? addYears(weekEnd, -1) : null;
+
+  const monthStart = monthStartOf(today);
+  const monthElapsed = diffDays(yesterday, monthStart) + 1;
+  const monthEnd = monthElapsed > 0 ? yesterday : null;
+  const monthStartLM = monthStartOf(addDays(monthStart, -1));
+  const monthEndLM = monthElapsed > 0 ? addDays(monthStartLM, monthElapsed - 1) : null;
+  const monthStartLY = addYears(monthStart, -1);
+  const monthEndLY = monthEnd ? addYears(monthEnd, -1) : null;
+
+  const revParams = [tenantId, yesterday, dayBeforeYesterday, yesterdayLY, weekStart, weekEnd, weekStartLW, weekEndLW, weekStartLY, weekEndLY, monthStart, monthEnd, monthStartLM, monthEndLM, monthStartLY, monthEndLY];
   const revFilter = storeFilterClause(storeFilter, revParams.length + 1);
   if (revFilter.param) revParams.push(revFilter.param);
   const r = await pool.query(
     `SELECT
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $2), 0) AS today_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $3), 0) AS yesterday_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $4), 0) AS today_ly_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $5 AND date <= $2), 0) AS week_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $6 AND date <= $7), 0) AS week_lw_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $8 AND date <= $9), 0) AS week_ly_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $10 AND date <= $2), 0) AS month_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $11 AND date <= $12), 0) AS month_lm_revenue,
-        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $13 AND date <= $14), 0) AS month_ly_revenue
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $2), 0) AS yesterday_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $3), 0) AS day_before_yesterday_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date = $4), 0) AS yesterday_ly_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $5 AND date <= $6), 0) AS week_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $7 AND date <= $8), 0) AS week_lw_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $9 AND date <= $10), 0) AS week_ly_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $11 AND date <= $12), 0) AS month_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $13 AND date <= $14), 0) AS month_lm_revenue,
+        COALESCE(SUM(actual_revenue) FILTER (WHERE date >= $15 AND date <= $16), 0) AS month_ly_revenue
        FROM daily_reports
       WHERE tenant_id = $1${revFilter.sql}`,
     revParams
@@ -121,12 +136,16 @@ async function revenueRollup(pool, tenantId, today, storeFilter) {
 
   const [y, m] = today.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
-  const elapsedDays = Number(today.slice(8, 10));
-  const theoreticalAchievementRate = Number(((elapsedDays / daysInMonth) * 100).toFixed(1));
+  // 理论达成率的"已过天数"也跟着 month_revenue 的真实统计口径改成 monthElapsed（到昨天为止
+  // 本月过了几天），不能再用 today 当天的日期数字——否则理论/实际两边的"分母天数"不一致。
+  const theoreticalAchievementRate = Number(((Math.max(0, monthElapsed) / daysInMonth) * 100).toFixed(1));
   const actualAchievementRate = targetRevenue > 0 ? Number(((Number(row.month_revenue) / targetRevenue) * 100).toFixed(1)) : null;
 
   return {
-    today: { revenue: Number(row.today_revenue), mom: pctChange(row.today_revenue, row.yesterday_revenue), yoy: pctChange(row.today_revenue, row.today_ly_revenue) },
+    // 2026-07-30：按业务方要求，首页"今日营收"改成"昨日营收"（当天日报几乎总是还没出，
+    // 显示今日会永远是¥0且环比永远-100%，误导性极强）。字段名跟着改成 yesterday，
+    // mom=跟前天比，yoy=跟去年同一天比。
+    yesterday: { revenue: Number(row.yesterday_revenue), mom: pctChange(row.yesterday_revenue, row.day_before_yesterday_revenue), yoy: pctChange(row.yesterday_revenue, row.yesterday_ly_revenue) },
     week: { revenue: Number(row.week_revenue), mom: pctChange(row.week_revenue, row.week_lw_revenue), yoy: pctChange(row.week_revenue, row.week_ly_revenue) },
     month: { revenue: Number(row.month_revenue), mom: pctChange(row.month_revenue, row.month_lm_revenue), yoy: pctChange(row.month_revenue, row.month_ly_revenue) },
     target: {
@@ -156,72 +175,89 @@ async function marginTracking(pool, tenantId, today, storeFilter) {
   return { actualMargin, targetMargin };
 }
 
-async function operationalMetrics(pool, tenantId, today, storeFilter) {
+/**
+ * 2026-07-30 修复：① 之前全租户/全范围聚合成一个数字，用户明确要求"客流量/客单价/桌均/
+ * 堂食外卖占比/就餐人数分布"必须按单店显示，否则看不出具体哪家店有问题——改成 GROUP BY
+ * store 返回每店一条。② 堂食/外卖占比之前用 pos_orders.order_type 现数订单条数算，用户
+ * 指出"数据都在营业日报里"——daily_reports 本来就有 dine_orders/delivery_orders 这两个
+ * 权威字段（人工日报口径，跟营收目标同一份数据源），改成从这里取，不再用pos_orders现数。
+ * 就餐人数分布(diners分桶)daily_reports没有对应字段，只能继续用pos_orders——但也补了
+ * GROUP BY store_name做到按店。
+ */
+export async function operationalMetrics(pool, tenantId, today, storeFilter) {
+  // 同 revenueRollup 的修复——"本月至今"锚点从 today 改成 yesterday（今天的日报/POS当天
+  // 数据几乎总是还没走完，锚在today会把当月拉低出现假环比）。
+  const yesterday = addDays(today, -1);
   const monthStart = monthStartOf(today);
+  const monthElapsed = diffDays(yesterday, monthStart) + 1;
+  const monthEnd = monthElapsed > 0 ? yesterday : null;
   const monthStartLM = monthStartOf(addDays(monthStart, -1));
-  // 同 revenueRollup 的修复：上月对比区间要跟"本月至今"天数对齐，不能拿本月未过完的天数
-  // 去跟上月整月比。
-  const monthEndLM = addDays(monthStartLM, diffDays(today, monthStart));
+  const monthEndLM = monthElapsed > 0 ? addDays(monthStartLM, monthElapsed - 1) : null;
   const monthStartLY = addYears(monthStart, -1);
-  const monthEndLY = addYears(today, -1);
+  const monthEndLY = monthEnd ? addYears(monthEnd, -1) : null;
 
-  const opParams = [tenantId, monthStart, today, monthStartLM, monthEndLM, monthStartLY, monthEndLY];
+  const opParams = [tenantId, monthStart, monthEnd, monthStartLM, monthEndLM, monthStartLY, monthEndLY];
   const opFilter = storeFilterClause(storeFilter, opParams.length + 1);
   if (opFilter.param) opParams.push(opFilter.param);
   const r = await pool.query(
-    `SELECT
+    `SELECT store,
         COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $2 AND date <= $3), 0) AS traffic,
         COALESCE(SUM(dine_revenue) FILTER (WHERE date >= $2 AND date <= $3), 0) AS dine_revenue,
         COALESCE(SUM(dine_orders) FILTER (WHERE date >= $2 AND date <= $3), 0) AS dine_orders,
+        COALESCE(SUM(delivery_orders) FILTER (WHERE date >= $2 AND date <= $3), 0) AS delivery_orders,
         COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $4 AND date <= $5), 0) AS traffic_lm,
         COALESCE(SUM(dine_traffic) FILTER (WHERE date >= $6 AND date <= $7), 0) AS traffic_ly
        FROM daily_reports
-      WHERE tenant_id = $1${opFilter.sql}`,
+      WHERE tenant_id = $1${opFilter.sql}
+      GROUP BY store`,
     opParams
   );
-  const row = r.rows[0] || {};
-  const traffic = Number(row.traffic);
-  const dineRevenue = Number(row.dine_revenue);
-  const dineOrders = Number(row.dine_orders);
 
-  const posParams = [tenantId, monthStart, today];
+  const posParams = [tenantId, monthStart, monthEnd];
   const posFilter = storeFilterClause(storeFilter, posParams.length + 1, 'store_name');
   if (posFilter.param) posParams.push(posFilter.param);
   const posR = await pool.query(
-    `SELECT
-        COUNT(*) FILTER (WHERE order_type = '堂食') AS dine_cnt,
-        COUNT(*) FILTER (WHERE order_type = '外卖') AS delivery_cnt,
-        COUNT(*) AS total_cnt,
+    `SELECT store_name AS store,
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners = 1) AS p1,
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners = 2) AS p2,
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners BETWEEN 3 AND 4) AS p3_4,
         COUNT(*) FILTER (WHERE order_type = '堂食' AND diners BETWEEN 5 AND 6) AS p5_6,
-        COUNT(*) FILTER (WHERE order_type = '堂食' AND diners > 6) AS p6plus
+        COUNT(*) FILTER (WHERE order_type = '堂食' AND diners > 6) AS p6plus,
+        COUNT(*) FILTER (WHERE order_type = '堂食') AS dine_party_cnt
        FROM pos_orders
-      WHERE tenant_id = $1 AND biz_date >= $2 AND biz_date <= $3${posFilter.sql}`,
+      WHERE tenant_id = $1 AND biz_date >= $2 AND biz_date <= $3${posFilter.sql}
+      GROUP BY store_name`,
     posParams
   );
-  const posRow = posR.rows[0] || {};
-  const totalCnt = Number(posRow.total_cnt) || 0;
-  const dinePartyTotal = Number(posRow.dine_cnt) || 0;
-  const pct = (n) => (dinePartyTotal > 0 ? Number(((Number(n) / dinePartyTotal) * 100).toFixed(1)) : null);
+  const posByStore = new Map((posR.rows || []).map((row) => [row.store, row]));
 
-  return {
-    traffic,
-    trafficMom: pctChange(traffic, row.traffic_lm),
-    trafficYoy: pctChange(traffic, row.traffic_ly),
-    avgSpendPerGuest: traffic > 0 ? Number((dineRevenue / traffic).toFixed(2)) : null,
-    avgSpendPerTable: dineOrders > 0 ? Number((dineRevenue / dineOrders).toFixed(2)) : null,
-    dineInSharePct: totalCnt > 0 ? Number(((Number(posRow.dine_cnt) / totalCnt) * 100).toFixed(1)) : null,
-    deliverySharePct: totalCnt > 0 ? Number(((Number(posRow.delivery_cnt) / totalCnt) * 100).toFixed(1)) : null,
-    partySizeSharePct: {
-      p1: pct(posRow.p1),
-      p2: pct(posRow.p2),
-      p3to4: pct(posRow.p3_4),
-      p5to6: pct(posRow.p5_6),
-      p6plus: pct(posRow.p6plus),
-    },
-  };
+  return (r.rows || []).map((row) => {
+    const traffic = Number(row.traffic);
+    const dineRevenue = Number(row.dine_revenue);
+    const dineOrders = Number(row.dine_orders);
+    const deliveryOrders = Number(row.delivery_orders);
+    const totalOrders = dineOrders + deliveryOrders;
+    const posRow = posByStore.get(row.store) || {};
+    const dinePartyTotal = Number(posRow.dine_party_cnt) || 0;
+    const pct = (n) => (dinePartyTotal > 0 ? Number(((Number(n) / dinePartyTotal) * 100).toFixed(1)) : null);
+    return {
+      store: row.store,
+      traffic,
+      trafficMom: pctChange(traffic, row.traffic_lm),
+      trafficYoy: pctChange(traffic, row.traffic_ly),
+      avgSpendPerGuest: traffic > 0 ? Number((dineRevenue / traffic).toFixed(2)) : null,
+      avgSpendPerTable: dineOrders > 0 ? Number((dineRevenue / dineOrders).toFixed(2)) : null,
+      dineInSharePct: totalOrders > 0 ? Number(((dineOrders / totalOrders) * 100).toFixed(1)) : null,
+      deliverySharePct: totalOrders > 0 ? Number(((deliveryOrders / totalOrders) * 100).toFixed(1)) : null,
+      partySizeSharePct: {
+        p1: pct(posRow.p1),
+        p2: pct(posRow.p2),
+        p3to4: pct(posRow.p3_4),
+        p5to6: pct(posRow.p5_6),
+        p6plus: pct(posRow.p6plus),
+      },
+    };
+  });
 }
 
 async function storeRankings(pool, tenantId, today, storeFilter) {

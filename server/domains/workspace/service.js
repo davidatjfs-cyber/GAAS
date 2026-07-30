@@ -109,9 +109,27 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   return r.rows || [];
 }
 
+// 2026-07-30 修复：业务方明确确认任务路由规则——除食品安全类需要抄送总部经理+管理员，
+// 其余全部只发给当事人(assignee_username)。之前这里是"全租户范围、不管是谁的任务全都给
+// 管理员/老板看"，导致 admin/hq_manager/store_manager/出品经理登录后看到完全一样的
+// rhythm_engine 周报、random_inspection 抽查等任务列表——这些任务本该只有各自的责任人
+// 能看到。现在收窄到只有"食品安全"这一类会被 cc 给总部经理/管理员看（category含
+// food_safety/food_quality），其余任务类型不再broadcast给非责任人，getWorkspaceHome()
+// 只对admin/hq_manager角色额外拼这份"食安cc视图"，其他角色只看 getMyOpenTasks()。
+const WS_FOOD_SAFETY_CC_ROLES = ['admin', 'hq_manager'];
+
+// 2026-07-30 追加：业务方确认"本周/本月运营周报"要保留，且需要抄送总部经理/管理员。
+// 已核实这份周报本身只是聚合展示——它汇总的每一项异常(revenue_achievement/
+// labor_efficiency/table_visit_*/bad_review_*/recharge_zero)在触发时已经由
+// agents-service-v2 的 anomaly-notify-pipeline.js 各自建了带真实责任人的任务(category=
+// 具体异常键，走 pickPrimaryAssignee 按门店/岗位解析)，不需要这里重新拆分。周报本身
+// (category='weekly_report'/'monthly_evaluation'，source='rhythm_engine')没有
+// assignee——它就是给总部看的汇总，同食安一样走cc视图，不归入"当事人"任务。
+const WS_REPORT_CC_CATEGORIES = ['weekly_report', 'monthly_evaluation'];
+
 /**
- * 老板/总部视角的「需拍板」任务：不是"指派给我"的任务（那是店长/员工视角），
- * 而是全租户范围内按严重度排序的开放任务，用于驾驶舱/总部工作台的决策卡片。
+ * cc 视图：不是"指派给我"的任务，是总部经理/管理员按业务规则需要被抄送知晓的内容——
+ * 食品安全异常 + 运营周报/月评，不含其它任务类型（那些只归当事人）。
  */
 export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
   const lim = Math.min(20, Math.max(1, Number(limit) || 8));
@@ -120,9 +138,12 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8) {
        FROM master_tasks
       WHERE tenant_id = $1
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected')
-        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$3')}
+        AND (
+          category ILIKE '%food_safety%' OR category ILIKE '%food_quality%'
+          OR category = ANY($3)
+        )
       ORDER BY (severity = 'high') DESC, created_at DESC LIMIT $2`,
-    [tenantId, lim, WS_ALLOWED_TASK_SOURCES]
+    [tenantId, lim, WS_REPORT_CC_CATEGORIES]
   );
   return r.rows || [];
 }
@@ -147,30 +168,51 @@ export async function getUnreadInboxCount(pool, tenantId, username) {
 // 确认的任务列表——目前只有 admin/hq_manager 能发起(promote-dish 限定这两个角色)，所以
 // admin/hq_manager 看全部待确认；其他角色只看自己作为发起人(source_data.promoted_by)的。
 export async function getPendingConfirmations(pool, tenantId, username, role) {
-  const isHQ = ['admin', 'hq_manager'].includes(String(role || ''));
-  const params = [tenantId];
-  let whereExtra = '';
-  if (!isHQ) {
-    params.push(username);
-    whereExtra = ` AND source_data->>'promoted_by' = $${params.length}`;
-  }
+  // 2026-07-30 修复：之前 admin/hq_manager 无条件看到全租户所有 pending_review
+  // （不管这条任务是谁发起/谁该确认），导致"上午巡检"这类跟总部完全无关的任务反馈
+  // 也出现在管理员的确认队列里。跟任务列表的cc规则保持一致：只有食品安全类才允许
+  // admin/hq_manager 越过"我是发起人(promoted_by)"这条限制去确认；其余任务类型，
+  // 哪怕是admin，也只能确认自己发起的那些。
+  const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
+  const params = [tenantId, username];
+  const whereExtra = isFoodSafetyCcRole
+    ? ` AND (t.source_data->>'promoted_by' = $2 OR t.category ILIKE '%food_safety%' OR t.category ILIKE '%food_quality%')`
+    : ` AND t.source_data->>'promoted_by' = $2`;
   const r = await pool.query(
-    `SELECT task_id, title, detail, store, assignee_username, response_text, response_images, responded_at, source_data
-       FROM master_tasks
-      WHERE tenant_id = $1 AND status = 'pending_review'${whereExtra}
-      ORDER BY responded_at DESC LIMIT 30`,
+    `SELECT t.task_id, t.title, t.detail, t.store, t.assignee_username,
+            COALESCE(NULLIF(e.name, ''), t.assignee_username) AS assignee_name,
+            t.response_text, t.response_images, t.responded_at, t.source_data
+       FROM master_tasks t
+       LEFT JOIN employees e
+         ON lower(e.username) = lower(t.assignee_username) AND e.tenant_id = t.tenant_id
+      WHERE t.tenant_id = $1 AND t.status = 'pending_review'${whereExtra}
+      ORDER BY t.responded_at DESC LIMIT 30`,
     params
   );
   return r.rows || [];
 }
 
-export async function getWorkspaceHome(pool, tenantId, username, { scope = 'mine' } = {}) {
-  const [storeSummary, storeLights, tasks, unread] = await Promise.all([
+export async function getWorkspaceHome(pool, tenantId, username, { role = '' } = {}) {
+  const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
+  const [storeSummary, storeLights, myTasks, ccTasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
     getStoreHealthLights(pool, tenantId),
-    scope === 'notable' ? getNotableOpenTasks(pool, tenantId) : getMyOpenTasks(pool, tenantId, username),
+    getMyOpenTasks(pool, tenantId, username),
+    isFoodSafetyCcRole ? getNotableOpenTasks(pool, tenantId) : Promise.resolve([]),
     getUnreadInboxCount(pool, tenantId, username),
   ]);
+  // 去重：如果当前用户本身就是某条食安任务的责任人，getMyOpenTasks 已经包含它，
+  // 不需要在 cc 视图里再出现一次。
+  // 2026-07-30 修复：食安任务本身的处置规则是"仅hq_manager可判罚；管理员仅同步通知"——
+  // cc 视图不是"这个人也要处理"，只是"抄送给他知道"。之前 cc 进来的任务跟真正指派给自己
+  // 的任务用同一个卡片渲染，管理员会看到跟责任人一模一样的"提交完成证据"按钮，显得好像
+  // 自己也要处理，这不对。这里给纯cc（不是自己的责任任务）打上 _ccOnly 标记，前端据此
+  // 渲染成只读的"仅同步知悉"，不出现可操作按钮。
+  const myTaskIds = new Set(myTasks.map((t) => t.task_id));
+  const tasks = [
+    ...myTasks,
+    ...ccTasks.filter((t) => !myTaskIds.has(t.task_id)).map((t) => ({ ...t, _ccOnly: true })),
+  ];
   return { storeSummary, storeLights, myTasks: tasks, unreadCount: unread };
 }
 

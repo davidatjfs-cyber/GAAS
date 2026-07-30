@@ -69335,7 +69335,11 @@ function wsInjectStyles() {
         '.ws-tag{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--ws-accent-soft);color:var(--ws-ink2);}' +
         '.ws-tag--red{background:var(--ws-accent-soft);color:var(--ws-down);} .ws-tag--green{background:var(--ws-accent-soft);color:var(--ws-up);}' +
         '.ws-card__title{font-weight:600;margin-bottom:6px;font-size:14px;color:var(--ws-ink);}' +
-        '.ws-card__desc{font-size:13px;color:var(--ws-ink2);line-height:1.7;margin-bottom:12px;}' +
+        '.ws-card__desc{font-size:13px;color:var(--ws-ink2);line-height:1.7;margin-bottom:12px;overflow-wrap:anywhere;}' +
+        '.ws-detail-collapse summary{cursor:pointer;list-style:none;}' +
+        '.ws-detail-collapse summary::-webkit-details-marker{display:none;}' +
+        '.ws-detail-summary::after{content:" ▾";opacity:.6;}' +
+        '.ws-detail-collapse[open] .ws-detail-summary::after{content:" ▴";}' +
         '.ws-card__acts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}' +
         '.ws-btn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--ws-line);background:var(--ws-card);color:var(--ws-ink);' +
         'border-radius:8px;padding:9px 15px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;min-height:36px;box-sizing:border-box;}' +
@@ -69433,6 +69437,27 @@ async function wsExecuteAction(cardEl, { confirmText, endpoint, method = 'POST',
 
 function wsEsc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// 2026-07-30：食品安全类任务的detail字段本身可以有几百字（数据来源速览+原文摘录+处置说明），
+// 之前原样dump成一个<div>，字面的**加粗**标记不生效只显示星号，长文本又没有折叠，卡片被撑得
+// 很长，操作按钮被挤到很下面看不到。这里补两件事：1) **text** 转成真正的<strong>；
+// 2) 超过阈值的用原生<details>/<summary>折叠（同一套模式在09-resignation.js的
+// ack-details已经在用），不新增inline onclick。
+const WS_DETAIL_COLLAPSE_THRESHOLD = 120;
+function wsFormatTaskDetail(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    const rich = wsEsc(raw).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    if (raw.length <= WS_DETAIL_COLLAPSE_THRESHOLD) {
+        return '<div class="ws-card__desc">' + rich + '</div>';
+    }
+    return (
+        '<details class="ws-detail-collapse">' +
+        '<summary class="ws-card__desc ws-detail-summary">详情（约' + raw.length + '字，点击展开）</summary>' +
+        '<div class="ws-card__desc" style="margin-top:4px;">' + rich + '</div>' +
+        '</details>'
+    );
 }
 
 async function wsFetchJson(url) {
@@ -69536,8 +69561,19 @@ function wsRenderTaskCard(task, opts) {
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
     const isPendingReview = task.status === 'pending_review';
+    // 2026-07-30：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送给他知道——
+    // 食品安全类：仅hq_manager可判罚处理，管理员只是同步知悉，实际责任人是别人；
+    // weekly_report/monthly_evaluation：运营周报/月评本身就是给总部看的汇总，没有单独
+    // 的责任人（周报里汇总的每项异常已经各自建了带真实责任人的任务），文案不能说"由责任人
+    // 处理"，改成"运营汇总，仅供查阅"。都不展示"提交完成证据"这类操作按钮。
+    const isCcOnly = !!task._ccOnly;
+    const isReportCc = isCcOnly && (task.category === 'weekly_report' || task.category === 'monthly_evaluation');
     let actsHtml;
-    if (isGrowthTask) {
+    if (isReportCc) {
+        actsHtml = '<span class="ws-tag">运营汇总，仅供查阅</span>';
+    } else if (isCcOnly) {
+        actsHtml = '<span class="ws-tag">仅同步知悉，由责任人处理</span>';
+    } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
     } else if (isPendingReview) {
         actsHtml = '<span class="ws-tag">已提交，等待确认</span>';
@@ -69548,7 +69584,7 @@ function wsRenderTaskCard(task, opts) {
         '<div class="ws-card" data-task-id="' + wsEsc(task.task_id) + '" data-task-category="' + wsEsc(task.category || '') + '" data-task-source="' + wsEsc(task.source || 'master') + '" data-round-id="' + wsEsc(task.round_id || '') + '">' +
         '<div class="ws-card__tag">' + sevTag + (task.store ? ' <span class="ws-tag">' + wsEsc(task.store) + '</span>' : '') + (isGrowthTask ? ' <span class="ws-tag">经营诊断</span>' : '') + '</div>' +
         '<div class="ws-card__title">' + (showStoreSeparately ? wsEsc(task.store) + ' — ' : '') + wsEsc(titleText) + '</div>' +
-        '<div class="ws-card__desc">' + wsEsc(task.detail || '') + '</div>' +
+        wsFormatTaskDetail(task.detail) +
         '<div class="ws-card__acts">' +
         actsHtml +
         (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
@@ -69681,27 +69717,41 @@ function wsStatRow(label, value, sub) {
 // 2026-07-28 重排：原来营收/客流/人数分布各占一整块 grid，视觉很碎——改成
 // KPI 卡只保留营收今日/本周/本月/目标这4个最重要的数字，其余全部用紧凑的 label-value
 // 单行列表（wsStatRow）呈现，一屏能看完，不再是一堆方块。
+// 2026-07-30：客流量/客单价/桌均/堂食外卖占比/就餐人数分布之前是全范围聚合成一个数字，
+// 用户明确要求按单店显示("否则无法看出问题")——后端operationalMetrics已经改成按店返回
+// 数组，这里改成每店一张卡片，用<details>折叠（多店时页面不会太长）。
+function wsRenderStoreOperationalCard(row) {
+    const p = row.partySizeSharePct || {};
+    const body =
+        wsStatRow('客流量（本月累计）', row.traffic ?? '—', '上月' + wsFmtPct(row.trafficMom) + ' 去年' + wsFmtPct(row.trafficYoy)) +
+        wsStatRow('客单价', '¥' + (row.avgSpendPerGuest ?? '—')) +
+        wsStatRow('桌均', '¥' + (row.avgSpendPerTable ?? '—')) +
+        wsStatRow('堂食 / 外卖占比', (row.dineInSharePct ?? '—') + '% / ' + (row.deliverySharePct ?? '—') + '%') +
+        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%');
+    return (
+        '<details class="ws-detail-collapse" style="margin-bottom:8px;" open>' +
+        '<summary class="ws-section__title ws-detail-summary" style="font-size:14px;margin:0 0 6px;">' + wsEsc(row.store || '未知门店') + '</summary>' +
+        '<div class="ws-stat-list">' + body + '</div>' +
+        '</details>'
+    );
+}
+
 function wsRenderOverview(ov) {
     if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
     const rev = ov.revenue || {};
-    const op = ov.operational || {};
+    const opRows = Array.isArray(ov.operational) ? ov.operational : [];
     const rk = ov.rankings || {};
-    const p = op.partySizeSharePct || {};
     let html = '<div class="ws-kpis">';
-    html += wsRenderOverviewKpi('今日营收', rev.today || {}, '昨天');
+    html += wsRenderOverviewKpi('昨日营收', rev.yesterday || {}, '前天');
     html += wsRenderOverviewKpi('本周营收', rev.week || {}, '上周');
     html += wsRenderOverviewKpi('本月营收', rev.month || {}, '上月');
     html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
         '<div class="ws-kpi__sub">理论 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
     html += '</div>';
 
-    html += '<div class="ws-stat-list">' +
-        wsStatRow('客流量（本月累计）', op.traffic ?? '—', '上月' + wsFmtPct(op.trafficMom) + ' 去年' + wsFmtPct(op.trafficYoy)) +
-        wsStatRow('客单价', '¥' + (op.avgSpendPerGuest ?? '—')) +
-        wsStatRow('桌均', '¥' + (op.avgSpendPerTable ?? '—')) +
-        wsStatRow('堂食 / 外卖占比', (op.dineInSharePct ?? '—') + '% / ' + (op.deliverySharePct ?? '—') + '%') +
-        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%') +
-        '</div>';
+    html += opRows.length
+        ? opRows.map(wsRenderStoreOperationalCard).join('')
+        : '<div class="ws-empty">暂无门店经营明细</div>';
 
     html += '<div class="ws-rank-grid">' +
         wsRenderStoreRankList('营业额排名', rk.byRevenue, (r) => '¥' + wsFmtMoney(r.revenue)) +
@@ -69726,18 +69776,74 @@ function wsRenderOverview(ov) {
     return html;
 }
 
-// ── 门店营销活动建议（每天5条，线下/线上分类是按 action_type 关键词做的近似分类）──
+// ── 门店营销活动建议（数据来自growth_actions，由campaign-autopilot/growth-touch-rules/
+// agent-collaboration等多个触发源各自按自己的条件写入，不是单一固定的"每天几点跑一次"的
+// cron——生成频率跟随实际触发条件变化，"每天5条"只是历史观察到的近似数量，不是保证值）。
+// 线下/线上分类是按 action_type 关键词做的近似分类。
+// 2026-07-30：① 跟任务卡片一样加长文本折叠；② 补"执行/忽略"操作，复用增长看板
+// 已有的 /api/growth/actions/:key/execute 与 /ignore 接口（同一张growth_actions表，
+// 同一套状态机，不新建接口）。
 async function wsRenderMarketingSuggestions() {
     const data = await wsFetchJson('/api/workspace/marketing-suggestions');
     const items = Array.isArray(data?.items) ? data.items : [];
     if (!items.length) return '<div class="ws-empty">近期暂无待执行的营销建议</div>';
     return items.map((it) => (
-        '<div class="ws-card">' +
+        '<div class="ws-card" data-action-key="' + wsEsc(it.actionKey || '') + '">' +
         '<div class="ws-card__tag"><span class="ws-tag">' + (it.channel === 'online' ? '线上' : '线下') + '</span></div>' +
         '<div class="ws-card__title">' + wsEsc(it.store || '') + ' — ' + wsEsc(it.title || '') + '</div>' +
-        '<div class="ws-card__desc">' + wsEsc(it.detail || '') + '</div>' +
+        wsFormatTaskDetail(it.detail) +
+        '<div class="ws-card__acts">' +
+        '<button type="button" class="ws-btn ws-btn--primary" data-ws-marketing-execute="' + wsEsc(it.actionKey || '') + '">执行</button>' +
+        '<button type="button" class="ws-btn" data-ws-marketing-ignore="' + wsEsc(it.actionKey || '') + '">忽略</button>' +
+        '</div>' +
+        '<div class="ws-action-result"></div>' +
         '</div>'
     )).join('');
+}
+
+function wsBindMarketingSuggestionsEvents(root) {
+    root.querySelectorAll('[data-ws-marketing-execute]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const key = btn.getAttribute('data-ws-marketing-execute');
+            const card = btn.closest('.ws-card');
+            const resultEl = card?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/growth/actions/' + encodeURIComponent(key) + '/execute', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({})
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已执行</span>';
+                if (card) card.querySelector('.ws-card__acts')?.remove();
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">执行失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
+    root.querySelectorAll('[data-ws-marketing-ignore]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const key = btn.getAttribute('data-ws-marketing-ignore');
+            const reason = prompt('请输入忽略原因', '当前不适合执行');
+            if (reason === null) return;
+            const card = btn.closest('.ws-card');
+            const resultEl = card?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/growth/actions/' + encodeURIComponent(key) + '/ignore', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ reason })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已忽略</span>';
+                if (card) card.querySelector('.ws-card__acts')?.remove();
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">忽略失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
 }
 
 // ── 差评展示：用户明确要求"滚动浏览"而不是搜索表单——去掉输入框式检索，改成
@@ -70148,6 +70254,11 @@ function wsBindSixToolsEvents(root) {
 
 // ── 8大AI督导指挥中心：内嵌发布框+按钮，状态栏直接同步 agent-task-board 的记录状态，
 // 不跳转到 Agent任务指挥中心整页。
+// 2026-07-30：之前记录只是纯文本行，"closed"这类状态点了没反应，用户看不出这是什么、
+// 什么时候关闭的、有没有人处理过。改成点击展开详情（复用已有的GET /api/agent-task-board/
+// tasks/:id，本来就是同一批admin/hq_manager在用，权限一致），展示状态流转时间线+证据+
+// 审核记录；这个页面本身就只有admin/hq_manager能看到，不是新开权限口子。
+const _wsAtbDetailCache = new Map();
 async function wsLoadAgentBoardList(container) {
     const list = container.querySelector('#ws-atb-list');
     if (!list) return;
@@ -70155,9 +70266,77 @@ async function wsLoadAgentBoardList(container) {
     const items = Array.isArray(data?.tasks) ? data.tasks : (Array.isArray(data?.items) ? data.items : []);
     if (!items.length) { list.innerHTML = '<div class="ws-empty">暂无记录</div>'; return; }
     list.innerHTML = items.map((it) => (
-        '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(it.title || it.content || '') + '</span>' +
-        '<span class="ws-tag">' + wsEsc(it.status || '') + '</span></div>'
+        '<div class="ws-rank-row ws-atb-row" data-atb-task-id="' + wsEsc(it.task_id || it.id || '') + '" style="cursor:pointer;">' +
+        '<span class="ws-rank-row__store">' + wsEsc(it.title || it.content || '') + '</span>' +
+        '<span class="ws-tag">' + wsEsc(it.status || '') + '</span></div>' +
+        '<div class="ws-atb-detail" data-atb-detail-for="' + wsEsc(it.task_id || it.id || '') + '" style="display:none;"></div>'
     )).join('');
+}
+
+function wsFormatAgentBoardDetail(task) {
+    if (!task) return '<div class="ws-card__desc">加载失败或记录不存在</div>';
+    const rows = [];
+    rows.push('<div class="ws-card__desc">' + wsEsc(task.detail || task.content || '（无详情）') + '</div>');
+    if (task.store) rows.push('<div class="ws-card__desc">门店：' + wsEsc(task.store) + '</div>');
+    const events = Array.isArray(task.events) ? task.events : [];
+    if (events.length) {
+        rows.push('<div class="ws-card__desc" style="font-weight:600;margin-top:6px;">状态流转</div>');
+        rows.push(events.map((e) =>
+            '<div class="ws-card__desc" style="margin-bottom:2px;">' +
+            wsEsc(String(e.created_at || '').slice(0, 16).replace('T', ' ')) + ' ' +
+            wsEsc(e.status_before || '') + ' → ' + wsEsc(e.status_after || '') +
+            (e.to_agent ? '（' + wsEsc(e.to_agent) + '）' : '') + '</div>'
+        ).join(''));
+    }
+    const evidences = Array.isArray(task.evidences) ? task.evidences : [];
+    if (evidences.length) {
+        rows.push('<div class="ws-card__desc" style="font-weight:600;margin-top:6px;">提交证据</div>');
+        rows.push(evidences.map((e) =>
+            '<div class="ws-card__desc" style="margin-bottom:2px;">' +
+            wsEsc(String(e.created_at || '').slice(0, 16).replace('T', ' ')) + ' ' +
+            wsEsc(e.submitted_by || '') + '：' + wsEsc(e.content || e.evidence_type || '') + '</div>'
+        ).join(''));
+    }
+    const reviews = Array.isArray(task.reviews) ? task.reviews : [];
+    if (reviews.length) {
+        rows.push('<div class="ws-card__desc" style="font-weight:600;margin-top:6px;">审核记录</div>');
+        rows.push(reviews.map((r) =>
+            '<div class="ws-card__desc" style="margin-bottom:2px;">' +
+            wsEsc(String(r.created_at || '').slice(0, 16).replace('T', ' ')) + ' ' +
+            wsEsc(r.reviewed_by || '') + '：' + wsEsc(r.decision || '') + (r.comment ? '（' + wsEsc(r.comment) + '）' : '') + '</div>'
+        ).join(''));
+    }
+    return rows.join('');
+}
+
+function wsBindAgentBoardListClick(root) {
+    const list = root.querySelector('#ws-atb-list');
+    if (!list || list.dataset.atbClickBound) return;
+    list.dataset.atbClickBound = '1';
+    list.addEventListener('click', async (ev) => {
+        const row = ev.target.closest('.ws-atb-row');
+        if (!row) return;
+        const taskId = row.dataset.atbTaskId;
+        if (!taskId) return;
+        const detailEl = list.querySelector('.ws-atb-detail[data-atb-detail-for="' + CSS.escape(taskId) + '"]');
+        if (!detailEl) return;
+        const isOpen = detailEl.style.display !== 'none';
+        if (isOpen) { detailEl.style.display = 'none'; return; }
+        detailEl.style.display = 'block';
+        if (_wsAtbDetailCache.has(taskId)) {
+            detailEl.innerHTML = _wsAtbDetailCache.get(taskId);
+            return;
+        }
+        detailEl.innerHTML = '<div class="ws-card__desc">加载中...</div>';
+        try {
+            const d = await wsFetchJson('/api/agent-task-board/tasks/' + encodeURIComponent(taskId));
+            const html = wsFormatAgentBoardDetail(d?.task);
+            _wsAtbDetailCache.set(taskId, html);
+            detailEl.innerHTML = html;
+        } catch (e) {
+            detailEl.innerHTML = '<div class="ws-card__desc ws-err">加载失败：' + wsEsc(e?.message || e) + '</div>';
+        }
+    });
 }
 
 function wsRenderAgentCommandCenter() {
@@ -70172,6 +70351,7 @@ function wsRenderAgentCommandCenter() {
 
 function wsBindAgentCommandCenterEvents(root) {
     wsLoadAgentBoardList(root);
+    wsBindAgentBoardListClick(root);
     const btn = root.querySelector('#ws-atb-publish');
     if (!btn) return;
     btn.addEventListener('click', async () => {
@@ -70312,7 +70492,7 @@ function wsRenderPendingConfirmations(items) {
     const cards = items.map((it) => (
         '<div class="ws-card" data-confirm-task-id="' + wsEsc(it.task_id) + '">' +
         '<div class="ws-card__title">' + wsEsc(it.title || '') + (it.store ? ' · ' + wsEsc(it.store) : '') + '</div>' +
-        '<div class="ws-card__desc">👤 ' + wsEsc(it.assignee_username || '') + ' 提交：' + wsEsc(it.response_text || '（无文字说明）') + '</div>' +
+        '<div class="ws-card__desc">👤 ' + wsEsc(it.assignee_name || it.assignee_username || '') + ' 提交：' + wsEsc(it.response_text || '（无文字说明）') + '</div>' +
         (Array.isArray(it.response_images) && it.response_images.length
             ? '<div class="ws-card__desc">' + it.response_images.map((u) => '<a href="' + wsEsc(u) + '" target="_blank" class="ws-btn ws-btn--link">证据文件</a>').join(' ') + '</div>'
             : '') +
@@ -70399,6 +70579,7 @@ async function wsRenderBossOrHq(root, persona) {
     wsBindSixToolsEvents(root);
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
+    wsBindMarketingSuggestionsEvents(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
