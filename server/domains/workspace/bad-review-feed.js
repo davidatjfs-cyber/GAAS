@@ -106,9 +106,14 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
       rating: null,
     }));
 
-    return [...platformItems, ...visitItems]
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, lim);
+    // 2026-07-30 修复：用户反馈"差评展示是否100%导入了"——查证发现平台差评(大众点评/美团/
+    // 饿了吗)和桌访记录各自查了lim条后合并，再统一按日期截断到lim条。桌访记录量远大于平台
+    // 差评（近30天桌访可达数百条，平台差评往往仅个位数到十几条），合并截断后近期桌访记录会
+    // 把平台差评整体挤出列表，造成"看起来没有差评"的假象——不是数据没导入，是被截断挤掉了。
+    // 改成：平台差评全部保留（不占用visitItems的名额），剩余名额留给桌访记录。
+    const visitBudget = Math.max(0, lim - platformItems.length);
+    return [...platformItems, ...visitItems.slice(0, visitBudget)]
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
   } catch (e) {
     log.error({ msg: 'bad_review_feed_failed', err: e?.message || String(e) });
     return [];

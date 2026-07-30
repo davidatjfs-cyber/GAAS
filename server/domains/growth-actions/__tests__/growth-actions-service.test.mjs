@@ -206,7 +206,10 @@ test('assignMarketingActionTask：查询员工时必须带status=\'active\'过�
   assert.match(empCall.sql, /status\s*=\s*'active'/);
 });
 
-test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_username=责任人)并照常真实执行', async () => {
+// 2026-07-30 二次修正：用户明确要求"营销全部手动触发"——点执行只应该把完整方案分配给
+// 责任人，系统不能自动发券/发短信/推送。锁定：assignMarketingActionTask不再调用
+// executeGrowthActionRecord，只把growth_actions标记为'assigned'。
+test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_username=责任人)，不自动执行，只标记assigned', async () => {
   const calls = [];
   let executeGrowthActionRecordCalled = false;
   const ctx = baseCtx({
@@ -216,6 +219,7 @@ test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_
         if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
         if (/FROM employees/.test(sql)) return { rows: [{ username: 'front_a', name: '李四', role: 'front_manager', store: '洪潮大宁久光店' }] };
         if (/INSERT INTO master_tasks/.test(sql)) return { rows: [] };
+        if (/UPDATE growth_actions/.test(sql)) return { rows: [{ action_key: 'AK1', status: 'assigned' }] };
         return { rows: [] };
       },
     },
@@ -230,7 +234,9 @@ test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_
   assert.equal(insertCall.params[4], 'front_a');
   assert.match(insertCall.sql, /'pending_dispatch'/);
   assert.match(insertCall.sql, /'growth_marketing_action'/);
-  assert.ok(executeGrowthActionRecordCalled, '真实的发券/发短信等自动化动作应该照常执行，不因为多了任务分配而跳过');
+  assert.ok(!executeGrowthActionRecordCalled, '不应该再自动发券/发短信，一切必须由责任人手动执行');
+  const updateCall = calls.find((c) => /UPDATE growth_actions/.test(c.sql));
+  assert.match(updateCall.sql, /'assigned'/);
 });
 
 // 2026-07-30：用户反馈"本店未配置店长/前厅主管"——查证生产库growth_actions.store_id
