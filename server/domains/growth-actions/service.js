@@ -208,7 +208,7 @@ export async function executeAction(ctx, tenantId, actionKeyRaw, operator, body)
 // respondToTask/confirmTaskResponse状态机（跟食品安全等任务卡片同一套UI/流程），不新建
 // 一套。系统侧真实的自动化动作(发券/发短信)仍然在这里立即执行(不因为多了任务分配就延迟
 // 触达客户)，只是新增了"责任人确认执行到位"这一层追溯闭环。
-export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, assigneeUsernameRaw, operator, body) {
+export async function assignMarketingActionTask(ctx, tenantId, actionKeyRaw, assigneeUsernameRaw, operator, _body) {
   const actionKey = cleanText(actionKeyRaw, 255);
   const assigneeUsername = cleanText(assigneeUsernameRaw, 80);
   if (!assigneeUsername) return { status: 400, body: { ok: false, error: 'missing_assignee' } };
