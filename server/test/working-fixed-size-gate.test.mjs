@@ -197,8 +197,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-30 第二十八次上调（71163→71215）：用户要求工作台最下方新增"我的绩效"模块
  * （综合得分+执行力/工作态度/工作能力三项进度条+等级徽章）——复用现成的
  * GET /api/agent-scores/me（"我的档案"个人绩效页已经在用同一接口），不新建接口。
+ * 2026-07-30 第二十九次上调（71215→71245）：① admin/hq视角的工作台(wsRenderBossOrHq)
+ * 之前没有"我的绩效"模块——上一轮只加到了店长/出品经理的wsRenderStore()，两条渲染路径
+ * 各自独立维护区块列表，这里补齐；② "餐饮总监"最近查询记录/8大AI督导指挥中心的记录
+ * 补上任务日期(之前只有标题，条数多了根本认不出哪天的)，8大AI督导补状态筛选下拉框
+ * (默认只显示"进行中"，隐藏已结案系列状态，避免历史记录淹没正在处理的任务)。
  */
-const MAX_LINES = 71215;
+const MAX_LINES = 71245;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
