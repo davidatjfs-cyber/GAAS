@@ -187,8 +187,18 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * monthly_margins(毛利)，新增GET /api/workspace/monthly-target-actuals；⑦ 客流量/客单价/
  * 桌均等门店经营明细改成门店选择下拉框驱动，不再是逐店平铺卡片；⑧ 门店营销活动建议
  * 区块本身也包一层details可整体折叠。
+ * 2026-07-30 第二十七次上调（71138→71163）：管理员反馈工作台通知角标一直是0，跟"我的
+ * 档案"看到的数字对不上——大小写问题修过一轮后角标还是0，再查证发现是两边"未读数"的
+ * 定义根本不一样："我的档案"显示的是"今天创建了几条"(todayCount，不看read_at)，工作台
+ * 这边之前是"read_at IS NULL的真未读数"——很多通知几分钟内就被自动ack过，这个口径几乎
+ * 总是0。改成跟"我的档案"完全一致的口径(当天创建数量，Asia/Shanghai时区)；"通知"tab的
+ * 内容也补上/api/announcements(公司公告)的merge，之前只有hrms_user_notifications、
+ * 也没排除*_request类型，跟"我的档案"的内容对不齐。
+ * 2026-07-30 第二十八次上调（71163→71215）：用户要求工作台最下方新增"我的绩效"模块
+ * （综合得分+执行力/工作态度/工作能力三项进度条+等级徽章）——复用现成的
+ * GET /api/agent-scores/me（"我的档案"个人绩效页已经在用同一接口），不新建接口。
  */
-const MAX_LINES = 71138;
+const MAX_LINES = 71215;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
