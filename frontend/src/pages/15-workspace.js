@@ -76,6 +76,19 @@ function wsInjectStyles() {
         '.ws-metric__v{font-family:"Songti SC","STSong",serif;font-size:16px;font-weight:600;}' +
         '.ws-metric__l{font-size:10.5px;color:var(--ws-ink2);margin-top:3px;}' +
         '.ws-metric__s{font-size:10px;color:var(--ws-ink2);margin-top:2px;}' +
+        '.ws-perf-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;}' +
+        '.ws-perf-head__title{font-size:20px;font-weight:700;color:var(--ws-ink);}' +
+        '.ws-perf-head__sub{font-size:12.5px;color:var(--ws-ink2);}' +
+        '.ws-perf-score{display:flex;align-items:baseline;gap:10px;margin-bottom:20px;}' +
+        '.ws-perf-score__n{font-size:40px;font-weight:800;color:var(--ws-accent);line-height:1;}' +
+        '.ws-perf-score__l{font-size:12.5px;color:var(--ws-ink2);}' +
+        '.ws-perf-row{display:flex;align-items:center;gap:12px;margin-bottom:16px;}' +
+        '.ws-perf-row__label{width:64px;flex:none;font-size:13px;color:var(--ws-ink);}' +
+        '.ws-perf-row__bar{flex:1;height:6px;border-radius:3px;background:var(--ws-line);overflow:hidden;}' +
+        '.ws-perf-row__fill{height:100%;border-radius:3px;}' +
+        '.ws-perf-row__fill--up{background:var(--ws-up);} .ws-perf-row__fill--warn{background:var(--ws-warn);} .ws-perf-row__fill--down{background:var(--ws-down);}' +
+        '.ws-perf-badge{flex:none;width:38px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;}' +
+        '.ws-perf-badge--up{background:rgba(134,201,162,.18);color:var(--ws-up);} .ws-perf-badge--warn{background:rgba(207,161,74,.18);color:var(--ws-warn);} .ws-perf-badge--down{background:rgba(229,139,152,.22);color:var(--ws-down);}' +
         '.ws-stat-list{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:12px;padding:4px 14px;margin-bottom:12px;}' +
         '.ws-stat-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--ws-line);font-size:12.5px;}' +
         '.ws-stat-row:last-child{border-bottom:none;}' +
@@ -1285,13 +1298,38 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
         // 2026-07-29：用户明确要求admin/hq_manager/store_manager/出品经理今后不再用"我的档案"
         // 模块，通知必须在工作台里就能看全——接现成的 GET /api/notifications 真实列表接口
         // （之前只有未读数，没有列表），点开即标记已读。
+        // 2026-07-30：用户反馈这里的内容跟"我的档案"的"公司通知"对不上——查证09-resignation.js
+        // #renderProfileNotifications发现"我的档案"实际merge了两个来源：hrms_user_notifications
+        // (排除*_request类型，那些是审批类，走"待批"tab不是通知) + /api/announcements(公司公告，
+        // 完全独立的广播表，不挂在target_username下)，这里之前只查了前者、且没排除*_request，
+        // 内容跟"我的档案"对不齐。改成同样merge两个来源、同样排除*_request类型，两边才是
+        // 真正"同一份数据"，不是看起来像但细节不同的两套查询。
         pane.innerHTML = '<div class="ws-loading">加载中...</div>';
-        wsFetchJson('/api/notifications?limit=30').then((data) => {
-            const items = Array.isArray(data?.items) ? data.items : [];
+        Promise.all([
+            wsFetchJson('/api/notifications?limit=30'),
+            wsFetchJson('/api/announcements'),
+        ]).then(([notifData, annData]) => {
+            const notifItems = (Array.isArray(notifData?.items) ? notifData.items : [])
+                .filter((n) => !String(n.type || '').trim().endsWith('_request'))
+                .map((n) => ({ ...n, _src: 'notif' }));
+            const annItems = (Array.isArray(annData?.items) ? annData.items : [])
+                .filter((a) => {
+                    const scope = a.scope || { type: 'all' };
+                    const t = String(scope.type || 'all');
+                    if (t === 'all') return true;
+                    if (t === 'hq') return String(currentUser?.store || '') === '总部';
+                    if (t === 'store') return String(scope.store || '') === String(currentUser?.store || currentUser?.current_store || '');
+                    return false;
+                })
+                .map((a) => ({
+                    id: a.id, title: a.title || '公司公告', message: a.content || '',
+                    created_at: a.createdAt || a.created_at, read_at: null, _src: 'announcement',
+                }));
+            const items = [...notifItems, ...annItems].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
             if (!items.length) { pane.innerHTML = '<div class="ws-empty">暂无通知</div>'; return; }
             pane.innerHTML = items.map((n) => (
-                '<div class="ws-card" data-notif-id="' + wsEsc(n.id) + '" style="' + (n.read_at ? 'opacity:.6;' : '') + '">' +
-                '<div class="ws-card__title">' + (n.read_at ? '' : '<span class="ws-tag ws-tag--red" style="margin-right:6px;">未读</span>') + wsEsc(n.title || '') + '</div>' +
+                '<div class="ws-card"' + (n._src === 'notif' ? ' data-notif-id="' + wsEsc(n.id) + '"' : '') + ' style="' + (n.read_at ? 'opacity:.6;' : '') + '">' +
+                '<div class="ws-card__title">' + (n.read_at || n._src === 'announcement' ? '' : '<span class="ws-tag ws-tag--red" style="margin-right:6px;">未读</span>') + wsEsc(n.title || '') + '</div>' +
                 '<div class="ws-card__desc">' + wsEsc(n.message || '') + '</div>' +
                 '<div class="ws-card__desc" style="font-size:11px;opacity:.6;">' + wsEsc(String(n.created_at || '').slice(0, 16).replace('T', ' ')) + '</div>' +
                 '</div>'
@@ -1653,6 +1691,11 @@ async function wsRenderStore(root) {
     html += wsSection('员工绩效', wsRenderEmployeePerformanceList(overview?.team));
     html += wsSection('员工培训看板', '<div id="ws-training-board"><div class="ws-loading">加载中...</div></div>');
     html += wsSection('厨房打点看板', '<div id="ws-kitchen-board"><div class="ws-loading">加载中...</div></div>');
+    // 2026-07-30：用户要求工作台最下方加"我的绩效"模块（综合得分+执行力/工作态度/工作能力
+    // 三项进度条+等级徽章）——复用现成的 GET /api/agent-scores/me（09-resignation.js的"我的
+    // 档案"个人绩效页已经在用同一个接口，字段现成：total_score/execution_rating/
+    // attitude_rating/ability_rating），不新建接口。
+    html += wsSection('我的绩效', '<div id="ws-my-performance"><div class="ws-loading">加载中...</div></div>');
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
@@ -1678,6 +1721,40 @@ async function wsRenderStore(root) {
         });
         wsRenderTargetTracking(overview, store).then((h) => { const el = document.getElementById('ws-target-tracking'); if (el) el.innerHTML = h; });
     }
+    wsFetchJson('/api/agent-scores/me').then((data) => {
+        const el = document.getElementById('ws-my-performance');
+        if (el) el.innerHTML = wsRenderMyPerformance(data);
+    });
+}
+
+// 等级字母(A/B/C/D)映射进度条百分比+配色——D/C/B/A 依次对应 --ws-down(粉)/--ws-warn(金)/
+// --ws-up(绿)，跟门店红绿灯(ws-light--green/yellow/red)是同一套语义色，不新发明一套颜色。
+const WS_PERF_GRADE = {
+    A: { pct: 95, cls: 'up' }, B: { pct: 75, cls: 'up' },
+    C: { pct: 55, cls: 'warn' }, D: { pct: 30, cls: 'down' },
+};
+function wsRenderPerfRow(label, grade) {
+    const g = WS_PERF_GRADE[grade] || null;
+    const pct = g ? g.pct : 0;
+    const cls = g ? g.cls : 'ink2';
+    return (
+        '<div class="ws-perf-row">' +
+        '<div class="ws-perf-row__label">' + wsEsc(label) + '</div>' +
+        '<div class="ws-perf-row__bar"><div class="ws-perf-row__fill ws-perf-row__fill--' + cls + '" style="width:' + pct + '%;"></div></div>' +
+        '<div class="ws-perf-badge ws-perf-badge--' + cls + '">' + wsEsc(grade || '—') + '</div>' +
+        '</div>'
+    );
+}
+function wsRenderMyPerformance(data) {
+    if (!data || data.error) return '<div class="ws-empty">暂无绩效数据</div>';
+    const score = data.total_score;
+    return (
+        '<div class="ws-perf-head"><span class="ws-perf-head__title">绩效</span><span class="ws-perf-head__sub">上级评定</span></div>' +
+        '<div class="ws-perf-score"><span class="ws-perf-score__n">' + (score ?? '—') + '</span><span class="ws-perf-score__l">综合得分</span></div>' +
+        wsRenderPerfRow('执行力', data.execution_rating) +
+        wsRenderPerfRow('工作态度', data.attitude_rating) +
+        wsRenderPerfRow('工作能力', data.ability_rating)
+    );
 }
 
 // ── 员工工作台 ──

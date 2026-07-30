@@ -201,13 +201,22 @@ export async function resolveFoodSafetyTask(pool, tenantId, { taskId, reviewerUs
   return { ok: true };
 }
 
-// 2026-07-30 修复：出品经理/店长反馈工作台通知栏/任务角标一直是0，跟"我的档案"里能看到的
-// 通知不一致——查证生产库发现 target_username 大小写不统一（如 NNYXWSB39 vs 登录用户名
-// nnyxwsb39），"我的档案"走的 listMyNotifications() 一直用 lower() 做大小写不敏感匹配，
-// 这里之前是大小写敏感的精确匹配，同一个人两处查出来的结果不一致。改成同样用 lower()。
+// 2026-07-30 第一次修复：出品经理/店长反馈工作台通知栏/任务角标一直是0，跟"我的档案"里
+// 能看到的通知不一致——查证生产库发现 target_username 大小写不统一（如 NNYXWSB39 vs 登录
+// 用户名 nnyxwsb39），"我的档案"走的 listMyNotifications() 一直用 lower() 做大小写不敏感
+// 匹配，这里之前是大小写敏感的精确匹配，同一个人两处查出来的结果不一致。改成同样用 lower()。
+// 2026-07-30 第二次修复：大小写改对之后角标还是0——再查证发现是两边对"未读"的定义根本不
+// 一样："我的档案"(09-resignation.js#renderProfileNotifications)的角标显示的是"今天创建了
+// 几条"(todayCount，按createdAt日期算，不看read_at)，这里之前是"read_at IS NULL的真未读
+// 数"——很多通知几分钟内就被自动ack/已读(比如打开过一次工作台/档案页就会调用ack接口)，
+// 导致这个"真未读"定义几乎总是0，而"我的档案"的"今天N条"定义还是非零，两边看起来数字对
+// 不上。这里改成跟"我的档案"完全一致的口径：当天创建的通知数量，不看read_at，才能真正
+// "看到同一个数字"。
 export async function getUnreadInboxCount(pool, tenantId, username) {
   const r = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM hrms_user_notifications WHERE tenant_id = $1 AND lower(target_username) = lower($2) AND read_at IS NULL`,
+    `SELECT COUNT(*)::int AS n FROM hrms_user_notifications
+      WHERE tenant_id = $1 AND lower(target_username) = lower($2)
+        AND (created_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date`,
     [tenantId, username]
   ).catch((e) => {
     // 兼容旧库无 read_at 列
