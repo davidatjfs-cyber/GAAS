@@ -172,8 +172,23 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * /forecast.html单独加精确匹配location改成SAMEORIGIN(nginx配置改动，不在本仓库版本
  * 控制范围内，另行记录于部署记录)；⑨ 各区块(差评展示/当月目标追踪/员工绩效/培训看板/
  * 厨房打点看板等)统一包成details/summary可折叠，默认展开。
+ * 2026-07-30 第二十六次上调（71018→71138）：用户实测反馈"任务栏是要清空的队列，不是
+ * 展示区"及一批数据/UI问题——① 任务栏各类完成动作(提交证据/批准/确认收到/判罚)成功后
+ * 直接从DOM移除卡片而不是留一行"已完成"文案；食品安全cc任务新增per-user"确认收到"
+ * (master_task_acks表)与hq_manager专属"提交判罚结果"(真正status=resolved，对所有cc
+ * 收件人都消失)两条路径；② 8大AI督导时间线里"未知"改成"任务创建前"(status_before是
+ * task_created事件的空字符串，不是异常)；③ 智能备货放弃iframe内嵌改成新标签页直接打开
+ * (nginx X-Frame-Options修复后安卓WebView仍反馈空白，二级嵌套iframe在部分容器下本身不
+ * 可靠，改成普通同源跳转彻底绕开这整类问题)；④ 差评展示门店筛选框单店角色不再显示
+ * "全部门店"，直接显示自己门店名(disabled select)；⑤ 实收目标只算出马己仙——生产库洪潮
+ * revenue_targets最新period停在2026-03、马己仙在2026-04，之前取"全租户唯一最近period"
+ * 只命中马己仙那行，改成按门店各自MAX(period)分别取值求和；⑥ 当月目标追踪"系统暂未接入
+ * 该指标的自动核算"改成真实从daily_reports聚合(充值/堂食营收/点评星级/企微新增等)+
+ * monthly_margins(毛利)，新增GET /api/workspace/monthly-target-actuals；⑦ 客流量/客单价/
+ * 桌均等门店经营明细改成门店选择下拉框驱动，不再是逐店平铺卡片；⑧ 门店营销活动建议
+ * 区块本身也包一层details可整体折叠。
  */
-const MAX_LINES = 71018;
+const MAX_LINES = 71138;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

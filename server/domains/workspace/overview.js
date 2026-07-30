@@ -122,15 +122,24 @@ export async function revenueRollup(pool, tenantId, today, storeFilter) {
   // 2026-04（本月2026-07根本没配），导致目标永远显示¥0——但月度营收目标业务上通常是
   // "设一次、沿用到改为止"，不是每个月都要重新录入。改成"往前找最近一个已配置的period"，
   // 找不到精确当月才会退化到0（不编数字，真没配过就是没有）。
+  // 2026-07-30 修复：上面这版逻辑找的是"全租户范围内最近的单一period"，不是"每个门店各自
+  // 最近的period"——实测生产库洪潮门店最新配置到2026-03，马己仙配置到2026-04，取全局单一
+  // 最近period(2026-04)后只有马己仙有这个period的行，SUM结果里洪潮被完全漏掉，管理员看到
+  // 的"实收目标"变成只等于马己仙一家的目标，误以为"只接入了马己仙门店"。改成按门店各自
+  // 找自己最近可用的period（不同店可以停留在不同月份），再把每店取到的目标加总。
   const targetParams = [tenantId, periodOf(today)];
   const targetFilter = storeFilterClause(storeFilter, targetParams.length + 1);
   if (targetFilter.param) targetParams.push(targetFilter.param);
   const targetR = await pool.query(
-    `SELECT COALESCE(SUM(target_revenue), 0) AS target FROM revenue_targets
-      WHERE tenant_id = $1 AND period = (
-        SELECT period FROM revenue_targets WHERE tenant_id = $1 AND period <= $2${targetFilter.sql}
-        ORDER BY period DESC LIMIT 1
-      )${targetFilter.sql}`,
+    `SELECT COALESCE(SUM(rt.target_revenue), 0) AS target
+       FROM revenue_targets rt
+       JOIN (
+         SELECT store, MAX(period) AS latest_period
+           FROM revenue_targets
+          WHERE tenant_id = $1 AND period <= $2${targetFilter.sql}
+          GROUP BY store
+       ) latest ON latest.store = rt.store AND latest.latest_period = rt.period
+      WHERE rt.tenant_id = $1${targetFilter.sql.replace('store', 'rt.store')}`,
     targetParams
   );
   const targetRevenue = Number(targetR.rows[0]?.target || 0);
@@ -360,4 +369,85 @@ export async function getBossOverview(pool, tenantId, storeFilter = []) {
     log.error({ msg: 'boss_overview_failed', err: e?.message || String(e) });
     return { ok: false, error: e?.message || 'server_error' };
   }
+}
+
+/**
+ * 2026-07-30 修复：当月目标追踪里"目标管理"录入的其他目标项(充值/点评星级/企微新增等)
+ * 一直显示"系统暂未接入该指标的自动核算，需人工核对"——用户明确指出这不对，除了毛利是
+ * 每月10号前录入飞书毛利记录表(monthly_margins)以外，其它目标项的"实际值"全部已经在
+ * 营业日报(daily_reports)里，只是之前没人接这个查询。这里按 frontend/07-promotion.js
+ * MT_ALL_FIELDS 定义的 key 逐一从 daily_reports 聚合出本月实际值；eleme/meituan 分渠道明细
+ * daily_reports 没有单独字段(只有delivery_actual这个外卖总计，没有拆分平台)，如实返回
+ * null，不是这里的疏漏，是数据源本身没有这个粒度。
+ */
+export async function getMonthlyTargetActuals(pool, tenantId, store, ym) {
+  const monthStart = ym + '-01';
+  const [y, m] = ym.split('-').map(Number);
+  const monthEndExclusive = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`;
+  const r = await pool.query(
+    `SELECT
+        COALESCE(SUM(actual_revenue), 0) AS actual,
+        COALESCE(SUM(pre_discount_revenue), 0) AS gross,
+        COALESCE(SUM(budget), 0) AS budget,
+        COALESCE(SUM(recharge_amount), 0) AS recharge,
+        COALESCE(SUM(recharge_count), 0) AS "rechargeCount",
+        COALESCE(SUM(dine_revenue), 0) AS "dineRevenue",
+        COALESCE(SUM(dine_orders), 0) AS "dineOrders",
+        COALESCE(SUM(dine_traffic), 0) AS "dineTraffic",
+        COALESCE(SUM(total_discount), 0) AS "discountTotal",
+        COALESCE(SUM((segments->>'noon')::numeric), 0) AS noon,
+        COALESCE(SUM((segments->>'afternoon')::numeric), 0) AS afternoon,
+        COALESCE(SUM((segments->>'night')::numeric), 0) AS night,
+        COALESCE(SUM((categories->'water'->>'amt')::numeric), 0) AS "waterAmt",
+        COALESCE(SUM((categories->'water'->>'qty')::numeric), 0) AS "waterQty",
+        COALESCE(SUM((categories->'soup'->>'amt')::numeric), 0) AS "soupAmt",
+        COALESCE(SUM((categories->'soup'->>'qty')::numeric), 0) AS "soupQty",
+        COALESCE(SUM((categories->'roast'->>'amt')::numeric), 0) AS "roastAmt",
+        COALESCE(SUM((categories->'roast'->>'qty')::numeric), 0) AS "roastQty",
+        COALESCE(SUM((categories->'wok'->>'amt')::numeric), 0) AS "wokAmt",
+        COALESCE(SUM((categories->'wok'->>'qty')::numeric), 0) AS "wokQty",
+        COALESCE(SUM(bad_reviews_dianping), 0) AS "badDianping",
+        COALESCE(SUM(new_wechat_members), 0) AS "wechatMonthNew",
+        (array_agg(dianping_rating ORDER BY date DESC) FILTER (WHERE dianping_rating IS NOT NULL))[1] AS "dianpingRating"
+       FROM daily_reports
+      WHERE tenant_id = $1 AND store = $2 AND date >= $3 AND date < $4`,
+    [tenantId, store, monthStart, monthEndExclusive]
+  );
+  const row = r.rows[0] || {};
+
+  let marginActual = null;
+  try {
+    const canon = resolveAgentCanonicalStore(store) || store;
+    const mr = await pool.query(
+      `SELECT actual_margin FROM monthly_margins WHERE store = $1 AND period = $2 LIMIT 1`,
+      [canon, ym]
+    );
+    marginActual = mr.rows[0]?.actual_margin != null ? Number(mr.rows[0].actual_margin) : null;
+  } catch (e) {
+    log.error({ msg: 'monthly_target_actuals_margin_failed', err: e?.message || String(e) });
+  }
+
+  const numOrNull = (v) => (v == null ? null : Number(v));
+  return {
+    actual: numOrNull(row.actual),
+    margin: marginActual,
+    gross: numOrNull(row.gross),
+    budget: numOrNull(row.budget),
+    recharge: numOrNull(row.recharge),
+    rechargeCount: numOrNull(row.rechargeCount),
+    dineRevenue: numOrNull(row.dineRevenue),
+    dineOrders: numOrNull(row.dineOrders),
+    dineTraffic: numOrNull(row.dineTraffic),
+    elemeRevenue: null, elemeOrders: null, elemeActual: null,
+    meituanRevenue: null, meituanOrders: null, meituanActual: null,
+    discountTotal: numOrNull(row.discountTotal),
+    noon: numOrNull(row.noon), afternoon: numOrNull(row.afternoon), night: numOrNull(row.night),
+    waterAmt: numOrNull(row.waterAmt), waterQty: numOrNull(row.waterQty),
+    soupAmt: numOrNull(row.soupAmt), soupQty: numOrNull(row.soupQty),
+    roastAmt: numOrNull(row.roastAmt), roastQty: numOrNull(row.roastQty),
+    wokAmt: numOrNull(row.wokAmt), wokQty: numOrNull(row.wokQty),
+    badDianping: numOrNull(row.badDianping), badMeituan: null, badEleme: null,
+    dianpingRating: numOrNull(row.dianpingRating),
+    wechatMonthNew: numOrNull(row.wechatMonthNew),
+  };
 }

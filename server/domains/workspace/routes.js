@@ -2,8 +2,8 @@
  * 角色工作台 HTTP 路由：只读聚合 + 批量推广菜品这一个薄写路径。
  */
 import { childLogger } from '../../utils/logger.js';
-import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations } from './service.js';
-import { getBossOverview } from './overview.js';
+import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask } from './service.js';
+import { getBossOverview, getMonthlyTargetActuals } from './overview.js';
 import { getMarketingSuggestions } from './marketing-suggestions.js';
 import { getBadReviewFeed } from './bad-review-feed.js';
 
@@ -67,6 +67,28 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json(data);
     } catch (e) {
       log.error({ msg: 'workspace_overview_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 2026-07-30：当月目标追踪里"目标管理"录入的其它目标项一直显示"系统暂未接入该指标的
+  // 自动核算"——实际这些数据都在daily_reports里，只是没人接。这里只允许查自己allowed_stores
+  // 范围内的门店(店长/出品经理只能查自己门店，admin/hq_manager不限)。
+  app.get('/api/workspace/monthly-target-actuals', authRequired, async (req, res) => {
+    const store = String(req.query?.store || '').trim();
+    const ym = String(req.query?.ym || '').trim();
+    if (!store || !/^\d{4}-\d{2}$/.test(ym)) return res.status(400).json({ error: 'missing_store_or_ym' });
+    const role = String(req.user?.role || '').trim();
+    if (role !== 'admin' && role !== 'hq_manager') {
+      const allowed = resolveOverviewStoreFilter(req);
+      if (allowed.length && !allowed.includes(store)) return res.status(403).json({ error: 'forbidden' });
+    }
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const actuals = await getMonthlyTargetActuals(pool, tenantId, store, ym);
+      res.json({ ok: true, actuals });
+    } catch (e) {
+      log.error({ msg: 'workspace_monthly_target_actuals_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });
@@ -175,6 +197,38 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json(result);
     } catch (e) {
       log.error({ msg: 'workspace_task_confirm_response_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 2026-07-30：任务栏是"要清空的队列"——cc(仅同步知悉)类食品安全任务，admin点"确认收到"
+  // 只记一行per-user ack，不改任务本身状态(还抄送给别的admin/hq_manager)。
+  app.post('/api/workspace/tasks/:taskId/ack', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const result = await ackTask(pool, tenantId, req.params.taskId, req.user?.username);
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+      res.json(result);
+    } catch (e) {
+      log.error({ msg: 'workspace_task_ack_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 总部经理对食品安全类任务输入判罚结果后，任务真正结案(resolved)，对所有cc收件人都消失。
+  app.post('/api/workspace/tasks/:taskId/food-safety-verdict', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const result = await resolveFoodSafetyTask(pool, tenantId, {
+        taskId: req.params.taskId,
+        reviewerUsername: req.user?.username,
+        reviewerRole: req.user?.role,
+        verdict: req.body?.verdict,
+      });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+      res.json(result);
+    } catch (e) {
+      log.error({ msg: 'workspace_food_safety_verdict_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });
