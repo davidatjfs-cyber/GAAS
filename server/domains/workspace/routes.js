@@ -2,7 +2,7 @@
  * 角色工作台 HTTP 路由：只读聚合 + 批量推广菜品这一个薄写路径。
  */
 import { childLogger } from '../../utils/logger.js';
-import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask } from './service.js';
+import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask, getMyRecentlyResolvedTasks } from './service.js';
 import { getBossOverview, getMonthlyTargetActuals } from './overview.js';
 import { getMarketingSuggestions } from './marketing-suggestions.js';
 import { getBadReviewFeed } from './bad-review-feed.js';
@@ -50,6 +50,23 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json({ ok: true, ...data });
     } catch (e) {
       log.error({ msg: 'workspace_home_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 2026-07-30：任务一旦resolved就从"任务栏"消失，责任人自己都没法回头确认"这件事到底有
+  // 没有真的处理过"——尤其是通过飞书快速回复几秒内就closed的任务，工作台里几乎从来没
+  // 出现过。补一个"最近完成"视图，默认查最近24小时。
+  app.get('/api/workspace/tasks/recently-resolved', authRequired, async (req, res) => {
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    const username = String(req.user?.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'missing_username' });
+    try {
+      const hours = Number(req.query?.hours) || 24;
+      const items = await getMyRecentlyResolvedTasks(pool, tenantId, username, hours);
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'workspace_recently_resolved_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });

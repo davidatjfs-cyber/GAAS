@@ -183,6 +183,29 @@ test('assignMarketingActionTask：责任人角色不是store_manager/front_manag
   assert.equal(result.body.error, 'assignee_role_invalid');
 });
 
+// 2026-07-30：用户反馈责任人下拉框里出现了离职员工（前端本地缓存过滤被绕过/数据未同步的
+// 情况下客户端过滤不可靠）——锁定后端查询必须带status='active'过滤，离职/停用员工哪怕
+// 直接调接口也一律按"责任人不存在"拒绝（不单独暴露"这个人存在但已离职"这类信息）。
+test('assignMarketingActionTask：查询员工时必须带status=\'active\'过滤，离职员工必须被拒绝', async () => {
+  const calls = [];
+  const ctx = baseCtx({
+    pool: {
+      async query(sql, params) {
+        calls.push({ sql, params });
+        if (/FROM growth_actions/.test(sql)) return { rows: [actionRow()] };
+        // 模拟真实WHERE条件生效：离职员工不满足status='active'，查询返回空
+        if (/FROM employees/.test(sql)) return { rows: [] };
+        return { rows: [] };
+      },
+    },
+  });
+  const result = await assignMarketingActionTask(ctx, 'default', 'AK1', 'departed_a', { username: 'admin_a' }, {});
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'assignee_not_found');
+  const empCall = calls.find((c) => /FROM employees/.test(c.sql));
+  assert.match(empCall.sql, /status\s*=\s*'active'/);
+});
+
 test('assignMarketingActionTask：责任人合法时插入master_tasks(assignee_username=责任人)并照常真实执行', async () => {
   const calls = [];
   let executeGrowthActionRecordCalled = false;
