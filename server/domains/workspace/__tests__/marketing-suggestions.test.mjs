@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMarketingSuggestions } from '../marketing-suggestions.js';
 
-// 2026-07-30：门店营销活动建议点"执行"分配责任人时几乎每次提示"本店未配置店长/前厅
-// 主管"——查证生产库growth_actions.store_id没有统一格式(POS原始长名/增长侧数字ID/
-// 员工表用的官方简称混杂)，前端拿到的store字段跟employees.store不是同一个字符串。
-// 锁定：返回给前端的store字段必须是归一化后的官方简称。
+// 2026-07-31：用户明确要求"这个工作要的是质量，不是数量"——之前查growth_actions
+// (campaign_autopilot生成)的通用模板文案质量差、且被历史堆积挤没真正有价值的内容。
+// 已停用该来源，只保留strategy_experiments/strategy_variants（结合门店真实差评/流失
+// 等异常信号生成的A/B方案+逐日执行步骤），锁定：①只查这张表；②按门店轮流抽取，每店
+// 最多limit条，不被某个门店的历史堆积独占；③storeFilter展开别名后用ANY匹配。
 
 function makePool(rows) {
   const calls = [];
@@ -18,35 +19,56 @@ function makePool(rows) {
   };
 }
 
-test('getMarketingSuggestions：返回的store字段必须是归一化后的官方简称，不是原始store_id', async () => {
-  const pool = makePool([
-    { action_key: 'AK1', action_type: 'promo_task', store_id: '洪潮传统潮汕菜【大宁久光中心店】', title: 't', detail: 'd', created_at: '2026-07-30' },
-  ]);
-  const items = await getMarketingSuggestions(pool, 'default', []);
-  assert.equal(items[0].store, '洪潮大宁久光店', '应该是员工表用的官方简称，不是POS原始长名');
+test('getMarketingSuggestions：只查strategy_experiments，不再查growth_actions', async () => {
+  const pool = makePool([]);
+  await getMarketingSuggestions(pool, 'default', []);
+  assert.equal(pool.calls.length, 1);
+  assert.match(pool.calls[0].sql, /FROM strategy_experiments/);
+  assert.doesNotMatch(pool.calls[0].sql, /FROM growth_actions/);
 });
 
-test('getMarketingSuggestions：storeFilter非空时展开别名后用ANY匹配，不是原样传入storeFilter', async () => {
+test('getMarketingSuggestions：storeFilter非空时展开别名后用ANY匹配', async () => {
   const pool = makePool([]);
   await getMarketingSuggestions(pool, 'default', ['洪潮大宁久光店']);
   const call = pool.calls[0];
-  assert.match(call.sql, /store_id = ANY/);
+  assert.match(call.sql, /v\.store = ANY/);
   assert.ok(call.params[1].includes('洪潮久光店'), '应该展开出飞书缩写别名，不能只有传入的官方简称');
 });
 
-// 2026-07-30：用户反馈同一家店连续出现好几条几乎一样的建议——查证生产库确认
-// campaign_autopilot每天都为同一批目标客群重新生成建议，旧的从不过期，之前只是简单
-// LIMIT取最新N条，完全没有按门店+目标客群去重。锁定：同一store_id+target_audience
-// 只保留最新一条，且返回的channelName要透出payload.channel（不是online/offline粗分类）。
-test('getMarketingSuggestions：同一门店+同一目标客群的多条建议只保留最新一条', async () => {
+test('getMarketingSuggestions：返回带完整variants数组(A/B双方案+逐日执行指引)', async () => {
   const pool = makePool([
-    { action_key: 'AK3', action_type: 'promo_task', store_id: 'S1', title: 't3', detail: 'd3', created_at: '2026-07-30', payload: { target_audience: '新客未激活，共65人', channel: 'dianping' } },
-    { action_key: 'AK2', action_type: 'send_message', store_id: 'S1', title: 't2', detail: 'd2', created_at: '2026-07-29', payload: { target_audience: '新客未激活，共65人', channel: 'wecom' } },
-    { action_key: 'AK1', action_type: 'sms_recall', store_id: 'S1', title: 't1', detail: 'd1', created_at: '2026-07-28', payload: { target_audience: '流失预警客户', channel: 'sms' } },
+    {
+      experiment_code: 'EXP-1', title: '差评反馈优化vs新品试吃活动', goal: '降低差评', anomaly_type: 'bad_review_product', created_at: '2026-07-31T16:30',
+      variants: [
+        { variantCode: 'A', label: '差评反馈优化', action: '逐条复制差评到台账...', executionGuide: '第1-2天...', store: '马己仙上海音乐广场店' },
+        { variantCode: 'B', label: '新品试吃活动', action: '推出新品试吃...', executionGuide: '第1天...', store: '马己仙上海音乐广场店' },
+      ],
+    },
   ]);
   const items = await getMarketingSuggestions(pool, 'default', []);
-  assert.equal(items.length, 2, '同一目标客群的重复建议应该只保留最新一条');
-  assert.equal(items[0].actionKey, 'AK3', '应该保留created_at最新的那条');
-  assert.equal(items[0].channelName, 'dianping', '应该透出payload.channel原始渠道');
-  assert.ok(items.some((i) => i.actionKey === 'AK1'), '不同目标客群的建议不应被去重掉');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'pllm_experiment');
+  assert.equal(items[0].actionKey, 'EXP-1');
+  assert.equal(items[0].variants.length, 2, '应该带完整的A/B两个方案');
+  assert.equal(items[0].anomalyType, 'bad_review_product');
+});
+
+test('getMarketingSuggestions：按门店轮流抽取，历史堆积多的门店不能独占展示名额', async () => {
+  const rows = [];
+  // 门店A：10个不同实验，全部比门店B更新
+  for (let i = 0; i < 10; i++) {
+    rows.push({
+      experiment_code: 'A' + i, title: 't' + i, goal: 'g', anomaly_type: 'x', created_at: '2026-07-31T10:0' + i,
+      variants: [{ variantCode: 'A', label: 'l', action: 'a', executionGuide: 'e', store: '门店A' }],
+    });
+  }
+  // 门店B：2个实验，创建时间更早
+  rows.push({ experiment_code: 'B0', title: 'b0', goal: 'g', anomaly_type: 'x', created_at: '2026-07-29T10:00', variants: [{ variantCode: 'A', label: 'l', action: 'a', executionGuide: 'e', store: '门店B' }] });
+  rows.push({ experiment_code: 'B1', title: 'b1', goal: 'g', anomaly_type: 'x', created_at: '2026-07-29T10:01', variants: [{ variantCode: 'A', label: 'l', action: 'a', executionGuide: 'e', store: '门店B' }] });
+  const pool = makePool(rows);
+  const items = await getMarketingSuggestions(pool, 'default', [], 2);
+  const storeCounts = {};
+  items.forEach((it) => { storeCounts[it.store] = (storeCounts[it.store] || 0) + 1; });
+  assert.equal(Object.keys(storeCounts).length, 2, '两个门店都应该有展示，不能被门店A的历史堆积独占');
+  assert.ok(storeCounts['门店A'] <= 2 && storeCounts['门店B'] <= 2, '每店展示数不能超过limit');
 });
