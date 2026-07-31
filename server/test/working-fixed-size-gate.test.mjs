@@ -293,8 +293,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 从未查询过。接入这个数据源，专门渲染A/B双方案卡片，采纳/不适合复用增长看板同一套
  * /api/strategy-experiments/:code/approve|reject接口(权限跟接口一致仅admin/hq_manager
  * 可操作，其它角色只读展示)。
+ * 2026-07-31 第四十九次上调（71559→71592）：①PLLM实验卡片补上每个variant的责任人下拉框
+ * （approve接口早就支持storeAssignments却从没有调用方真正收集过），采纳时一起提交；
+ * ②去掉之前假设action/executionGuide之外还有独立channel/readyCopy等字段的展示逻辑——
+ * strategy_variants表实际只有两个文本列，这些新增信息已在agents-service-v2那边折叠进
+ * action文本，改用wsFormatTaskDetail完整展示。
  */
-const MAX_LINES = 71559;
+const MAX_LINES = 71592;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
