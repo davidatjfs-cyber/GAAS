@@ -272,8 +272,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * currentPage==='profile'时才触发，这4个角色几乎不再进档案页，会导致他们彻底收不到
  * 强制通知弹窗，是真实的功能缺口。补上workspace页面也触发同一套轮询（modal本身是全局
  * 元素，profile-notifications容器只是被隐藏不是移除，函数在workspace页调用一样生效）。
+ * 2026-07-31 第四十四次上调（71446→71457）：用户反馈"工作台每次打开都是空白，必须再点
+ * 一下才会加载"——根因是#workspace-page容器由wsEnsurePageContainer()懒创建，而showPage()
+ * 里"隐藏所有页面/显示目标页面"这段逻辑靠getElementById(pageName+'-page')查找容器，首次
+ * 进入时容器还不存在，这段逻辑找不到元素直接跳过，容器要等随后loadPageData才被创建出来，
+ * 已经错过了"显示"这一步，第二次点击时容器已存在才正常显示。改成在显示逻辑执行前就
+ * 提前创建好容器。
  */
-const MAX_LINES = 71446;
+const MAX_LINES = 71457;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
