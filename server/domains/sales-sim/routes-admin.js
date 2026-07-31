@@ -54,8 +54,12 @@ async function tryTtsBase64(text, rolloutKey) {
 
 /** @param {{ app: any, pool: any, platformAdminRequired: Function }} ctx */
 export function registerSalesSimAdminRoutes(ctx) {
-  const { app, pool, platformAdminRequired } = ctx;
+  registerSimCatalogRoutes(ctx);
+  registerSimSessionRoutes(ctx);
+  registerSimOpsRoutes(ctx);
+}
 
+function registerSimCatalogRoutes({ app, pool, platformAdminRequired }) {
   app.get('/api/admin/sales-sim/personas', platformAdminRequired, async (req, res) => {
     try {
       const personas = await listSimPersonas(pool, req.query.track || null, {
@@ -94,7 +98,9 @@ export function registerSalesSimAdminRoutes(ctx) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
+}
 
+function registerSimSessionRoutes({ app, pool, platformAdminRequired }) {
   app.get('/api/admin/sales-sim/sessions', platformAdminRequired, async (req, res) => {
     try {
       const rows = await listSessionHistory(pool, usernameOf(req), {
@@ -161,10 +167,16 @@ export function registerSalesSimAdminRoutes(ctx) {
     async (req, res) => {
       try {
         if (!req.file?.buffer?.length) {
-          return res.status(400).json({ ok: false, error: 'missing_audio', message: '没录到声音，请点「开始录音」后再试' });
+          return res.status(400).json({
+            ok: false, error: 'missing_audio', message: '没录到声音，请点「语音输入」后再试',
+          });
         }
         const text = await transcribeBrowserVoice(req.file.buffer, { mimeType: req.file.mimetype });
-        if (!text) return res.status(400).json({ ok: false, error: 'asr_failed', message: '没听清，请再说一次或改打字' });
+        if (!text) {
+          return res.status(400).json({
+            ok: false, error: 'asr_failed', message: '没听清，请再说一次或改打字',
+          });
+        }
         const result = await submitTurn(pool, {
           sessionId: Number(req.params.id),
           username: usernameOf(req),
@@ -198,8 +210,9 @@ export function registerSalesSimAdminRoutes(ctx) {
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
+}
 
-  // —— 话术飞轮 ——
+function registerSimOpsRoutes({ app, pool, platformAdminRequired }) {
   app.post('/api/admin/sales-sim/playbooks/nominate', platformAdminRequired, async (req, res) => {
     try {
       const result = await nominatePlaybook(pool, {
@@ -242,7 +255,6 @@ export function registerSalesSimAdminRoutes(ctx) {
     }
   });
 
-  // —— 导师 ——
   app.post('/api/admin/sales-sim/rank/mentor-eligible', platformAdminRequired, async (req, res) => {
     try {
       if (!isManager(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
@@ -287,7 +299,6 @@ export function registerSalesSimAdminRoutes(ctx) {
         note: req.body?.note,
       });
       if (!result.ok && result.error === 'not_mentor' && isManager(req)) {
-        // 主管可批注
         const r = await pool.query(
           `INSERT INTO sales_sim_mentor_notes (session_id, mentor_username, note) VALUES ($1,$2,$3) RETURNING *`,
           [Number(req.body?.session_id), usernameOf(req), String(req.body?.note || '').trim()]
@@ -300,7 +311,6 @@ export function registerSalesSimAdminRoutes(ctx) {
     }
   });
 
-  // —— 经营真题 ——
   app.post('/api/admin/sales-sim/business-personas', platformAdminRequired, async (req, res) => {
     try {
       const result = req.body?.lead_id
@@ -313,11 +323,9 @@ export function registerSalesSimAdminRoutes(ctx) {
     }
   });
 
-  // —— 管理员看板 ——
   app.get('/api/admin/sales-sim/dashboard', platformAdminRequired, async (req, res) => {
     try {
       if (!isManager(req) && req.platformAdmin?.role !== 'super_admin') {
-        // 销售经理/主管/超管可看；普通销售只看自己
         const self = await buildTrainingDashboard(pool, { track: req.query.track || null, limit: 5 });
         self.people = (self.people || []).filter((p) => p.username === usernameOf(req));
         self.recent = (self.recent || []).filter((p) => p.username === usernameOf(req));
@@ -333,7 +341,6 @@ export function registerSalesSimAdminRoutes(ctx) {
     }
   });
 
-  // —— 训后通知 ——
   app.get('/api/admin/sales-sim/notifications', platformAdminRequired, async (req, res) => {
     try {
       const items = await listNotifications(pool, usernameOf(req), {
