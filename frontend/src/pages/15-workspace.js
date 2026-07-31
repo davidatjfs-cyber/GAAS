@@ -119,6 +119,12 @@ function wsInjectStyles() {
         '.ws-todo__tab{flex:1;background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 8px;text-align:center;color:var(--ws-ink2);font-family:inherit;font-size:12px;cursor:pointer;}' +
         '.ws-todo__tab.is-on{background:var(--ws-accent);border-color:var(--ws-accent);color:var(--ws-on-accent);font-weight:600;}' +
         '.ws-todo__n{display:block;font-family:"Songti SC","STSong",serif;font-size:17px;font-weight:600;margin-bottom:2px;}' +
+        // 2026-07-31：不再用"通知放最前面默认展开"这种霸占整页的方式吸引注意，改成通知有
+        // 未读时用醒目边框+右上角脉冲红点，用户扫一眼就能注意到，但仍然默认停留在任务tab。
+        '.ws-todo__tab{position:relative;}' +
+        '.ws-todo__tab--alert{border-color:var(--ws-down);}' +
+        '.ws-todo__dot{position:absolute;top:6px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--ws-down);animation:wsTodoPulse 1.4s ease-in-out infinite;}' +
+        '@keyframes wsTodoPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(1.4);}}' +
         '@media (min-width:560px){.ws-quicklinks{grid-template-columns:repeat(4,1fr);} .ws-kpis{grid-template-columns:repeat(4,1fr);}}' +
         '@media (max-width:480px){' +
         '.ws-root{padding:16px 14px calc(20px + env(safe-area-inset-bottom));}' +
@@ -1419,14 +1425,16 @@ async function wsRenderInsightsSection() {
 // 2026-07-30：加"已完成"tab——任务一旦resolved就从"任务"tab消失，责任人自己都没法回头
 // 确认"这件事到底有没有真的处理过"，尤其是通过飞书快速回复几秒内就closed的任务，工作台
 // 里几乎从来没出现过。这里不显示数字角标（"最近完成"不是待办，没有"未处理"的紧迫感）。
-// 2026-07-31：用户明确要求"通知使用频率最高"——把通知tab放最前面并设为默认展开，
-// 待批放中间，任务挪到最后。
+// 2026-07-31：用户先要求通知tab放最前面+默认展开，结果发现整页一打开就是通知列表，
+// 看不到经营驾驶舱内容——改回"任务/待批/通知"原顺序、默认还是展开任务tab，但通知有
+// 未读时用醒目的脉冲红点+高亮边框吸引注意，不用整页霸占的方式。
 function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount) {
+    const notifAlert = unreadCount > 0 ? ' ws-todo__tab--alert' : '';
     return (
         '<div class="ws-todo">' +
-        '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知</button>' +
+        '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="approval"><span class="ws-todo__n">' + pendingApprovalCount + '</span>待批</button>' +
-        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
+        '<button type="button" class="ws-todo__tab' + notifAlert + '" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知' + (unreadCount > 0 ? '<span class="ws-todo__dot"></span>' : '') + '</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="done">已完成</button>' +
         '</div>' +
         '<div class="ws-todo-pane" id="ws-todo-pane"></div>'
@@ -1529,7 +1537,7 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
             renderPane(btn.getAttribute('data-ws-todo-tab'));
         });
     });
-    renderPane('notif');
+    renderPane('task');
 }
 
 // 待确认的任务反馈：责任人提交完成证据(pending_review)后，发起人在这里确认/打回，
