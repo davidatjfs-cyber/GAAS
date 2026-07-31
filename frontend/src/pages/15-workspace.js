@@ -666,16 +666,35 @@ function wsMarketingMarkSeen(actionKeys) {
 // 两个variant。采纳/不适合复用增长看板同一套接口(/api/strategy-experiments/:code/
 // approve|reject)，权限跟接口一致仅admin/hq_manager可操作，其它角色只读展示（了解总部
 // 在为自己门店评估什么方案，不重复造一套权限判断）。
+// 2026-07-31：用户反馈"点了执行就没有下文了"——之前采纳只是把实验状态改成running，
+// 从没让总部选择"这个方案具体交给哪个人执行"，approve接口其实早就支持storeAssignments
+// (每个variant各自的门店+责任人)，只是从来没有调用方真正收集过这个信息、传进去。
+// 补上：每个variant配一个责任人下拉框（复用wsMarketingAssigneeOptions按门店过滤在职
+// 店长/前厅主管），采纳时把选择打包成storeAssignments一起提交。
 function wsRenderPllmExperimentCard(it, seen) {
     const isNew = it.actionKey && !seen.has(it.actionKey);
     const canDecide = ['admin', 'hq_manager'].includes(String(currentUser?.role || ''));
-    const variantsHtml = (it.variants || []).map((v) => (
-        '<div class="ws-card__desc" style="margin-top:8px;padding:8px 10px;background:rgba(134,201,162,0.05);border:1px solid rgba(134,201,162,0.18);border-radius:8px;">' +
-        '<div style="font-weight:700;margin-bottom:4px;">方案' + wsEsc(v.variantCode || '') + (v.label ? ' — ' + wsEsc(v.label) : '') + '</div>' +
-        wsEsc(v.action || '') +
-        (v.executionGuide ? '<div style="margin-top:4px;opacity:.7;font-size:11px;">' + wsEsc(v.executionGuide) + '</div>' : '') +
-        '</div>'
-    )).join('');
+    // 2026-07-31：strategy_variants表只有action/execution_guide两个文本列，没有独立的
+    // channel/ready_copy/image_requirement/duration_days/target_kpi/cost_estimate列——
+    // agents-service-v2那边已经把这些字段折叠进action文本一起返回，这里用wsFormatTaskDetail
+    // 保留换行/长文本折叠展示，不再假设有独立字段。
+    const variantsHtml = (it.variants || []).map((v) => {
+        const assignees = canDecide ? wsMarketingAssigneeOptions(v.store) : { empty: true };
+        return (
+            '<div class="ws-card__desc" style="margin-top:8px;padding:8px 10px;background:rgba(134,201,162,0.05);border:1px solid rgba(134,201,162,0.18);border-radius:8px;">' +
+            '<div style="font-weight:700;margin-bottom:4px;">方案' + wsEsc(v.variantCode || '') + (v.label ? ' — ' + wsEsc(v.label) : '') + '（' + wsEsc(v.store || '') + '）</div>' +
+            wsFormatTaskDetail(v.action) +
+            (v.executionGuide ? '<div style="margin-top:4px;opacity:.7;font-size:11px;">' + wsEsc(v.executionGuide) + '</div>' : '') +
+            (canDecide
+                ? '<div style="margin-top:8px;">责任人：' +
+                  (assignees.empty
+                      ? '<span style="opacity:.6;">本店未配置店长/前厅主管，暂无法分配</span>'
+                      : '<select class="ws-input" data-ws-pllm-assignee="' + wsEsc(v.variantCode || '') + '" style="width:100%;margin-top:4px;">' + assignees.html + '</select>')
+                  + '</div>'
+                : '') +
+            '</div>'
+        );
+    }).join('');
     return (
         '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '" data-marketing-store="' + wsEsc(it.store || '') + '">' +
         '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
@@ -688,7 +707,7 @@ function wsRenderPllmExperimentCard(it, seen) {
         variantsHtml +
         (canDecide
             ? '<div class="ws-card__acts">' +
-              '<button type="button" class="ws-btn ws-btn--primary" data-ws-pllm-approve="' + wsEsc(it.actionKey || '') + '">采纳·我要执行</button>' +
+              '<button type="button" class="ws-btn ws-btn--primary" data-ws-pllm-approve="' + wsEsc(it.actionKey || '') + '">采纳·分配责任人执行</button>' +
               '<button type="button" class="ws-btn" data-ws-pllm-reject="' + wsEsc(it.actionKey || '') + '">不适合</button>' +
               '</div>'
             : '<div class="ws-card__desc" style="opacity:.6;">待总部审批决策，暂不需要门店操作</div>') +
@@ -746,16 +765,30 @@ function wsBindMarketingSuggestionsEvents(root) {
     // 2026-07-31：PLLM策略实验的采纳/不适合——复用增长看板同一套接口，不新建。
     root.querySelectorAll('[data-ws-pllm-approve]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-            if (!confirm('采纳此PLLM策略实验方案？\n\n请人工按方案执行，系统记录为已采纳。')) return;
+            // 2026-07-31：用户反馈"点了执行就没有下文了"——之前采纳完全不收集责任人，approve
+            // 接口早就支持storeAssignments却从没有调用方真正传过。这里收集每个variant的
+            // 责任人下拉框选择，一起提交，让方案真正落到具体人身上。
+            const card = btn.closest('.ws-card');
+            const assigneeSelects = card ? [...card.querySelectorAll('[data-ws-pllm-assignee]')] : [];
+            const storeAssignments = assigneeSelects
+                .map((sel) => ({ variantCode: sel.getAttribute('data-ws-pllm-assignee'), assigneeUsername: sel.value }))
+                .filter((a) => a.assigneeUsername);
+            if (assigneeSelects.length && !storeAssignments.length) {
+                showNotification('请至少为一个方案选择责任人', 'warning');
+                return;
+            }
+            if (!confirm('采纳此PLLM策略实验方案？\n\n将分配给所选责任人，请人工按方案执行。')) return;
             const code = btn.getAttribute('data-ws-pllm-approve');
-            const resultEl = btn.closest('.ws-card')?.querySelector('.ws-action-result');
+            const resultEl = card?.querySelector('.ws-action-result');
             btn.disabled = true;
             try {
-                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/approve', { method: 'POST', headers: wsAuthHeaders() });
+                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/approve', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ storeAssignments }),
+                });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已采纳，请按方案执行</span>';
-                btn.closest('.ws-card__acts')?.remove();
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已采纳并分配责任人，请按方案执行</span>';
+                card?.querySelector('.ws-card__acts')?.remove();
             } catch (e) {
                 btn.disabled = false;
                 if (resultEl) resultEl.innerHTML = '<span class="ws-err">采纳失败：' + wsEsc(e?.message || e) + '</span>';
