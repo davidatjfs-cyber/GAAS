@@ -4,6 +4,7 @@ import {
   skillLabel, principleLabel, sceneLabel, localizeSourceLabel,
   formatSkillsGradeLine, scoreGrade, skillsGrades, localizeFocus,
 } from './labels.js';
+import { isStoreTrack, skillsForTrack } from './store-tracks.js';
 
 export async function buildDebrief(pool, {
   track, session, turns, evals, username,
@@ -11,12 +12,16 @@ export async function buildDebrief(pool, {
   const skills = scoreSkillsFromEvals(track, evals);
   if (track === 'sales') {
     skills.closing = clamp(Math.round((skills.closing + Number(session.close_readiness || 0)) / 2));
-  } else {
+  } else if (track === 'cs' && skills.retention != null) {
     const baseRetention = Number(skills.retention || 70);
     skills.retention = clamp(Math.round(baseRetention + (Number(session.satisfaction || 60) - 60) * 0.4));
+  } else if (isStoreTrack(track) && skills.service_awareness != null) {
+    skills.service_awareness = clamp(Math.round(
+      (Number(skills.service_awareness || 70) + Number(session.satisfaction || 60)) / 2
+    ));
   }
 
-  const skillKeys = track === 'sales' ? SALES_SKILLS : CS_SKILLS;
+  const skillKeys = skillsForTrack(track) || (track === 'sales' ? SALES_SKILLS : CS_SKILLS);
   const skillAvg = Math.round(skillKeys.reduce((a, k) => a + (skills[k] || 0), 0) / skillKeys.length);
 
   const allViolations = [];
@@ -44,13 +49,18 @@ export async function buildDebrief(pool, {
   const customerTurns = turns.filter((t) => t.role === 'customer');
   const replacements = buildReplacements(traineeTurns, uniquePlaybooks, allViolations);
 
+  const outcomeAxis = track === 'sales'
+    ? Number(session.close_readiness || 0)
+    : Number(session.satisfaction || 0);
   const score = clamp(Math.round(
     skillAvg * 0.7
-    + (track === 'sales' ? Number(session.close_readiness || 0) : Number(session.satisfaction || 0)) * 0.3
+    + outcomeAxis * 0.3
     - allViolations.length * 2
   ));
 
-  const nextFocus = principleIds[0] || (track === 'sales' ? 'ask_first' : 'soothe_first');
+  const nextFocus = principleIds[0]
+    || skillKeys.find((k) => (skills[k] || 100) < 75)
+    || (track === 'sales' ? 'ask_first' : (track === 'cs' ? 'soothe_first' : skillKeys[0]));
   const skillsLabeled = Object.fromEntries(
     Object.entries(skills).map(([k, v]) => [skillLabel(k), scoreGrade(v)])
   );

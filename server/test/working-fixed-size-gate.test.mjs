@@ -298,8 +298,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * ②去掉之前假设action/executionGuide之外还有独立channel/readyCopy等字段的展示逻辑——
  * strategy_variants表实际只有两个文本列，这些新增信息已在agents-service-v2那边折叠进
  * action文本，改用wsFormatTaskDetail完整展示。
+ * 2026-07-31 第五十次上调（合并两条独立分支改动）：①Talent Engine 门店 AI 岗位教练入口卡
+ * 注入培训页（ensureJobCoachEntryCard），对练 UI 在独立 job-coach.html，不堆培训 HTML；
+ * ②与上条PLLM责任人下拉框改动合并自两个各自基于71481的独立分支，实际行数以重新构建
+ * working-fixed.html后的真实行数为准。
  */
-const MAX_LINES = 71592;
+const MAX_LINES = 71630;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

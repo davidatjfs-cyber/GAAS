@@ -1251,6 +1251,7 @@
                 { icon:'📊', label:'分析报表', page:'reports', roles:['admin','hr_manager','hq_manager','store_manager'] },
                 // 智能助手：独立页 forecast.html（与主壳同源部署）；管理员/门店/总部均需可见（此前误排除 admin 导致「更多」里消失）
                 { icon:'📦', label:'智能助手', href:'/forecast.html', roles:['admin','hr_manager','hq_manager','store_manager','store_production_manager'] },
+                { icon:'🎯', label:'AI岗位教练', href:'/job-coach.html' },
                 { icon:'⚙️', label:'系统设置', page:'settings', roles:['admin'] },
             ];
             const role = currentUser?.role || '';

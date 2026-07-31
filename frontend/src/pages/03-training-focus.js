@@ -1916,6 +1916,42 @@
             return '';
         }
 
+        function ensureJobCoachEntryCard() {
+            const home = document.getElementById('training-home-screen');
+            if (!home) return;
+            let card = document.getElementById('job-coach-entry-card');
+            if (!card) {
+                card = document.createElement('div');
+                card.id = 'job-coach-entry-card';
+                card.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,rgba(13,122,95,.18),rgba(209,143,160,.12));border:1px solid rgba(13,122,95,.28);';
+                home.insertBefore(card, home.firstChild);
+            }
+            card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
+                + '<div><div style="font-size:15px;font-weight:700;color:#E8F5F0;">AI 岗位教练</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">情景陪练 · 能力雷达 · 今日弱项训练</div></div>'
+                + '<a href="/job-coach.html" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#0d7a5f;color:#fff;font-size:13px;font-weight:600;text-decoration:none;">开始陪练</a>'
+                + '</div><div id="job-coach-radar-line" style="margin-top:10px;font-size:12px;color:rgba(242,234,238,.8);line-height:1.45;">加载能力画像…</div>';
+            fetch('/api/sales-sim/me', {
+                headers: { Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '') }
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                var line = document.getElementById('job-coach-radar-line');
+                if (!line || !data || !data.ok) {
+                    if (line) line.textContent = '打开陪练页开始今日训练';
+                    return;
+                }
+                var skills = (data.rank && data.rank.skills) || {};
+                var parts = Object.keys(skills).slice(0, 6).map(function (k) {
+                    return k + ' ' + Math.round(Number(skills[k]) || 0);
+                });
+                var focus = data.memory && data.memory.focus_competencies;
+                var focusText = Array.isArray(focus) && focus.length ? (' · 焦点：' + focus.slice(0, 2).join('、')) : '';
+                line.textContent = (data.job_profile_key || '') + (parts.length ? (' · ' + parts.join(' / ')) : ' · 尚未开练') + focusText;
+            }).catch(function () {
+                var line = document.getElementById('job-coach-radar-line');
+                if (line) line.textContent = '打开陪练页开始今日训练';
+            });
+        }
+
         function loadTrainingPage() {
             const adminPanel = document.getElementById('training-admin-panel');
             const employeePanel = document.getElementById('training-employee-panel');
@@ -1923,6 +1959,7 @@
             const assignCreateBtn = document.getElementById('training-assign-create-btn');
             if (topicCreateBtn) topicCreateBtn.style.display = isAdminOrHQ() ? '' : 'none';
             if (assignCreateBtn) assignCreateBtn.style.display = canAssignTraining() ? '' : 'none';
+            ensureJobCoachEntryCard();
             if (isTrainingManager()) {
                 if (adminPanel) adminPanel.style.display = '';
                 if (employeePanel) employeePanel.style.display = '';

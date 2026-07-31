@@ -31,6 +31,11 @@ const GAAS_CROSS_WRITER_ALLOWLIST = new Set([
   // 但那是一次新增跨服务接口的工作量，这次先放行不阻塞合并，后续必须补上，不能一直留着。
   'domains/workspace/service.js|INSERT INTO|master_tasks',
   'domains/workspace/service.js|UPDATE|master_tasks',
+  // 2026-07-31 同类已知技术债：AI陪练(sales-sim)内置培训包 ensure 时 upsert 进
+  // knowledge_base（事故卡评分用 key_phrases），跟下面 training.js 系那批写法是
+  // 同一模式（内置培训内容ensure时写知识库，非用户数据），沿用既有豁免口径。
+  'domains/sales-sim/training-pack.js|INSERT INTO|knowledge_base',
+  'domains/sales-sim/training-pack.js|UPDATE|knowledge_base',
   // 2026-07-30 同类已知技术债：营销活动建议"执行"改成先分配责任人再生成任务
   // （assignMarketingActionTask，同样是人类发起、责任人提交证据+发起人确认的任务，
   // 不是AI agent任务），跟上面workspace/service.js的既有豁免是同一个未解决问题，

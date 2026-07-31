@@ -2,6 +2,11 @@
  * L1 思维框架：规则检测「时机」，不要求背诵 L2 原句。
  */
 
+import {
+  isStoreTrack, evaluateStoreUtterance, skillsForTrack, principlesForTrack,
+  detectStoreTriggers,
+} from './store-tracks.js';
+
 export const SALES_PRINCIPLES = [
   { id: 'no_early_pitch', label: '不急着介绍产品', skill: 'questioning' },
   { id: 'sell_outcome', label: '不卖功能，只卖结果', skill: 'value' },
@@ -30,7 +35,8 @@ const EMPATHY_RE = /理解|换我|也会着急|一起处理|跟您一起/;
 const HARD_REFUND_DENY_RE = /不能退|没法退|按规定不能|退不了/;
 const EXPECTATION_ASK_RE = /希望.{0,8}怎么|期望|当时想|方便告诉/;
 
-export function detectCustomerTriggers(customerText = '') {
+export function detectCustomerTriggers(customerText = '', track = null) {
+  if (track && isStoreTrack(track)) return detectStoreTriggers(customerText);
   const t = String(customerText || '');
   const hits = [];
   if (/已经有系统|在用.+系统|用着.+系统|二维火|美团收银/.test(t)) hits.push('has_system');
@@ -43,14 +49,21 @@ export function detectCustomerTriggers(customerText = '') {
   if (/着急|生气|受够了|太差了|什么破/.test(t)) hits.push('angry');
   if (/不好用|难用|不会用|操作复杂/.test(t)) hits.push('ux_bad');
   if (/退款|退钱|不想用了|取消合作/.test(t)) hits.push('refund');
+  // 门店触发器也可用于 cs 租户旧人格
+  for (const h of detectStoreTriggers(t)) {
+    if (!hits.includes(h)) hits.push(h);
+  }
   return hits;
 }
 
 /** 评估学员一句回复相对上一句客户话的 L1 命中/违规 */
 export function evaluateTraineeUtterance({ track, traineeText, customerText, turnNo, priorTraineeCount }) {
+  if (isStoreTrack(track)) {
+    return evaluateStoreUtterance({ track, traineeText, customerText, turnNo });
+  }
   const text = String(traineeText || '');
   const customer = String(customerText || '');
-  const triggers = detectCustomerTriggers(customer);
+  const triggers = detectCustomerTriggers(customer, track);
   const violations = [];
   const strengths = [];
   const coachTags = [];
@@ -156,7 +169,8 @@ function evaluateCsTurn({ text, triggers, violations, strengths, coachTags }) {
 }
 
 export function scoreSkillsFromEvals(track, evals = []) {
-  const keys = track === 'sales' ? SALES_SKILLS : CS_SKILLS;
+  const storeKeys = skillsForTrack(track);
+  const keys = storeKeys || (track === 'sales' ? SALES_SKILLS : CS_SKILLS);
   const base = Object.fromEntries(keys.map((k) => [k, 70]));
   for (const ev of evals) {
     for (const s of ev.strengths || []) {
@@ -168,11 +182,11 @@ export function scoreSkillsFromEvals(track, evals = []) {
       if (base[skill] != null) base[skill] = Math.max(0, base[skill] - 8);
     }
   }
-  // closing / retention lightly from readiness movement is applied in debrief
   return base;
 }
 
 function principleToSkill(track, principleId) {
-  const list = track === 'sales' ? SALES_PRINCIPLES : CS_PRINCIPLES;
+  const storeList = principlesForTrack(track);
+  const list = storeList || (track === 'sales' ? SALES_PRINCIPLES : CS_PRINCIPLES);
   return list.find((p) => p.id === principleId)?.skill || null;
 }

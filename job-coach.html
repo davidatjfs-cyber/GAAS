@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AI 岗位教练</title>
+  <style>
+    :root {
+      --bg:#e7eee9; --ink:#132019; --muted:#627068; --card:#fff;
+      --accent:#0d7a5f; --line:#d0ddd4; --danger:#b91c1c; --warn:#b45309;
+      --safe-b: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+    header { position:sticky; top:0; z-index:20; padding:12px 14px; background:#123c32; color:#fff; display:flex; justify-content:space-between; gap:10px; }
+    header h1 { margin:0; font-size:17px; } header .sub { opacity:.78; font-size:11px; margin-top:3px; }
+    header a { color:#b7e4d5; font-size:12px; text-decoration:none; }
+    main { max-width:720px; margin:0 auto; padding:10px 10px calc(24px + var(--safe-b)); display:grid; gap:10px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; }
+    .card h2 { margin:0 0 10px; font-size:16px; }
+    label { font-size:12px; color:var(--muted); display:grid; gap:4px; width:100%; margin-top:8px; }
+    select, textarea, button { font:inherit; }
+    select, textarea { padding:11px 12px; border:1px solid var(--line); border-radius:12px; width:100%; font-size:16px; }
+    button { padding:11px 14px; border-radius:12px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:var(--accent); }
+    button.ghost { background:#f4f7f5; border-color:var(--line); color:var(--ink); }
+    button:disabled { opacity:.45; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .pill { display:inline-flex; padding:4px 10px; border-radius:999px; background:#e8f5f0; color:var(--accent); font-size:12px; font-weight:600; }
+    .brief { background:#f7faf8; border:1px solid var(--line); border-radius:12px; padding:12px; font-size:14px; line-height:1.55; }
+    .brief h3 { margin:0 0 8px; font-size:15px; }
+    .facts { margin:8px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
+    .meters { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .meter { background:#f7faf8; border:1px solid var(--line); border-radius:12px; padding:10px; }
+    .meter .l { font-size:11px; color:var(--muted); } .meter .v { font-size:22px; font-weight:700; }
+    .chat { min-height:200px; max-height:min(46vh,360px); overflow:auto; display:grid; gap:8px; padding:10px; background:#f4f8f6; border:1px solid var(--line); border-radius:14px; }
+    .bubble { max-width:88%; padding:9px 11px; border-radius:14px; font-size:14px; line-height:1.45; }
+    .bubble .meta { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+    .bubble.in { background:#fff; border:1px solid var(--line); justify-self:start; }
+    .bubble.out { background:rgba(13,122,95,.14); justify-self:end; }
+    .bubble.coach { border:1px dashed rgba(180,120,0,.55); background:#fff8e8; }
+    .debrief { white-space:pre-wrap; font-size:13px; line-height:1.5; background:#f8faf9; border:1px solid var(--line); border-radius:12px; padding:10px; }
+    .hint { font-size:12px; color:var(--muted); line-height:1.4; }
+    .err { color:var(--danger); font-size:13px; min-height:1.2em; }
+    .hidden { display:none !important; }
+    .kb a { color:var(--accent); }
+    .score-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
+    .score-grid .meter .v { font-size:18px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>AI 岗位教练</h1>
+      <div class="sub" id="subLine">具体事故卡 · 实操陪练</div>
+    </div>
+    <div class="row">
+      <span class="pill" id="modePill">未登录</span>
+      <a href="/">返回 GAAS</a>
+    </div>
+  </header>
+  <main>
+    <div class="card" id="authCard">
+      <h2>需要登录</h2>
+      <p class="hint">请从 GAAS 培训页进入，或确保已登录。</p>
+      <div class="err" id="authErr"></div>
+    </div>
+
+    <div class="card hidden" id="homeCard">
+      <h2>抽一张具体事故卡</h2>
+      <p class="hint">先选大类，再随机抽取具体场景（含锁定事实）。看清事故卡后才开始对话，对方不会另起新问题。</p>
+      <label>岗位轨
+        <select id="trackSel"></select>
+      </label>
+      <label>场景大类
+        <select id="catSel"></select>
+      </label>
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="btnDraw">随机抽事故卡</button>
+        <button type="button" class="secondary" id="btnExam">考试模式抽卡</button>
+      </div>
+      <div class="err" id="homeErr"></div>
+    </div>
+
+    <div class="card hidden" id="cardPreview">
+      <h2>事故卡（请先读完）</h2>
+      <div class="brief" id="briefBox"></div>
+      <div class="kb hint" id="kbBox" style="margin-top:10px;"></div>
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="btnStart">确认并开始对话</button>
+        <button type="button" class="ghost" id="btnRedraw">换一张</button>
+        <button type="button" class="ghost" id="btnBackHome">返回</button>
+      </div>
+      <div class="err" id="previewErr"></div>
+    </div>
+
+    <div class="card hidden" id="chatCard">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+        <strong id="chatTitle">对练中</strong>
+        <button type="button" class="ghost" id="btnFinish">结束并复盘</button>
+      </div>
+      <p class="hint" id="chatFactHint"></p>
+      <div class="meters" style="margin-top:8px;">
+        <div class="meter"><div class="l">情绪</div><div class="v" id="mEmotion">—</div></div>
+        <div class="meter"><div class="l">满意度</div><div class="v" id="mSat">—</div></div>
+      </div>
+      <div class="chat" id="chat" style="margin-top:10px;"></div>
+      <label>你的回复
+        <textarea id="input" rows="3" placeholder="围绕本事故卡事实回复，像现场一样…"></textarea>
+      </label>
+      <div class="row" style="margin-top:8px;"><button type="button" id="btnSend">发送</button></div>
+      <div class="err" id="chatErr"></div>
+    </div>
+
+    <div class="card hidden" id="debriefCard">
+      <h2>本场复盘</h2>
+      <div class="score-grid" id="scoreGrid"></div>
+      <div class="debrief" id="debriefBox"></div>
+      <div class="row" style="margin-top:10px;">
+        <button type="button" id="btnAgain">同大类再抽一张</button>
+        <button type="button" class="ghost" id="btnHome">回首页</button>
+      </div>
+    </div>
+  </main>
+<script>
+(function () {
+  const token = localStorage.getItem('hrms_token') || localStorage.getItem('HRMS_API_TOKEN') || '';
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('token')) localStorage.setItem('hrms_token', qs.get('token'));
+  const state = {
+    token: qs.get('token') || token,
+    me: null, track: null, examMode: false,
+    categories: [], incident: null, sessionId: null,
+  };
+  const $ = (id) => document.getElementById(id);
+  const show = (id, on) => $(id).classList.toggle('hidden', !on);
+  const setErr = (id, msg) => { $(id).textContent = msg || ''; };
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + state.token,
+        ...(opts.headers || {}),
+      },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      throw Object.assign(new Error(data.message || data.error || ('HTTP ' + res.status)), { data });
+    }
+    return data;
+  }
+
+  async function loadMe() {
+    if (!state.token) {
+      show('authCard', true);
+      setErr('authErr', '未找到登录 token');
+      return;
+    }
+    try {
+      const me = await api('/api/sales-sim/me');
+      state.me = me;
+      state.track = me.job_profile_key;
+      $('modePill').textContent = me.username || '已登录';
+      $('subLine').textContent = (me.position || me.role || '') + ' · ' + (me.job_profile_key || '');
+      show('authCard', false);
+      show('homeCard', true);
+      fillTracks();
+      await loadCategories();
+    } catch (e) {
+      show('authCard', true);
+      setErr('authErr', e.message || '请重新登录 GAAS');
+    }
+  }
+
+  function fillTracks() {
+    // 门店岗位教练：禁止混入销售公司「客服/销售」轨（另有销售陪练系统）
+    const opts = [
+      ['foh_server','服务员'],['cashier','收银'],['store_manager','店长'],
+      ['kitchen_staff','厨房'],['hq_ops','总部运营'],
+    ];
+    const storeOnly = new Set(opts.map((x) => x[0]));
+    if (!storeOnly.has(state.track)) state.track = 'foh_server';
+    $('trackSel').innerHTML = opts.map(([k,l]) =>
+      '<option value="'+k+'"'+(k===state.track?' selected':'')+'>'+l+'</option>').join('');
+  }
+
+  async function loadCategories() {
+    state.track = $('trackSel').value || state.track;
+    const data = await api('/api/sales-sim/categories?track=' + encodeURIComponent(state.track));
+    state.categories = data.categories || [];
+    $('catSel').innerHTML = '<option value="">全部大类（随机）</option>' +
+      state.categories.map((c) => '<option value="'+esc(c.category_key)+'">'+esc(c.label)+'</option>').join('');
+  }
+
+  async function drawCard() {
+    setErr('homeErr', '');
+    try {
+      state.track = $('trackSel').value;
+      const data = await api('/api/sales-sim/incidents/draw', {
+        method: 'POST',
+        body: {
+          track: state.track,
+          category: $('catSel').value || null,
+        },
+      });
+      state.incident = data.incident;
+      renderPreview(state.incident);
+      show('homeCard', false);
+      show('cardPreview', true);
+    } catch (e) {
+      setErr('homeErr', e.message || '抽卡失败（请确认已跑 migration 174）');
+    }
+  }
+
+  function renderPreview(inc) {
+    if (!inc) return;
+    const facts = (inc.locked_facts || []).map((f) => '<li>'+esc(f)+'</li>').join('');
+    $('briefBox').innerHTML =
+      '<h3>'+esc(inc.title)+' <span class="pill">'+esc(inc.category_label||inc.category_key)+' · Lv'+esc(inc.difficulty)+'</span></h3>'+
+      '<div><b>对手：</b>'+esc(inc.counterpart_label||inc.counterpart_role)+'</div>'+
+      '<div style="margin-top:8px;"><b>事故说明：</b>'+esc(inc.incident_brief)+'</div>'+
+      (facts ? '<ul class="facts"><b>锁定事实（对话不得偏离）：</b>'+facts+'</ul>' : '')+
+      '<div style="margin-top:8px;"><b>成功标准：</b>'+esc(inc.success_criteria||'')+'</div>'+
+      '<div style="margin-top:8px;color:var(--muted);font-size:13px;"><b>开场将说：</b>「'+esc(inc.opening_line)+'」</div>';
+    const know = (inc.must_know || []).map((x) => '<li>'+esc(x)+'</li>').join('');
+    const arts = inc.kb_articles || [];
+    $('kbBox').innerHTML =
+      (know ? '<div style="margin-bottom:8px;"><b>开练前应知要点：</b><ul class="facts">'+know+'</ul></div>' : '') +
+      (arts.length
+        ? '<b>关联培训资料：</b> ' + arts.map((a) => '<a href="/?page=knowledge" target="_blank">'+esc(a.title)+'</a>').join(' · ')
+        : '<b>关联培训资料：</b> 已内置通用培训包，首次打开接口时自动写入知识库');
+  }
+
+  async function startSession() {
+    if (!state.incident) return;
+    setErr('previewErr', '');
+    try {
+      const data = await api('/api/sales-sim/sessions', {
+        method: 'POST',
+        body: {
+          track: state.track,
+          incident_card_key: state.incident.card_key,
+          exam_mode: state.examMode,
+        },
+      });
+      state.sessionId = data.session.id;
+      $('chat').innerHTML = '';
+      $('chatTitle').textContent = state.incident.title;
+      $('chatFactHint').textContent = '锁定事实：' + (state.incident.locked_facts || []).join('；');
+      if (data.opening) bubble('customer', data.opening.content);
+      updateMeters(data.session);
+      show('cardPreview', false);
+      show('debriefCard', false);
+      show('chatCard', true);
+    } catch (e) {
+      setErr('previewErr', e.message);
+    }
+  }
+
+  function bubble(role, text) {
+    const el = document.createElement('div');
+    el.className = 'bubble ' + (role === 'trainee' ? 'out' : role === 'coach' ? 'coach' : 'in');
+    const label = role === 'trainee' ? '我' : role === 'coach' ? '教练' : '对方';
+    el.innerHTML = '<span class="meta">'+label+'</span>'+esc(text||'');
+    $('chat').appendChild(el);
+    $('chat').scrollTop = $('chat').scrollHeight;
+  }
+  function updateMeters(s) {
+    $('mEmotion').textContent = s?.emotion ?? '—';
+    $('mSat').textContent = s?.satisfaction ?? '—';
+  }
+
+  async function sendTurn() {
+    const text = $('input').value.trim();
+    if (!text || !state.sessionId) return;
+    $('btnSend').disabled = true;
+    setErr('chatErr', '');
+    try {
+      bubble('trainee', text);
+      $('input').value = '';
+      const data = await api('/api/sales-sim/sessions/' + state.sessionId + '/turn', {
+        method: 'POST', body: { text },
+      });
+      (data.coach || []).forEach((c) => bubble('coach', c.message || c));
+      if (data.customer) bubble('customer', data.customer.content);
+      if (data.state) updateMeters(data.state);
+      if (data.ended) showDebrief(data);
+    } catch (e) {
+      setErr('chatErr', e.message);
+    } finally {
+      $('btnSend').disabled = false;
+    }
+  }
+
+  async function finish() {
+    if (!state.sessionId) return;
+    try {
+      showDebrief(await api('/api/sales-sim/sessions/' + state.sessionId + '/finish', { method: 'POST', body: {} }));
+    } catch (e) { setErr('chatErr', e.message); }
+  }
+
+  function showDebrief(data) {
+    const d = data.debrief || {};
+    const dual = d.incident_scores || {};
+    $('scoreGrid').innerHTML =
+      '<div class="meter"><div class="l">综合</div><div class="v">'+(d.score??'—')+'</div></div>'+
+      '<div class="meter"><div class="l">知识/SOP</div><div class="v">'+(dual.knowledge_score??'—')+'</div></div>'+
+      '<div class="meter"><div class="l">对方体验</div><div class="v">'+(dual.experience_score??'—')+'</div></div>';
+    const lines = [];
+    lines.push('成绩：' + (d.score_grade || '') + (d.incident?.title ? (' · ' + d.incident.title) : ''));
+    if (d.incident?.success_criteria) lines.push('成功标准：' + d.incident.success_criteria);
+
+    const corrections = d.turn_corrections || [];
+    if (corrections.length) {
+      lines.push('', '—— 逐句纠错 ——');
+      corrections.forEach((c, i) => {
+        lines.push('');
+        lines.push((c.turn_no != null ? ('第' + c.turn_no + '轮') : ('问题' + (i + 1))) + '：');
+        lines.push('你说的：「' + (c.your_words || '') + '」');
+        (c.problems || []).forEach((p) => lines.push('× ' + p));
+        lines.push('✓ 正确应是：' + (c.better_answer || d.model_answer || ''));
+      });
+    }
+    if (d.model_answer) {
+      lines.push('', '—— 本场标准答法 ——');
+      lines.push(d.model_answer);
+    }
+
+    if (d.coach_narrative) lines.push('', d.coach_narrative);
+    (d.strengths || []).slice(0, 3).forEach((s) => lines.push('✓ ' + (s.detail || s.principle_label)));
+    (d.improvements || []).slice(0, 3).forEach((s) => lines.push('△ ' + (s.detail || s.principle_label)));
+    if (dual.sop_details) {
+      lines.push('', 'SOP 检查：');
+      dual.sop_details.forEach((x) => lines.push((x.hit ? '✓ ' : '○ ') + x.item));
+    }
+    const arts = d.kb_articles || [];
+    if (arts.length) {
+      lines.push('', '请复习：');
+      arts.forEach((a) => lines.push('· ' + a.title));
+    }
+    $('debriefBox').textContent = lines.join('\n');
+    show('chatCard', false);
+    show('debriefCard', true);
+    state.sessionId = null;
+  }
+
+  $('btnDraw').onclick = () => { state.examMode = false; drawCard(); };
+  $('btnExam').onclick = () => { state.examMode = true; drawCard(); };
+  $('btnStart').onclick = startSession;
+  $('btnRedraw').onclick = drawCard;
+  $('btnBackHome').onclick = () => { show('cardPreview', false); show('homeCard', true); };
+  $('btnSend').onclick = sendTurn;
+  $('btnFinish').onclick = finish;
+  $('btnAgain').onclick = () => { show('debriefCard', false); drawCard(); };
+  $('btnHome').onclick = () => { show('debriefCard', false); show('homeCard', true); };
+  $('trackSel').onchange = () => loadCategories().catch(() => {});
+  $('input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTurn(); }
+  });
+
+  loadMe();
+})();
+</script>
+</body>
+</html>

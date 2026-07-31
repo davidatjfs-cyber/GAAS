@@ -122,6 +122,7 @@ function registerSimSessionRoutes({ app, pool, platformAdminRequired }) {
         personaKey: req.body?.persona_key,
         difficulty: req.body?.difficulty,
         audience: 'internal',
+        coachPersonaKey: req.body?.coach_persona_key || null,
       });
       res.status(result.ok ? 200 : 400).json(result);
     } catch (e) {
