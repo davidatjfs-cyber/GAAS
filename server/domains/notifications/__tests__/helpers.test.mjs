@@ -94,8 +94,12 @@ test('appendNotifications with one notif calls pool.query dedup-check then INSER
 
 // 2026-07-30：实测发现同一批通知(排班/培训/离职等多种类型)在同一秒内被插入了十几万条重复行，
 // 拖垮数据库最终拖垮整机——根因是这个共用的落库入口完全没有去重，上层调用方一旦被并发/重复
-// 触发多次，这里就无脑各插一遍。锁定：10分钟内同用户+同类型+同文案的未读通知已存在时跳过插入。
-test('appendNotifications：10分钟内同用户+同类型+同文案已有未读通知时跳过插入', async () => {
+// 触发多次，这里就无脑各插一遍。
+// 2026-07-31：上一版去重锁限定"最近10分钟内"，只能挡突发短时重复——生产实测points_request/
+// schedule_notice等类型存在"隔十几分钟到几十分钟重新触发一次"的慢速重复bug，旧的一超过10
+// 分钟就不再算重复，堆积到6万+条。改成不限时间，只要同用户+同类型+同文案还有未读通知存在
+// 就跳过插入。
+test('appendNotifications：同用户+同类型+同文案已有未读通知时跳过插入（不限时间窗口）', async () => {
   const { helpers, calls } = buildHelpers({ poolQueryResult: { rows: [{}] } });
   await helpers.appendNotifications([
     { targetUser: 'bob', title: 'Hi', message: 'body', type: 'system_notice' },
