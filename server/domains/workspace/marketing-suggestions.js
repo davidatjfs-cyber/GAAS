@@ -37,31 +37,48 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
     whereStore = ` AND store_id = ANY($${params.length})`;
   }
   try {
-    // 2026-07-30 修复：用户反馈同一家店连续出现好几条几乎一样的建议（都是同一批"新客未激活
-    // 客户，共65人"的模板文案）——查证生产库确认campaign_autopilot每天都会为同一个门店+同一批
-    // 目标客群重新生成一批建议，旧的未处理建议从不过期，这里只是LIMIT取最新N条，完全没有
-    // 按"门店+目标客群"去重，导致雷同建议一起堆在列表里。改成：多取一批候选（lim*4，覆盖去重
-    // 后的loss），按 store_id + payload.target_audience 分组，每组只保留最新一条，再截到lim。
+    // 2026-07-31 二次重写：用户反馈内容"根本不能用"——查证生产库发现真正的根因：同一家店在
+    // growth_actions.store_id里同时存在两种格式（数字增长引擎ID如'51866138'=马己仙，累计
+    // 1767条历史堆积；以及POS长名如'马己仙广东小馆·荔枝木烧鹅（大宁音乐广场店）'，93条），
+    // 而之前的去重逻辑是按"归一化前的原始store_id字符串"分组的，同一家店的两种格式互相不
+    // 认识对方、各自去重，数字ID那个桶的海量历史堆积会在"按created_at最新N条"里把真正该
+    // 展示的内容挤没。改成：①先归一化成门店官方简称再分组去重；②按门店轮流(round-robin)
+    // 抽取，确保每个门店数量相对平均，不会被某个门店的历史堆积独占。
     const r = await pool.query(
       `SELECT action_key, action_type, store_id, title, detail, created_at, payload
          FROM growth_actions
         WHERE tenant_id = $1 AND status = 'proposed'${whereStore}
-        ORDER BY created_at DESC LIMIT ${lim * 4}`,
+        ORDER BY created_at DESC LIMIT 500`,
       params
     );
-    const seen = new Set();
-    const deduped = [];
+    const byStore = new Map(); // canonicalStore -> [{row, audienceKey}]，同店同客群只保留最新
+    const seenAudience = new Map(); // canonicalStore -> Set(audienceKey)
     for (const row of r.rows || []) {
+      const canonicalStore = resolveAgentCanonicalStore(row.store_id) || String(row.store_id || '').trim();
+      if (!canonicalStore) continue;
       const targetAudience = String(row.payload?.target_audience || '').trim();
-      const dedupeKey = String(row.store_id || '').trim() + '||' + targetAudience;
-      if (targetAudience && seen.has(dedupeKey)) continue;
-      if (targetAudience) seen.add(dedupeKey);
-      deduped.push(row);
-      if (deduped.length >= lim) break;
+      const audienceKey = targetAudience || row.action_key;
+      if (!seenAudience.has(canonicalStore)) seenAudience.set(canonicalStore, new Set());
+      const seen = seenAudience.get(canonicalStore);
+      if (seen.has(audienceKey)) continue; // 已有更新的同客群建议，跳过（结果按created_at desc排列，先到先得=最新）
+      seen.add(audienceKey);
+      if (!byStore.has(canonicalStore)) byStore.set(canonicalStore, []);
+      byStore.get(canonicalStore).push({ ...row, store: canonicalStore });
+    }
+    // 按门店轮流抽取，而不是全局按最新时间截断——避免历史堆积多的门店独占展示名额
+    const storeQueues = [...byStore.values()];
+    const deduped = [];
+    let round = 0;
+    while (deduped.length < lim && storeQueues.some((q) => q.length > round)) {
+      for (const queue of storeQueues) {
+        if (deduped.length >= lim) break;
+        if (queue.length > round) deduped.push(queue[round]);
+      }
+      round++;
     }
     return deduped.map((row) => ({
       actionKey: row.action_key,
-      store: resolveAgentCanonicalStore(row.store_id) || row.store_id,
+      store: row.store,
       title: row.title,
       detail: row.detail,
       createdAt: row.created_at,
