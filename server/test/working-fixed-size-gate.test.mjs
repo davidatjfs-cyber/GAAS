@@ -278,8 +278,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 进入时容器还不存在，这段逻辑找不到元素直接跳过，容器要等随后loadPageData才被创建出来，
  * 已经错过了"显示"这一步，第二次点击时容器已存在才正常显示。改成在显示逻辑执行前就
  * 提前创建好容器。
+ * 2026-07-31 第四十五次上调（71457→71459）：用户要求"通知使用频率最高"——待办组件tab
+ * 顺序从"任务/待批/通知"改成"通知/待批/任务"，默认展开的tab也从任务改成通知。
  */
-const MAX_LINES = 71457;
+const MAX_LINES = 71459;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
