@@ -1227,7 +1227,9 @@
 
             const allItems = [
                 { icon:'🏠', label:'工作台', page:'workspace' },
-                { icon:'👤', label:'我的档案', page:'profile' },
+                // 2026-07-31：管理员/总部营运经理/店长/出品经理这4个角色的"我的档案"入口
+                // 换成"工作台"（原档案页隐藏），其它角色继续用"我的档案"。
+                { icon:'👤', label:'我的档案', page:'profile', hideForRoles:['admin','hq_manager','store_manager','store_production_manager'] },
                 { icon:'👥', label:'员工管理', page:'employees', roles:['admin','hr_manager','hq_manager','store_manager'] },
                 { icon:'📋', label:'营业日报', page:'daily-report', roles:['admin','hq_manager','store_manager','front_manager','front_supervisor'] },
                 { icon:'✅', label:'待审批', page:'approvals', roles:['admin','hr_manager','hq_manager','store_manager','store_production_manager'] },
@@ -1259,6 +1261,7 @@
             const visibleItems = allItems.filter(item => {
                 if (item.kitchenOnly && !_isKitchenUser) return false;
                 if (Array.isArray(item.roles) && item.roles.length && !item.roles.includes(role)) return false;
+                if (Array.isArray(item.hideForRoles) && item.hideForRoles.includes(role)) return false;
                 if (item.href) return true;
                 if (item.page && !canAccessModulePage(item.page, role)) return false;
                 return true;

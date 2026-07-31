@@ -255,8 +255,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-30 第三十九次上调（71367→71397）：用户明确要求"营销全部手动触发"，去掉自动
  * 执行相关文案；"忽略"改成实时刷新替换新建议（原来只是隐藏按钮，不会补新的）；补上
  * 未读"新"标签区分滚动更新后的新旧建议(localStorage记录已见过的actionKey)。
+ * 2026-07-31 第四十次上调（71397→71418）：① 修复店长/出品经理工作台"待批"硬编码成空
+ * 数组、从未真正查询审批数据的bug，改成跟老板/总部视图一样查/api/approvals；
+ * ② 管理员/总部营运经理/店长/出品经理这4个角色"我的档案"入口换成"工作台"（原档案页
+ * 隐藏），其它角色保持不变。
  */
-const MAX_LINES = 71397;
+const MAX_LINES = 71418;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

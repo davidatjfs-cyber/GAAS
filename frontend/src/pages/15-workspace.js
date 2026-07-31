@@ -1852,13 +1852,17 @@ function wsSection(title, contentHtml) {
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const store = String(currentUser?.current_store || currentUser?.store || '').trim();
-    const [home, growthTasks, overview] = await Promise.all([
+    const [home, growthTasks, overview, approvalsData] = await Promise.all([
         wsFetchJson('/api/workspace/home'),
         wsFetchGrowthSolutionTasks(),
         wsFetchJson('/api/workspace/overview'),
+        wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
     ]);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
-    const pendingApprovals = [];
+    // 2026-07-31：用户反馈"待批"是否真的连通好用——查证发现店长/出品经理视图(wsRenderStore)
+    // 这里之前硬编码成空数组，从来没真正查询过审批数据，永远显示0，只有老板/总部视图
+    // (wsRenderBossOrHq)是真实连通的。改成跟老板/总部视图一样查同一个/api/approvals接口。
+    const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
     const storeLight = (Array.isArray(home?.storeLights) ? home.storeLights : []).find((s) => s.store === store);
     const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无') + '·门店级别' + (storeLight?.rating || '暂无');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
@@ -2026,10 +2030,24 @@ function wsRenderQuickActions() {
     );
 }
 
+// 2026-07-31：用户明确要求管理员/总部营运经理/店长/出品经理这4个角色，"我的档案"入口
+// 直接换成"工作台"（原档案页隐藏不用），其它角色（如前厅经理/收银员等普通员工）保持
+// 不变继续用"我的档案"——工作台首页已经涵盖了档案页的核心信息，这4个角色不再需要单独
+// 的档案入口。
+const WS_REPLACE_PROFILE_NAV_ROLES = ['admin', 'hq_manager', 'store_manager', 'store_production_manager'];
+function wsShouldReplaceProfileNav() {
+    return WS_REPLACE_PROFILE_NAV_ROLES.includes(String(currentUser?.role || ''));
+}
+
 // ── 桌面侧栏「工作台」入口（JS 注入，working-fixed.html 行数棘轮零余量，不能加静态 HTML）──
 function wsInjectNavItem() {
     const nav = document.querySelector('.sidebar nav') || document.querySelector('nav');
-    if (!nav || nav.querySelector('[data-page="workspace"]')) return;
+    if (!nav) return;
+    if (wsShouldReplaceProfileNav()) {
+        const profileNav = nav.querySelector('[data-page="profile"]');
+        if (profileNav) profileNav.style.display = 'none';
+    }
+    if (nav.querySelector('[data-page="workspace"]')) return;
     const item = document.createElement('div');
     item.className = 'nav-item';
     item.setAttribute('data-page', 'workspace');
