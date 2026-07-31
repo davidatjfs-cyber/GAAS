@@ -352,8 +352,11 @@ export async function handleQualificationPromotionApproved({ req, deps, updated,
     deps,
   });
 
+  // 关键：先落库 track，再派培训任务/发通知。
+  // 旧顺序在 appendNotifications 抛错时会被 afterDecide 静默吞掉，导致正式晋升「暂无可申请记录」。
   const tracks = Array.isArray(state0.promotionTracks) ? state0.promotionTracks.slice() : [];
   tracks.unshift(trackBuild.track);
+  await mergeSharedStateFields({ promotionTracks: [trackBuild.track] }, { promotionTracks: 'id' });
 
   const isKitchen = isKitchenByRoleOrPosition(applicantRole, applicantPosition, applicantDepartment);
   const productionManagerByStore = pickStoreRoleUsernameByStore(state0, applicantStore, ['store_production_manager']);
@@ -396,7 +399,6 @@ export async function handleQualificationPromotionApproved({ req, deps, updated,
     );
   }
   await appendNotifications(notifications);
-  await mergeSharedStateFields({ promotionTracks: tracks }, { promotionTracks: 'id' });
   return { ...state0, promotionTracks: tracks };
 }
 

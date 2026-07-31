@@ -191,8 +191,8 @@ test('buildApprovalChain / insertPendingApprovalRequest', async () => {
   assert.match(pool.queries[0].sql, /insert into approval_requests/i);
 });
 
-test('syncFormalPromotionTrackOnCreate updates track + saveSharedState', async () => {
-  let saved = null;
+test('syncFormalPromotionTrackOnCreate updates track via mergeSharedStateFields', async () => {
+  let merged = null;
   const state = {
     promotionTracks: [{ id: 't1', formalApplied: false }],
   };
@@ -201,14 +201,15 @@ test('syncFormalPromotionTrackOnCreate updates track + saveSharedState', async (
     payload: { promotionStage: 'formal', promotionTrackId: 't1' },
     state,
     item: { id: 55 },
-    saveSharedState: async (s) => {
-      saved = s;
+    mergeSharedStateFields: async (fields, keys) => {
+      merged = { fields, keys };
     },
     hrmsNowISO: () => '2026-07-26T12:00:00+08:00',
   });
   assert.equal(next.promotionTracks[0].formalApplied, true);
   assert.equal(next.promotionTracks[0].formalApprovalId, '55');
-  assert.ok(saved);
+  assert.equal(merged.keys.promotionTracks, 'id');
+  assert.equal(merged.fields.promotionTracks[0].id, 't1');
 });
 
 test('notifyApprovalCreated sends notif + feishu async', async () => {
