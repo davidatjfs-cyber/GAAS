@@ -1419,12 +1419,14 @@ async function wsRenderInsightsSection() {
 // 2026-07-30：加"已完成"tab——任务一旦resolved就从"任务"tab消失，责任人自己都没法回头
 // 确认"这件事到底有没有真的处理过"，尤其是通过飞书快速回复几秒内就closed的任务，工作台
 // 里几乎从来没出现过。这里不显示数字角标（"最近完成"不是待办，没有"未处理"的紧迫感）。
+// 2026-07-31：用户明确要求"通知使用频率最高"——把通知tab放最前面并设为默认展开，
+// 待批放中间，任务挪到最后。
 function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount) {
     return (
         '<div class="ws-todo">' +
-        '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
+        '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="approval"><span class="ws-todo__n">' + pendingApprovalCount + '</span>待批</button>' +
-        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知</button>' +
+        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="done">已完成</button>' +
         '</div>' +
         '<div class="ws-todo-pane" id="ws-todo-pane"></div>'
@@ -1527,7 +1529,7 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
             renderPane(btn.getAttribute('data-ws-todo-tab'));
         });
     });
-    renderPane('task');
+    renderPane('notif');
 }
 
 // 待确认的任务反馈：责任人提交完成证据(pending_review)后，发起人在这里确认/打回，
