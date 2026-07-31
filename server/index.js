@@ -649,6 +649,7 @@ registerSalesAiRoutes(app, pool, platformAdminRequired, {
   },
   requireSalesManagerOrAbove,
   upload,
+  authRequired,
 });
 registerTenantSubscriptionRoutes(app, { pool, authRequired });
 registerAiQualityLearningRoutes(app, {

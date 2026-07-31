@@ -119,3 +119,48 @@ export async function transcribeAmrVoice(amrBuffer) {
     return null;
   }
 }
+
+/** 浏览器录音(webm/ogg/wav/mp3…) → 文字；识别失败返回 null */
+export async function transcribeBrowserVoice(audioBuffer, { mimeType = 'audio/webm' } = {}) {
+  try {
+    const fmt = guessFfmpegFormat(mimeType);
+    const pcm = await anyAudioToPcm16k(audioBuffer, fmt);
+    const text = await recognizePcm(pcm);
+    return text || null;
+  } catch (e) {
+    log.error({ msg: 'transcribe_browser_failed', err: e?.message || String(e) });
+    return null;
+  }
+}
+
+function guessFfmpegFormat(mimeType = '') {
+  const m = String(mimeType || '').toLowerCase();
+  if (m.includes('ogg') || m.includes('opus')) return 'ogg';
+  if (m.includes('wav')) return 'wav';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  if (m.includes('mp4') || m.includes('m4a')) return 'mp4';
+  if (m.includes('amr')) return 'amr';
+  return 'webm';
+}
+
+function anyAudioToPcm16k(buffer, inputFormat) {
+  return new Promise((resolve, reject) => {
+    const args = ['-f', inputFormat, '-i', 'pipe:0', '-ar', '16000', '-ac', '1', '-f', 's16le', 'pipe:1'];
+    // webm/ogg 有时容器探测比强制 -f 更稳
+    if (inputFormat === 'webm' || inputFormat === 'ogg') {
+      args.splice(0, 2); // drop -f inputFormat，让 ffmpeg 自探
+    }
+    const ff = spawn('ffmpeg', args);
+    const chunks = [];
+    const errChunks = [];
+    ff.stdout.on('data', (d) => chunks.push(d));
+    ff.stderr.on('data', (d) => errChunks.push(d));
+    ff.on('error', reject);
+    ff.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`ffmpeg exited ${code}: ${Buffer.concat(errChunks).toString().slice(-500)}`));
+      resolve(Buffer.concat(chunks));
+    });
+    ff.stdin.write(buffer);
+    ff.stdin.end();
+  });
+}

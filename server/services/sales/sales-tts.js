@@ -321,11 +321,7 @@ async function synthesizeHttpMp3(text, { timeoutMs = 30000, config = null } = {}
   }
 }
 
-/**
- * 文本 → { amr, meta }；amr 为 null 表示全部候选都失败，调用方应回退到文字回复而不是让客户没收到任何消息。
- * meta 记录真正发声的那个候选，用于事后按变体统计真人感效果(见 sales-voice-quality.js)。
- */
-export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
+async function synthesizeSpeechBuffer(text, { rolloutKey = '', asAmr = true } = {}) {
   const primary = getDashscopeTtsConfig();
   const candidates = buildTtsCandidateConfigs(text, {
     rolloutKey,
@@ -343,7 +339,6 @@ export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
         ? await synthesizeHttpMp3(text, { config })
         : await synthesizeMp3(text, { config });
       if (!mp3?.length) throw new Error('tts_empty_audio');
-      const amr = await mp3ToAmr(mp3);
       const meta = {
         tts_variant: config.variant || 'baseline',
         tts_model: config.model,
@@ -352,13 +347,30 @@ export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
         tts_tagged: Boolean(config.tagged),
         tts_fallbacks: failures.length,
       };
-      log.info({ msg: 'tts_synthesized', ...meta });
-      return { amr, meta };
+      log.info({ msg: 'tts_synthesized', format: asAmr ? 'amr' : 'mp3', ...meta });
+      if (!asAmr) return { mp3, amr: null, meta };
+      const amr = await mp3ToAmr(mp3);
+      return { amr, mp3, meta };
     } catch (e) {
       const reason = e?.message || String(e);
       failures.push(`${config.variant || 'baseline'}:${reason}`);
       log.error({ msg: 'tts_synthesize_failed', model: config.model, err: reason });
     }
   }
-  return { amr: null, meta: { tts_variant: null, tts_error: failures.join(' | ').slice(0, 500) } };
+  return { amr: null, mp3: null, meta: { tts_variant: null, tts_error: failures.join(' | ').slice(0, 500) } };
+}
+
+/**
+ * 文本 → { amr, meta }；amr 为 null 表示全部候选都失败，调用方应回退到文字回复而不是让客户没收到任何消息。
+ * meta 记录真正发声的那个候选，用于事后按变体统计真人感效果(见 sales-voice-quality.js)。
+ */
+export async function synthesizeSpeechAmr(text, { rolloutKey = '' } = {}) {
+  const r = await synthesizeSpeechBuffer(text, { rolloutKey, asAmr: true });
+  return { amr: r.amr, meta: r.meta };
+}
+
+/** 浏览器陪练用：返回 mp3，避免再转企微 amr */
+export async function synthesizeSpeechMp3(text, { rolloutKey = '' } = {}) {
+  const r = await synthesizeSpeechBuffer(text, { rolloutKey, asAmr: false });
+  return { mp3: r.mp3, meta: r.meta };
 }
