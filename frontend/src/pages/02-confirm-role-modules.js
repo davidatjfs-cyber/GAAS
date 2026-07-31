@@ -755,6 +755,17 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 pageName = getHomePageName();
             }
 
+            // 2026-07-31 修复："工作台"第一次点击总是空白，要再点一次才出来——根因是
+            // #workspace-page 容器由 wsEnsurePageContainer() 懒创建，而下面"隐藏所有页面/
+            // 显示目标页面"这段逻辑靠 document.getElementById(pageName+'-page') 找容器；
+            // 首次进入时容器还不存在，这段逻辑找不到元素直接跳过（不挂载、不去hidden），
+            // 容器要等随后 loadPageData → renderWorkspaceHome 里才真正被创建出来，但已经
+            // 错过了"显示"这一步，只能等第二次点击时容器已存在才正常显示。这里在显示逻辑
+            // 执行前就提前把容器创建好，第一次点击就能命中。
+            if (pageName === 'workspace' && typeof wsEnsurePageContainer === 'function') {
+                try { wsEnsurePageContainer(); } catch (e) {}
+            }
+
             if (pageName === 'users') {
                 if (!isAdminUser()) {
                     showNotification('仅管理员可访问该模块', 'warning');
