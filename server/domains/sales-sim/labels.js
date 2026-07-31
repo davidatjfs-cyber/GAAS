@@ -9,6 +9,13 @@ export const SKILL_LABELS = {
   diagnosis: '问题定位',
   resolution: '解决闭环',
   retention: '关系维护',
+  service_awareness: '服务意识',
+  product_knowledge: '产品知识',
+  recommendation: '推荐能力',
+  communication: '沟通能力',
+  exception_handling: '异常处理',
+  member_conversion: '会员转化',
+  brand_expression: '品牌表达',
 };
 
 export const PRINCIPLE_LABELS = {
@@ -23,6 +30,31 @@ export const PRINCIPLE_LABELS = {
   dig_refund_root: '退款先挖根因',
   close_loop: '闭环交付',
   closing: '成交推进',
+  greet_first: '先问候再办事',
+  soothe_guest: '客诉先安抚',
+  recommend_after_need: '先了解再推荐',
+  own_exception: '异常先揽责',
+  member_invite: '适时会员引导',
+  brand_tone: '品牌表达得体',
+  clear_speak: '表达清晰可执行',
+  clear_bill: '账单说清楚',
+  refund_verify: '退款先核实',
+  queue_calm: '排队先安抚',
+  groupbuy_clear: '团购规则说清',
+  member_checkout: '结账会员提醒',
+  stabilize_first: '升级客诉先稳场',
+  listen_staff: '对员工先听再决',
+  mystery_fact: '巡店据实应答',
+  hq_clear: '对总部汇报清晰',
+  service_standard: '强调门店服务标准',
+  ack_ticket: '先确认出餐问题',
+  eta_clear: '给出明确出餐时间',
+  food_safety: '食品安全优先',
+  no_blame_foh: '不甩锅前厅',
+  clarify_goal: '先澄清总部目标',
+  store_context: '结合门店现状',
+  actionable: '给出可执行动作',
+  brand_align: '对齐品牌标准',
 };
 
 export const SCENE_LABELS = {
@@ -38,11 +70,25 @@ export const SCENE_LABELS = {
   refund: '要求退款',
   no_early_pitch: '开场挖需',
   custom_win: '高分自提名',
+  rush: '催菜',
+  wrong_dish: '上错菜',
+  ask_recommend: '询问推荐',
+  member: '会员相关',
+  queue: '排队',
+  mystery: '神秘顾客/巡店',
+  staff: '员工冲突',
+  kitchen: '后厨协同',
+  hq: '总部追问',
 };
 
 export const TRACK_LABELS = {
   sales: '销售陪练',
   cs: '客服陪练',
+  foh_server: '服务员陪练',
+  cashier: '收银陪练',
+  store_manager: '店长陪练',
+  kitchen_staff: '厨房陪练',
+  hq_ops: '总部运营陪练',
 };
 
 export function skillLabel(key) {

@@ -293,8 +293,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 从未查询过。接入这个数据源，专门渲染A/B双方案卡片，采纳/不适合复用增长看板同一套
  * /api/strategy-experiments/:code/approve|reject接口(权限跟接口一致仅admin/hq_manager
  * 可操作，其它角色只读展示)。
+ * 2026-07-31 第四十九次上调（71559→71597）：Talent Engine 门店 AI 岗位教练入口卡注入
+ * 培训页（ensureJobCoachEntryCard），对练 UI 在独立 job-coach.html，不堆培训 HTML。
  */
-const MAX_LINES = 71559;
+const MAX_LINES = 71597;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
