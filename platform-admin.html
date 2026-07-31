@@ -654,6 +654,7 @@
         <button type="button" data-scroll-target="crmFinanceSection">合同回款</button>
         <button type="button" data-scroll-target="crmContentSection">内容培育</button>
         <button type="button" data-scroll-target="crmPerformanceSection">区域业绩</button>
+        <button type="button" data-scroll-target="crmSimSection">模拟训练</button>
         <button type="button" id="salesPermissionSettingsBtn" style="display:none;margin-left:auto" onclick="openSalesPermissionSettings()">权限设置</button>
         <button type="button" id="billingAccountSettingsBtn" style="display:none" onclick="openBillingAccountSettings()">收款账户</button>
       </nav>
@@ -681,6 +682,70 @@
         <div style="margin-top:10px">
           <button type="button" onclick="saveBillingAccountSettings()">保存收款账户</button>
           <button type="button" class="ghost" onclick="loadBillingAccountSettings()">刷新</button>
+        </div>
+      </div>
+
+      <div class="card stack" id="crmSimSection">
+        <div class="crm-section-head">
+          <div>
+            <h3>AI 客户模拟训练中心</h3>
+            <p>销售 / 客服分轨对练：L1 思维框架纠偏 + L2 参考话术 + 职级晋升。支持文字与点按录音；训完自动通知培训人。</p>
+          </div>
+          <div class="toolbar" style="gap:8px">
+            <a class="secondary" href="/sales-sim.html" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;padding:8px 12px;border-radius:8px;text-decoration:none">打开独立训练页</a>
+            <button type="button" id="salesSimRefreshBtn" class="secondary">刷新职级</button>
+            <button type="button" id="salesSimDashBtn" class="secondary" data-role-management-only>刷新训练看板</button>
+          </div>
+        </div>
+        <div class="toolbar" style="flex-wrap:wrap;gap:8px">
+          <label style="margin:0">轨道
+            <select id="salesSimTrack" style="width:auto;min-width:120px">
+              <option value="sales">销售陪练</option>
+              <option value="cs">客服陪练</option>
+            </select>
+          </label>
+          <label style="margin:0">人格/场景
+            <select id="salesSimPersona" style="width:auto;min-width:220px"></select>
+          </label>
+          <button type="button" id="salesSimNextBtn" class="ghost">下一场推荐</button>
+          <button type="button" id="salesSimBizBtn" class="ghost" data-role-management-only>从线索生成真题</button>
+          <button type="button" id="salesSimStartBtn" class="warn">开始训练</button>
+          <button type="button" id="salesSimFinishBtn" class="secondary" disabled>结束并复盘</button>
+          <span class="pill" id="salesSimRankPill">职级：—</span>
+          <span class="pill" id="salesSimNotifPill">通知 0</span>
+        </div>
+        <div class="small" id="salesSimNextHint" style="margin-top:4px;color:var(--muted)"></div>
+        <div class="crm-kpis" id="salesSimMeters" style="margin-top:8px">
+          <div class="crm-kpi"><div class="label">情绪</div><div class="value" id="salesSimEmotion">—</div></div>
+          <div class="crm-kpi"><div class="label">信任</div><div class="value" id="salesSimTrust">—</div></div>
+          <div class="crm-kpi"><div class="label">成交就绪</div><div class="value" id="salesSimClose">—</div></div>
+          <div class="crm-kpi"><div class="label">满意度</div><div class="value" id="salesSimSat">—</div></div>
+        </div>
+        <div id="salesSimCoach" class="hint-box" style="display:none;margin-top:8px"></div>
+        <div id="salesSimLog" class="sales-chat" style="min-height:200px;max-height:360px;margin-top:8px"></div>
+        <div class="toolbar" style="margin-top:8px">
+          <input id="salesSimInput" placeholder="输入你的回复…" style="flex:1" disabled>
+          <button type="button" id="salesSimSendBtn" disabled>发送</button>
+        </div>
+        <div style="margin-top:8px;display:grid;gap:8px;padding:10px;border:1px solid #c7e4d8;border-radius:12px;background:linear-gradient(180deg,#eef8f4,#f7faf8)">
+          <button type="button" id="salesSimVoiceBtn" disabled style="min-height:56px;font-size:17px;font-weight:700;border-radius:14px;background:#0f766e;border-color:#0f766e;color:#fff">🎙 语音输入</button>
+          <div class="toolbar" style="margin:0;justify-content:space-between">
+            <div class="small" id="salesSimVoiceHint" style="color:var(--muted)">点「语音输入」说话，说完再点「结束并发送」。识别失败可重试或改打字。</div>
+            <button type="button" id="salesSimVoiceCancelBtn" class="ghost" disabled style="display:none">取消</button>
+          </div>
+        </div>
+        <div id="salesSimDebrief" class="hint-box" style="display:none;margin-top:10px;white-space:pre-wrap"></div>
+        <div id="salesSimDashBox" data-role-management-only style="margin-top:12px">
+          <div class="crm-section-head" style="margin-bottom:8px">
+            <div><h3 style="margin:0;font-size:15px">模拟训练看板</h3><p style="margin:4px 0 0">显示员工姓名与等级（不合格&lt;80 · 合格80–90 · 优秀91–95 · 卓越&gt;95）</p></div>
+          </div>
+          <div class="crm-kpis" id="salesSimDashOverview"></div>
+          <div class="table-wrap" style="overflow:auto;margin-top:8px">
+            <table class="data" id="salesSimDashPeople" style="width:100%;font-size:13px">
+              <thead><tr><th>人员</th><th>轨道</th><th>职级</th><th>完成/总场</th><th>综合等级</th><th>最高等级</th><th>有效分钟</th><th>能力</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -1325,6 +1390,7 @@
       }
       if (name === 'sales' && isLoggedIn()) {
         loadSalesBoard().catch((e) => { toast(e.message); log(`销售工作台加载失败：${e.message}`); });
+        initSalesSimCenter().catch(() => null);
       }
       if (name === 'faq' && isLoggedIn()) loadFaqPortal().catch((e) => toast(e.message));
       if (name === 'demand' && isLoggedIn()) loadDemandList().catch((e) => toast(e.message));
@@ -3579,6 +3645,20 @@ function legacyCopyFallback(value) {
     $('salesBossDashBtn').onclick = () => loadSalesBossDashboard().catch((e) => toast(e.message));
     $('salesCasesBtn').onclick = () => loadSalesCases().catch((e) => toast(e.message));
     $('salesTrainingBtn').onclick = () => loadSalesTraining().catch((e) => toast(e.message));
+    if ($('salesSimTrack')) {
+      $('salesSimTrack').onchange = () => initSalesSimCenter().catch((e) => toast(e.message));
+      $('salesSimRefreshBtn').onclick = () => refreshSalesSimRank().catch((e) => toast(e.message));
+      $('salesSimNextBtn').onclick = () => loadSalesSimNext().catch((e) => toast(e.message));
+      if ($('salesSimBizBtn')) $('salesSimBizBtn').onclick = () => createSalesSimBizPersona().catch((e) => toast(e.message));
+      $('salesSimStartBtn').onclick = () => startSalesSimSession().catch((e) => toast(e.message));
+      $('salesSimFinishBtn').onclick = () => finishSalesSimSession().catch((e) => toast(e.message));
+      $('salesSimSendBtn').onclick = () => sendSalesSimTurn().catch((e) => toast(e.message));
+      if ($('salesSimDashBtn')) $('salesSimDashBtn').onclick = () => loadSalesSimDashboard().catch((e) => toast(e.message));
+      $('salesSimInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); sendSalesSimTurn().catch((err) => toast(err.message)); }
+      });
+      bindSalesSimVoice();
+    }
     $('salesKnowledgeBtn').onclick = () => loadSalesKnowledge().catch((e) => toast(e.message));
     $('salesContentCenterBtn').onclick = () => loadSalesContentCenter().catch((e) => toast(e.message));
     $('salesPerformanceBtn').onclick = () => loadSalesPerformance().catch((e) => toast(e.message));
@@ -4055,12 +4135,14 @@ function legacyCopyFallback(value) {
         api(`/api/admin/sales/leads?${qs.toString()}`),
       ]);
       state.sales.leads = list.leads || [];
+      state.sales.myRole = meta.my_role || getAccount()?.role || '';
       const kf = meta.kf_configured ? '企业微信客服：已连接' : '企业微信客服：未连接（仍可销售自主建档）';
       $('salesKfStatus').textContent = kf;
       renderSalesLeads();
       log(`销售线索 ${state.sales.leads.length} 条`);
       Promise.allSettled([
         loadSalesTop5(), loadSalesTodo(), loadSalesRisk(), loadSalesFunnel(), loadSalesBossDashboard(),
+        initSalesSimCenter(),
       ]).catch(() => null);
     }
 
@@ -4833,6 +4915,379 @@ function legacyCopyFallback(value) {
         const r = await api('/api/admin/sales/training/score', { method: 'POST', body: JSON.stringify({ scenario_key: scenario.key, response }) });
         $('salesTrainingResult').textContent = `得分 ${r.score}：${r.feedback}`;
       };
+    }
+
+    // —— AI 客户模拟训练中心 ——
+    if (!state.salesSim) {
+      state.salesSim = {
+        sessionId: null, messages: [],
+        voice: { recorder: null, chunks: [], stream: null, startedAt: 0, timer: null, phase: 'idle' },
+      };
+    }
+
+    async function initSalesSimCenter() {
+      if (!$('salesSimTrack')) return;
+      const role = state.sales?.myRole || '';
+      if (!state.salesSim._trackInited) {
+        if (role === 'customer_service' || role === 'implementation') $('salesSimTrack').value = 'cs';
+        else $('salesSimTrack').value = 'sales';
+        state.salesSim._trackInited = true;
+      }
+      const track = $('salesSimTrack').value;
+      const data = await api(`/api/admin/sales-sim/personas?track=${encodeURIComponent(track)}`);
+      const sel = $('salesSimPersona');
+      sel.innerHTML = (data.personas || []).map((p) => {
+        const diff = p.difficulty_label || (`难度${p.difficulty ?? 1}`);
+        return `<option value="${salesEsc(p.persona_key)}">${salesEsc(diff)} · ${salesEsc(p.title)}</option>`;
+      }).join('') || '<option value="">暂无人格</option>';
+      await refreshSalesSimRank();
+      await loadSalesSimNotifications().catch(() => null);
+      await loadSalesSimDashboard().catch(() => null);
+    }
+
+    async function refreshSalesSimRank() {
+      const track = $('salesSimTrack').value;
+      const data = await api(`/api/admin/sales-sim/rank?track=${encodeURIComponent(track)}`);
+      const next = data.next
+        ? ` · 距${data.next.rank_label}还差${data.next.need_minutes}分钟`
+        : '';
+      $('salesSimRankPill').textContent = `职级：${data.rank_label || '—'}（有效${data.effective_minutes || 0}分钟${next}）`;
+    }
+
+    async function loadSalesSimNext() {
+      const track = $('salesSimTrack').value;
+      const data = await api(`/api/admin/sales-sim/curriculum/next?track=${encodeURIComponent(track)}`);
+      if (data.recommended?.persona_key) {
+        $('salesSimPersona').value = data.recommended.persona_key;
+        if ($('salesSimNextHint')) $('salesSimNextHint').textContent = data.recommended.reason || '';
+        toast('已套用下一场推荐');
+      } else {
+        toast('暂无推荐');
+      }
+    }
+
+    async function createSalesSimBizPersona() {
+      const id = state.sales.selectedLeadId;
+      if (!id) throw new Error('请先在客户列表选择一条线索');
+      const data = await api('/api/admin/sales-sim/business-personas', {
+        method: 'POST',
+        body: JSON.stringify({ lead_id: id }),
+      });
+      if (!data.ok) throw new Error(data.message || data.error || '生成失败');
+      await initSalesSimCenter();
+      if (data.persona?.persona_key) {
+        $('salesSimTrack').value = 'sales';
+        await initSalesSimCenter();
+        $('salesSimPersona').value = data.persona.persona_key;
+      }
+      toast(`已生成经营真题：${data.persona?.title || ''}`);
+    }
+
+    function renderSalesSimMeters(stateObj = {}) {
+      $('salesSimEmotion').textContent = stateObj.emotion ?? '—';
+      $('salesSimTrust').textContent = stateObj.trust ?? '—';
+      $('salesSimClose').textContent = stateObj.close_readiness ?? '—';
+      $('salesSimSat').textContent = stateObj.satisfaction ?? '—';
+    }
+
+    function appendSalesSimBubble(role, content, meta = '') {
+      state.salesSim.messages.push({ role, content, meta });
+      const log = $('salesSimLog');
+      const mine = role === 'trainee';
+      const coach = role === 'coach';
+      const div = document.createElement('div');
+      div.className = `sales-bubble ${mine ? 'out' : 'in'}`;
+      if (coach) div.style.border = '1px dashed rgba(180,120,0,.5)';
+      div.innerHTML = `<span class="meta">${salesEsc(meta || (mine ? '我' : coach ? '教练' : '客户'))}</span>${salesEsc(content)}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setSalesSimActive(active) {
+      $('salesSimInput').disabled = !active;
+      $('salesSimSendBtn').disabled = !active;
+      $('salesSimVoiceBtn').disabled = !active || state.salesSim.voice.phase === 'uploading';
+      $('salesSimFinishBtn').disabled = !active;
+      $('salesSimStartBtn').disabled = active;
+      if (!active) resetSalesSimVoiceUi();
+    }
+
+    function setSalesSimVoiceHint(text, danger = false) {
+      const el = $('salesSimVoiceHint');
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = danger ? '#b91c1c' : 'var(--muted)';
+    }
+
+    function resetSalesSimVoiceUi() {
+      const v = state.salesSim.voice;
+      if (v.timer) { clearInterval(v.timer); v.timer = null; }
+      try { v.stream?.getTracks?.().forEach((t) => t.stop()); } catch (_) {}
+      v.stream = null; v.recorder = null; v.chunks = []; v.phase = 'idle';
+      const btn = $('salesSimVoiceBtn');
+      const cancel = $('salesSimVoiceCancelBtn');
+      if (btn) {
+        btn.textContent = '🎙 语音输入';
+        btn.disabled = !state.salesSim.sessionId;
+        btn.style.background = '#0f766e';
+        btn.style.borderColor = '#0f766e';
+      }
+      if (cancel) { cancel.style.display = 'none'; cancel.disabled = true; }
+      setSalesSimVoiceHint('点「语音输入」说话，说完再点「结束并发送」。识别失败可重试或改打字。');
+    }
+
+    async function startSalesSimSession() {
+      const track = $('salesSimTrack').value;
+      const persona_key = $('salesSimPersona').value;
+      if (!persona_key) throw new Error('请选择人格/场景');
+      const data = await api('/api/admin/sales-sim/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ track, persona_key }),
+      });
+      if (!data.ok) throw new Error(data.message || data.error || '开始失败');
+      state.salesSim.sessionId = data.session.id;
+      state.salesSim.messages = [];
+      $('salesSimLog').innerHTML = '';
+      $('salesSimDebrief').style.display = 'none';
+      $('salesSimCoach').style.display = 'none';
+      appendSalesSimBubble('customer', data.opening.content, data.persona?.title || '客户');
+      renderSalesSimMeters(data.session);
+      setSalesSimActive(true);
+      toast('训练已开始');
+    }
+
+    async function sendSalesSimTurn() {
+      const text = String($('salesSimInput').value || '').trim();
+      if (!text || !state.salesSim.sessionId) return;
+      $('salesSimInput').value = '';
+      appendSalesSimBubble('trainee', text, '我');
+      const data = await api(`/api/admin/sales-sim/sessions/${state.salesSim.sessionId}/turn`, {
+        method: 'POST',
+        body: JSON.stringify({ text, tts: true }),
+      });
+      if (!data.ok) throw new Error(data.message || data.error || '发送失败');
+      applySalesSimTurnResult(data);
+    }
+
+    function applySalesSimTurnResult(data) {
+      if (data.coach?.length) {
+        const msg = data.coach.map((c) => c.message).join('；');
+        $('salesSimCoach').style.display = '';
+        $('salesSimCoach').innerHTML = `<strong>实时教练（L1）</strong><div class="small">${salesEsc(msg)}</div>`;
+        appendSalesSimBubble('coach', msg, '教练');
+      }
+      if (data.customer?.content) {
+        appendSalesSimBubble('customer', data.customer.content, '客户');
+        if (data.customer_audio_base64) playSalesSimMp3(data.customer_audio_base64);
+      }
+      if (data.state) renderSalesSimMeters(data.state);
+      if (data.ended && data.debrief) {
+        showSalesSimDebrief(data.debrief, data.rank, data.curriculum_next, data.notification);
+        setSalesSimActive(false);
+        loadSalesSimNotifications().catch(() => null);
+        loadSalesSimDashboard().catch(() => null);
+      }
+    }
+
+    function playSalesSimMp3(b64) {
+      try {
+        const audio = new Audio(`data:audio/mpeg;base64,${b64}`);
+        audio.play().catch(() => {});
+      } catch (_) { /* ignore */ }
+    }
+
+    async function finishSalesSimSession() {
+      if (!state.salesSim.sessionId) return;
+      const data = await api(`/api/admin/sales-sim/sessions/${state.salesSim.sessionId}/finish`, {
+        method: 'POST',
+        body: JSON.stringify({ outcome: 'completed' }),
+      });
+      if (!data.ok) throw new Error(data.message || data.error || '结束失败');
+      showSalesSimDebrief(data.debrief, data.rank, data.curriculum_next, data.notification);
+      setSalesSimActive(false);
+      await refreshSalesSimRank();
+      await loadSalesSimNotifications().catch(() => null);
+      await loadSalesSimDashboard().catch(() => null);
+      if (data.curriculum_next?.recommended?.persona_key) {
+        $('salesSimPersona').value = data.curriculum_next.recommended.persona_key;
+        if ($('salesSimNextHint')) $('salesSimNextHint').textContent = data.curriculum_next.recommended.reason || '';
+      }
+    }
+
+    function showSalesSimDebrief(debrief, rank, curriculumNext, notification) {
+      const d = debrief || {};
+      const skillLine = d.skills_line
+        || (d.skills_labeled
+          ? Object.entries(d.skills_labeled).map(([k, v]) => `${k} ${v}`).join(' · ')
+          : Object.entries(d.skills || {}).map(([k, v]) => `${k} ${v}`).join(' · '));
+      const improvements = (d.improvements || []).map((x, i) =>
+        `${i + 1}. 【${x.principle_label || x.principle_id}】${x.detail}${x.timing_note ? `（${x.timing_note}）` : ''}`
+      ).join('\n') || '暂无';
+      const strengths = (d.strengths || []).map((x) =>
+        `· ${x.detail}${x.principle_label ? `（${x.principle_label}）` : ''}`
+      ).join('\n') || '暂无';
+      const reps = (d.replacements || []).map((r) =>
+        `❌ 原回答：${r.original}\n✅ 参考（${r.source_label}）：${r.suggested}\n（${r.note || ''}）`
+      ).join('\n\n') || '暂无';
+      const rankLine = rank
+        ? `\n职级：${rank.rank_label}${rank.promoted ? '（本场升级！）' : ''}${rank.demoted ? '（保级失败降级）' : ''}`
+        : '';
+      const nextLine = curriculumNext?.recommended
+        ? `\n\n下一场推荐：${curriculumNext.recommended.title}\n${curriculumNext.recommended.reason || ''}`
+        : '';
+      const notifyLine = notification?.ok ? '\n\n已发送培训报告通知给培训人。' : '';
+      $('salesSimDebrief').style.display = '';
+      const grade = d.score_grade || '—';
+      $('salesSimDebrief').textContent = [
+        `本场评定：${grade}${rankLine}`,
+        `能力：${skillLine || '—'}`,
+        `话轮：你 ${d.talk_ratio?.trainee ?? 0} / 客户 ${d.talk_ratio?.customer ?? 0} — ${d.talk_ratio?.hint || ''}`,
+        '',
+        '优点：',
+        strengths,
+        '',
+        '需要提升（时机优先）：',
+        improvements,
+        '',
+        '建议替代表达（参考话术，非唯一答案）：',
+        reps,
+        nextLine,
+        notifyLine,
+      ].join('\n');
+      toast(`复盘完成：${grade}${notification?.ok ? ' · 已通知培训人' : ''}`);
+    }
+
+    async function loadSalesSimNotifications() {
+      const pill = $('salesSimNotifPill');
+      if (!pill) return;
+      const data = await api('/api/admin/sales-sim/notifications?limit=5');
+      pill.textContent = `通知 ${data.unread || 0}`;
+    }
+
+    async function loadSalesSimDashboard() {
+      const box = $('salesSimDashBox');
+      if (!box || box.style.display === 'none') return;
+      const track = $('salesSimTrack')?.value || '';
+      const data = await api(`/api/admin/sales-sim/dashboard?track=${encodeURIComponent(track)}`);
+      const ov = $('salesSimDashOverview');
+      if (ov) {
+        ov.innerHTML = (data.overview || []).map((o) => `
+          <div class="crm-kpi"><div class="label">${salesEsc(o.track_label)}</div>
+          <div class="value" style="font-size:18px">${o.trainees || 0}</div>
+          <div class="small">完成 ${o.finished_sessions || 0} · 综合 ${salesEsc(o.avg_grade || '—')}</div></div>
+        `).join('') || '<div class="small">暂无看板数据</div>';
+      }
+      const tb = $('salesSimDashPeople')?.querySelector('tbody');
+      if (tb) {
+        tb.innerHTML = (data.people || []).map((p) => `
+          <tr>
+            <td>${salesEsc(p.display_name || p.username)}</td>
+            <td>${salesEsc(p.track_label)}</td>
+            <td>${salesEsc(p.rank_label)}</td>
+            <td>${p.sessions_finished || 0}/${p.sessions_total || 0}</td>
+            <td>${salesEsc(p.avg_grade || '—')}</td>
+            <td>${salesEsc(p.best_grade || '—')}</td>
+            <td>${p.effective_minutes || 0}</td>
+            <td class="small">${salesEsc(p.skills_line || '')}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="8" class="small">暂无人员训练记录</td></tr>';
+      }
+    }
+
+    function bindSalesSimVoice() {
+      const btn = $('salesSimVoiceBtn');
+      const cancelBtn = $('salesSimVoiceCancelBtn');
+      if (!btn || btn._simBound) return;
+      btn._simBound = true;
+      const v = state.salesSim.voice;
+
+      const startRec = async () => {
+        if (!state.salesSim.sessionId || v.phase !== 'idle') return;
+        if (!navigator.mediaDevices?.getUserMedia) { toast('当前浏览器不支持录音'); return; }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+        });
+        const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+        v.chunks = [];
+        v.stream = stream;
+        v.recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        v.recorder.ondataavailable = (e) => { if (e.data?.size) v.chunks.push(e.data); };
+        v.recorder.start(250);
+        v.startedAt = Date.now();
+        v.phase = 'recording';
+        btn.textContent = '结束并发送';
+        btn.style.background = '#dc2626';
+        btn.style.borderColor = '#dc2626';
+        if (cancelBtn) { cancelBtn.style.display = ''; cancelBtn.disabled = false; }
+        if (v.timer) clearInterval(v.timer);
+        v.timer = setInterval(() => {
+          const sec = Math.floor((Date.now() - v.startedAt) / 1000);
+          setSalesSimVoiceHint(`录音中 ${sec} 秒… 说完点「结束并发送」`, true);
+        }, 200);
+        setSalesSimVoiceHint('录音中 0 秒…', true);
+      };
+
+      const cancelRec = async () => {
+        if (v.phase !== 'recording') return;
+        try {
+          if (v.recorder && v.recorder.state !== 'inactive') {
+            await new Promise((r) => { v.recorder.onstop = r; v.recorder.stop(); });
+          }
+        } catch (_) {}
+        resetSalesSimVoiceUi();
+        setSalesSimVoiceHint('已取消，可再次点「语音输入」或改打字。');
+      };
+
+      const stopSend = async () => {
+        if (v.phase !== 'recording' || !v.recorder) return;
+        if (Date.now() - v.startedAt < 700) {
+          toast('录音太短，请至少说完一句话再结束');
+          return;
+        }
+        if (v.timer) { clearInterval(v.timer); v.timer = null; }
+        v.phase = 'uploading';
+        btn.disabled = true;
+        btn.textContent = '识别中…';
+        if (cancelBtn) cancelBtn.disabled = true;
+        setSalesSimVoiceHint('正在识别语音…');
+        await new Promise((r) => { v.recorder.onstop = r; v.recorder.stop(); });
+        const blob = new Blob(v.chunks, { type: v.recorder.mimeType || 'audio/webm' });
+        try { v.stream?.getTracks?.().forEach((t) => t.stop()); } catch (_) {}
+        v.stream = null; v.recorder = null; v.chunks = [];
+        if (!blob.size) {
+          resetSalesSimVoiceUi();
+          toast('没录到声音，请再试一次或改打字');
+          return;
+        }
+        const fd = new FormData();
+        fd.append('audio', blob, 'utterance.webm');
+        const res = await fetch(`/api/admin/sales-sim/sessions/${state.salesSim.sessionId}/turn-voice`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data.ok) {
+          resetSalesSimVoiceUi();
+          toast(data.message || '没听清，请再说一次或改打字');
+          return;
+        }
+        if (data.transcript) {
+          $('salesSimInput').value = data.transcript;
+          appendSalesSimBubble('trainee', data.transcript, '我（语音）');
+        }
+        applySalesSimTurnResult(data);
+        resetSalesSimVoiceUi();
+        setSalesSimVoiceHint('识别成功。可继续录音或打字回复。');
+      };
+
+      btn.addEventListener('click', () => {
+        if (v.phase === 'idle') startRec().catch((err) => toast(err.message));
+        else if (v.phase === 'recording') stopSend().catch((err) => toast(err.message));
+      });
+      if (cancelBtn) cancelBtn.addEventListener('click', () => cancelRec().catch((err) => toast(err.message)));
     }
 
     async function salesLoadProposal() {
