@@ -262,8 +262,18 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 数组、从未真正查询审批数据的bug，改成跟老板/总部视图一样查/api/approvals；
  * ② 管理员/总部营运经理/店长/出品经理这4个角色"我的档案"入口换成"工作台"（原档案页
  * 隐藏），其它角色保持不变。
+ * 2026-07-31 第四十二次上调（71422→71432）：上一轮只改了桌面侧栏和"更多"弹出菜单，
+ * 用户反馈手机端底部固定导航栏(mobile-nav)和登录后默认落地页(getHomePageName)这两个
+ * 更核心的入口还是硬编码'profile'，没生效——补上getRoleBottomNavPages()把这4个角色的
+ * 底部导航第一格从profile换成workspace、getHomePageName()按角色返回workspace、
+ * pageMeta补workspace图标/标签映射。
+ * 2026-07-31 第四十三次上调（71432→71446）：用户追问"工作台的通知是否100%代替了档案的
+ * 通知功能"——查证发现强制通知弹窗轮询(startProfileNotificationAutoRefresh)之前只在
+ * currentPage==='profile'时才触发，这4个角色几乎不再进档案页，会导致他们彻底收不到
+ * 强制通知弹窗，是真实的功能缺口。补上workspace页面也触发同一套轮询（modal本身是全局
+ * 元素，profile-notifications容器只是被隐藏不是移除，函数在workspace页调用一样生效）。
  */
-const MAX_LINES = 71422;
+const MAX_LINES = 71446;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

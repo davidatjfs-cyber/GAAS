@@ -4988,10 +4988,12 @@ th { background: #F2EAEE; font-weight: 700; }
                     .find(g => String(g?.id || '') === String(currentUser.permissionGroupId));
                 if (grp && Array.isArray(grp.bottomNav) && grp.bottomNav.length) return grp.bottomNav;
             }
-            if (r === ROLES.ADMIN) return ['profile', 'growth', 'reports', 'agent-tasks'];
-            if (r === ROLES.STORE_MANAGER) return ['profile', 'attendance', 'payment', 'approvals'];
-            if (r === ROLES.PRODUCTION_MANAGER) return ['profile', 'attendance', 'kitchen', 'training'];
-            if (r === ROLES.HQ_MANAGER) return ['profile', 'approvals', 'reports'];
+            // 2026-07-31：用户明确要求管理员/总部营运经理/店长/出品经理这4个角色的"档案"
+            // 底部导航入口换成"工作台"（原档案页隐藏不用），其它角色不变继续用"我的档案"。
+            if (r === ROLES.ADMIN) return ['workspace', 'growth', 'reports', 'agent-tasks'];
+            if (r === ROLES.STORE_MANAGER) return ['workspace', 'attendance', 'payment', 'approvals'];
+            if (r === ROLES.PRODUCTION_MANAGER) return ['workspace', 'attendance', 'kitchen', 'training'];
+            if (r === ROLES.HQ_MANAGER) return ['workspace', 'approvals', 'reports'];
             if (r === ROLES.HR_MANAGER) return ['profile', 'employees', 'approvals', 'reports'];
             if (r === ROLES.CASHIER) return ['profile', 'attendance', 'payment', 'exam'];
             if (r === ROLES.FRONT_MANAGER) return ['profile', 'daily-report', 'attendance', 'exam'];
@@ -5013,6 +5015,12 @@ th { background: #F2EAEE; font-weight: 700; }
         }
 
         function getHomePageName() {
+            // 2026-07-31：管理员/总部营运经理/店长/出品经理这4个角色登录后的默认落地页
+            // 改成"工作台"（原档案页隐藏不用），其它角色保持不变继续落地"我的档案"。
+            const r = String(currentUser?.role || '').trim();
+            if ([ROLES.ADMIN, ROLES.STORE_MANAGER, ROLES.PRODUCTION_MANAGER, ROLES.HQ_MANAGER].includes(r)) {
+                return 'workspace';
+            }
             return 'profile';
         }
 
