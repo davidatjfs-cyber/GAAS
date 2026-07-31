@@ -1,5 +1,7 @@
 /** 内置人格；库表可覆盖/扩展，启动时 ensureSeed 写入 */
 
+import { BUILTIN_STORE_PERSONAS } from './store-tracks.js';
+
 export const BUILTIN_PERSONAS = [
   {
     persona_key: 'li_boss_skeptical',
@@ -157,6 +159,7 @@ export const BUILTIN_PERSONAS = [
     opening_line: '我充值的积分怎么少了两百？你们是不是系统又出错了？',
     profile: { issue: 'points', objections: ['complaint', 'ux_bad'] },
   },
+  ...BUILTIN_STORE_PERSONAS,
 ];
 
 export async function ensurePersonaSeed(pool) {

@@ -2,6 +2,10 @@
  * AI 扮演客户：规则状态机生成下一句；可选 LLM 润色（失败则回退模板）。
  */
 
+import { isStoreTrack, buildStoreCustomerReply, shouldEndStoreSession } from './store-tracks.js';
+import { buildIncidentLockedReply } from './incident-dialogue.js';
+export { buildIncidentLockedReply } from './incident-dialogue.js';
+
 const SALES_REPLIES = {
   default: [
     '你继续说。',
@@ -91,6 +95,7 @@ export function applyStateDelta(session, { evalResult, track }) {
     next.close_readiness += sCount * 4 - vCount * 5;
     if (evalResult.hasQuestion) next.close_readiness += 2;
   } else {
+    // cs + 门店轨：满意度/情绪主轴
     next.satisfaction += sCount * 5 - vCount * 8;
     next.emotion += sCount * 3 - vCount * 7;
     next.trust += sCount * 2 - vCount * 4;
@@ -102,6 +107,7 @@ export function applyStateDelta(session, { evalResult, track }) {
 }
 
 export function shouldEndSession(session, track) {
+  if (isStoreTrack(track)) return shouldEndStoreSession(session, track);
   if (track === 'sales' && session.emotion <= 15 && session.trust <= 20) {
     return { end: true, outcome: 'hangup', reason: '客户情绪与信任过低，准备结束沟通' };
   }
@@ -111,7 +117,19 @@ export function shouldEndSession(session, track) {
   return { end: false };
 }
 
-export function buildCustomerReply({ track, persona, evalResult, session, turnNo }) {
+export function buildCustomerReply({
+  track, persona, evalResult, session, turnNo,
+  traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [],
+}) {
+  const incident = session?.incident_snapshot || session?.meta?.incident || null;
+  if (incident?.locked_facts || incident?.card_key) {
+    return buildIncidentLockedReply({
+      incident, evalResult, turnNo, traineeText, priorTraineeTexts, priorCustomerTexts,
+    });
+  }
+  if (isStoreTrack(track)) {
+    return buildStoreCustomerReply({ track, evalResult, turnNo });
+  }
   const tags = new Set((evalResult.coachTags || []).map((t) => t.code));
   const triggers = evalResult.triggers || [];
   const salt = turnNo + Number(session.close_readiness || 0);
@@ -156,24 +174,38 @@ export function buildCustomerReply({ track, persona, evalResult, session, turnNo
 }
 
 /** 可选：用 LLM 让客户语气更贴人格；失败则返回 ruleReply */
-export async function maybePolishCustomerReply(callLLM, { persona, ruleReply, history }) {
+export async function maybePolishCustomerReply(callLLM, {
+  persona, ruleReply, history, lockedFacts = [], priorCustomerTexts = [],
+}) {
   if (typeof callLLM !== 'function' || !ruleReply) return ruleReply;
   try {
     const profile = persona?.profile || {};
+    const factsLine = Array.isArray(lockedFacts) && lockedFacts.length
+      ? `本事故已锁定事实（禁止另起新问题）：${lockedFacts.join('；')}`
+      : '';
+    const ban = priorCustomerTexts.slice(-4).filter(Boolean).join(' / ');
     const prompt = [
-      '你在销售/客服训练中扮演客户，只输出一句客户原话，不要解释。',
-      `人设：${persona?.title || ''} ${JSON.stringify(profile)}`,
+      '你在岗位陪练中扮演对话对方，只输出一句原话，不要解释。',
+      `角色场景：${persona?.title || ''} ${JSON.stringify(profile)}`,
+      factsLine,
+      ban ? `禁止与下列已问过的话意思重复（必须换新角度）：${ban}` : '',
       `最近对话：\n${history.slice(-6).map((h) => `${h.role}: ${h.content}`).join('\n')}`,
-      `本轮必须表达的核心意思（可改写语气，勿增加承诺/合作意向）：${ruleReply}`,
-      '要求：像真人微信/电话口语；可以冷淡、打断、质疑；不超过80字。',
-    ].join('\n');
-    const r = await callLLM({
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 120,
-    });
+      `本轮必须表达的核心意思（可改写语气，勿增加新事实/新投诉点）：${ruleReply}`,
+      '要求：口语自然；紧扣已锁定事实；推进下一问；不超过80字；禁止「我再确认一下」套话复读。',
+    ].filter(Boolean).join('\n');
+    // callLLM(messages, options) — 勿传对象作第一参
+    const r = await callLLM(
+      [{ role: 'user', content: prompt }],
+      {
+        purpose: 'talent_engine_customer_polish',
+        temperature: 0.7,
+        max_tokens: 120,
+        skipCache: true,
+        trackTier: true,
+      }
+    );
     const text = String(r?.content || r?.text || '').trim().replace(/^["「]|["」]$/g, '');
-    if (text && text.length < 120) return text;
+    if (r?.ok !== false && text && text.length < 120) return text;
   } catch (_) {
     /* fall back */
   }

@@ -16,8 +16,43 @@ export const CS_RANKS = [
   { key: 'cs_mentor', label: '导师客服', minMinutes: 720, minAvg: 88, minDifficultyClear: 6, mentor: true },
 ];
 
+const STORE_RANK_TEMPLATES = {
+  foh_server: [
+    { key: 'foh_rookie', label: '实习服务员', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+    { key: 'foh_senior', label: '熟练服务员', minMinutes: 90, minAvg: 75, minDifficultyClear: 2 },
+    { key: 'foh_star', label: '五星服务员', minMinutes: 240, minAvg: 82, minDifficultyClear: 4 },
+    { key: 'foh_mentor', label: '服务导师', minMinutes: 480, minAvg: 88, minDifficultyClear: 6, mentor: true },
+  ],
+  cashier: [
+    { key: 'cash_rookie', label: '实习收银', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+    { key: 'cash_senior', label: '熟练收银', minMinutes: 90, minAvg: 75, minDifficultyClear: 2 },
+    { key: 'cash_star', label: '金牌收银', minMinutes: 240, minAvg: 82, minDifficultyClear: 3 },
+    { key: 'cash_mentor', label: '收银导师', minMinutes: 420, minAvg: 88, minDifficultyClear: 5, mentor: true },
+  ],
+  store_manager: [
+    { key: 'mgr_rookie', label: '见习店长', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+    { key: 'mgr_senior', label: '成熟店长', minMinutes: 120, minAvg: 75, minDifficultyClear: 2 },
+    { key: 'mgr_ace', label: '标杆店长', minMinutes: 360, minAvg: 82, minDifficultyClear: 4 },
+    { key: 'mgr_mentor', label: '督导型店长', minMinutes: 600, minAvg: 88, minDifficultyClear: 6, mentor: true },
+  ],
+  kitchen_staff: [
+    { key: 'kit_rookie', label: '实习厨工', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+    { key: 'kit_senior', label: '熟练厨工', minMinutes: 90, minAvg: 75, minDifficultyClear: 2 },
+    { key: 'kit_lead', label: '档口骨干', minMinutes: 240, minAvg: 82, minDifficultyClear: 3 },
+    { key: 'kit_mentor', label: '后厨导师', minMinutes: 420, minAvg: 88, minDifficultyClear: 5, mentor: true },
+  ],
+  hq_ops: [
+    { key: 'hq_rookie', label: '运营新人', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+    { key: 'hq_senior', label: '资深运营', minMinutes: 120, minAvg: 75, minDifficultyClear: 2 },
+    { key: 'hq_lead', label: '运营骨干', minMinutes: 300, minAvg: 82, minDifficultyClear: 4 },
+    { key: 'hq_mentor', label: '运营导师', minMinutes: 540, minAvg: 88, minDifficultyClear: 5, mentor: true },
+  ],
+};
+
 export function rankLadder(track) {
-  return track === 'cs' ? CS_RANKS : SALES_RANKS;
+  if (track === 'cs') return CS_RANKS;
+  if (STORE_RANK_TEMPLATES[track]) return STORE_RANK_TEMPLATES[track];
+  return SALES_RANKS;
 }
 
 export function rankLabel(track, key) {

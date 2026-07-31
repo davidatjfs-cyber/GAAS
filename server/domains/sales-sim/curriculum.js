@@ -6,6 +6,12 @@ import { getRankStatus, rankLadder } from './rank.js';
 import { listPersonas } from './personas.js';
 import { SALES_SKILLS, CS_SKILLS } from './principles.js';
 import { localizeFocus, difficultyLabel } from './labels.js';
+import {
+  getCoachMemory, resolveFocusFromMemory, recentPersonaSet,
+} from './coach-memory.js';
+import { trackToProfileKey } from './competency.js';
+import { recommendLearningLoop } from './learning-loop.js';
+import { skillsForTrack } from './store-tracks.js';
 
 const FOCUS_TO_PERSONA = {
   sales: {
@@ -29,6 +35,46 @@ const FOCUS_TO_PERSONA = {
     resolution: ['cs_refund', 'cs_sms_fail'],
     retention: ['cs_refund_lawyer', 'cs_rage_escalation'],
   },
+  foh_server: {
+    exception_handling: ['foh_rush_diner', 'foh_wrong_dish'],
+    recommendation: ['foh_first_visit'],
+    member_conversion: ['foh_member_ask'],
+    service_awareness: ['foh_vip', 'foh_rush_diner'],
+    brand_expression: ['foh_vip'],
+    communication: ['foh_first_visit', 'foh_member_ask'],
+    product_knowledge: ['foh_first_visit'],
+    soothe_guest: ['foh_rush_diner'],
+    recommend_after_need: ['foh_first_visit'],
+  },
+  cashier: {
+    exception_handling: ['cash_refund_guest'],
+    communication: ['cash_queue_guest'],
+    product_knowledge: ['cash_groupbuy'],
+    member_conversion: ['cash_groupbuy'],
+    service_awareness: ['cash_queue_guest'],
+    refund_verify: ['cash_refund_guest'],
+    queue_calm: ['cash_queue_guest'],
+  },
+  store_manager: {
+    exception_handling: ['mgr_angry_guest'],
+    communication: ['mgr_staff_conflict', 'mgr_hq_review'],
+    brand_expression: ['mgr_mystery'],
+    service_awareness: ['mgr_mystery', 'mgr_hq_review'],
+    stabilize_first: ['mgr_angry_guest'],
+    listen_staff: ['mgr_staff_conflict'],
+  },
+  kitchen_staff: {
+    exception_handling: ['kit_rush_ticket'],
+    communication: ['kit_rush_ticket'],
+    product_knowledge: ['kit_wrong_item'],
+    service_awareness: ['kit_wrong_item'],
+  },
+  hq_ops: {
+    communication: ['hq_boss_brief'],
+    brand_expression: ['hq_boss_brief'],
+    service_awareness: ['hq_boss_brief'],
+    exception_handling: ['hq_boss_brief'],
+  },
 };
 
 function maxDifficultyForRank(track, rankKey) {
@@ -43,7 +89,7 @@ function maxDifficultyForRank(track, rankKey) {
 export async function recommendNextSession(pool, username, track) {
   const rank = await getRankStatus(pool, username, track);
   const skills = rank.skills || {};
-  const keys = track === 'cs' ? CS_SKILLS : SALES_SKILLS;
+  const keys = skillsForTrack(track) || (track === 'cs' ? CS_SKILLS : SALES_SKILLS);
   let weakest = keys[0];
   let weakestScore = 101;
   for (const k of keys) {
@@ -61,8 +107,16 @@ export async function recommendNextSession(pool, username, track) {
       ORDER BY finished_at DESC LIMIT 1`,
     [username, track]
   );
-  const focus = last.rows?.[0]?.next_focus || weakest;
+  const fallbackFocus = last.rows?.[0]?.next_focus || weakest;
   const lastPersona = last.rows?.[0]?.persona_key;
+
+  const jobProfileKey = trackToProfileKey(track);
+  let memory = null;
+  try {
+    memory = await getCoachMemory(pool, username, jobProfileKey);
+  } catch (_) { /* migration pending */ }
+  const focus = resolveFocusFromMemory(memory, fallbackFocus);
+  const recentSet = recentPersonaSet(memory);
 
   const maxDiff = maxDifficultyForRank(track, rank.rank_key);
   const personas = (await listPersonas(pool, track, { audience: 'internal' })).filter((p) =>
@@ -70,10 +124,14 @@ export async function recommendNextSession(pool, username, track) {
   );
 
   const preferKeys = FOCUS_TO_PERSONA[track]?.[focus] || FOCUS_TO_PERSONA[track]?.[weakest] || [];
-  let pick = personas.find((p) => preferKeys.includes(p.persona_key) && p.persona_key !== lastPersona);
+  let pick = personas.find((p) => preferKeys.includes(p.persona_key)
+    && p.persona_key !== lastPersona
+    && !recentSet.has(p.persona_key));
+  if (!pick) {
+    pick = personas.find((p) => preferKeys.includes(p.persona_key) && p.persona_key !== lastPersona);
+  }
   if (!pick) pick = personas.find((p) => preferKeys.includes(p.persona_key));
   if (!pick) {
-    // 在解锁难度内挑尚未练过的更高难度
     const tried = await pool.query(
       `SELECT DISTINCT persona_key FROM sales_sim_sessions WHERE username=$1 AND track=$2`,
       [username, track]
@@ -83,15 +141,30 @@ export async function recommendNextSession(pool, username, track) {
       || personas[0];
   }
 
+  let learningLoop = null;
+  try {
+    learningLoop = await recommendLearningLoop(pool, {
+      jobProfileKey,
+      skills,
+      weakestCompetency: weakest,
+    });
+  } catch (_) { /* ignore */ }
+
   return {
     ok: true,
     track,
+    job_profile_key: jobProfileKey,
     focus,
     weakest_skill: weakest,
     weakest_score: weakestScore === 101 ? null : weakestScore,
     max_difficulty: maxDiff,
     rank_key: rank.rank_key,
     rank_label: rank.rank_label,
+    coach_memory: memory ? {
+      focus_competencies: memory.focus_competencies,
+      boost_until: memory.boost_until,
+    } : null,
+    learning_loop: learningLoop,
     recommended: pick ? {
       persona_key: pick.persona_key,
       title: pick.title,

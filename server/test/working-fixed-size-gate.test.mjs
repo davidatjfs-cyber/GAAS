@@ -287,8 +287,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * "工作台完全看不到"——查证生产库确认任务真实存在、责任人也分配对了，只是几十秒内被
  * resolved从"任务"tab消失，只在"已完成"tab才有。但"已完成"tab之前没有数字角标，是个
  * 空白按钮，用户不会点进去找。补上角标（并发预取recently-resolved接口），跟其它tab一致。
+ * 2026-07-31 第四十八次上调（71481→71519）：Talent Engine 门店 AI 岗位教练入口卡注入
+ * 培训页（ensureJobCoachEntryCard），对练 UI 在独立 job-coach.html，不堆培训 HTML。
  */
-const MAX_LINES = 71481;
+const MAX_LINES = 71519;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
