@@ -283,8 +283,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-31 第四十六次上调（71459→71467）：用户反馈通知放最前+默认展开导致整页打开就是
  * 通知列表、看不到经营驾驶舱——改回"任务/待批/通知"原顺序+默认展开任务tab，改成通知有
  * 未读时用醒目红色边框+右上角脉冲红点吸引注意，不再用霸占整页的方式。
+ * 2026-07-31 第四十七次上调（71467→71481）：用户反馈飞书秒回resolved的定时巡检任务
+ * "工作台完全看不到"——查证生产库确认任务真实存在、责任人也分配对了，只是几十秒内被
+ * resolved从"任务"tab消失，只在"已完成"tab才有。但"已完成"tab之前没有数字角标，是个
+ * 空白按钮，用户不会点进去找。补上角标（并发预取recently-resolved接口），跟其它tab一致。
  */
-const MAX_LINES = 71467;
+const MAX_LINES = 71481;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
