@@ -280,8 +280,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 提前创建好容器。
  * 2026-07-31 第四十五次上调（71457→71459）：用户要求"通知使用频率最高"——待办组件tab
  * 顺序从"任务/待批/通知"改成"通知/待批/任务"，默认展开的tab也从任务改成通知。
+ * 2026-07-31 第四十六次上调（71459→71467）：用户反馈通知放最前+默认展开导致整页打开就是
+ * 通知列表、看不到经营驾驶舱——改回"任务/待批/通知"原顺序+默认展开任务tab，改成通知有
+ * 未读时用醒目红色边框+右上角脉冲红点吸引注意，不再用霸占整页的方式。
  */
-const MAX_LINES = 71459;
+const MAX_LINES = 71467;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
