@@ -1428,14 +1428,17 @@ async function wsRenderInsightsSection() {
 // 2026-07-31：用户先要求通知tab放最前面+默认展开，结果发现整页一打开就是通知列表，
 // 看不到经营驾驶舱内容——改回"任务/待批/通知"原顺序、默认还是展开任务tab，但通知有
 // 未读时用醒目的脉冲红点+高亮边框吸引注意，不用整页霸占的方式。
-function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount) {
+// 2026-07-31：用户反馈"飞书秒回resolved的任务，工作台完全看不到"——查证发现任务其实真实
+// 存在、责任人也对，只是几十秒内就被resolved从"任务"tab消失，只有"已完成"tab才有，但
+// 这个tab之前没有数字角标，是个空白按钮，用户根本不会点进去找。补上角标，跟其它tab一致。
+function wsRenderTodoWidget(taskCount, pendingApprovalCount, unreadCount, resolvedCount) {
     const notifAlert = unreadCount > 0 ? ' ws-todo__tab--alert' : '';
     return (
         '<div class="ws-todo">' +
         '<button type="button" class="ws-todo__tab is-on" data-ws-todo-tab="task"><span class="ws-todo__n">' + taskCount + '</span>任务</button>' +
         '<button type="button" class="ws-todo__tab" data-ws-todo-tab="approval"><span class="ws-todo__n">' + pendingApprovalCount + '</span>待批</button>' +
         '<button type="button" class="ws-todo__tab' + notifAlert + '" data-ws-todo-tab="notif"><span class="ws-todo__n">' + unreadCount + '</span>通知' + (unreadCount > 0 ? '<span class="ws-todo__dot"></span>' : '') + '</button>' +
-        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="done">已完成</button>' +
+        '<button type="button" class="ws-todo__tab" data-ws-todo-tab="done"><span class="ws-todo__n">' + (Number(resolvedCount) || 0) + '</span>已完成</button>' +
         '</div>' +
         '<div class="ws-todo-pane" id="ws-todo-pane"></div>'
     );
@@ -1608,24 +1611,30 @@ function wsBindPendingConfirmationsEvents(root) {
 
 async function wsRenderBossOrHq(root, persona) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
-    const [home, overview, marketingHtml, approvalsData, growthTasks, pendingConfirmData] = await Promise.all([
+    const [home, overview, marketingHtml, approvalsData, growthTasks, pendingConfirmData, recentlyResolvedData] = await Promise.all([
         wsFetchJson('/api/workspace/home?scope=notable'),
         wsFetchJson('/api/workspace/overview'),
         wsRenderMarketingSuggestions(),
         wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
         wsFetchGrowthSolutionTasks(),
         wsFetchJson('/api/workspace/pending-confirmations'),
+        wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24'),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
     const pendingConfirmations = Array.isArray(pendingConfirmData?.items) ? pendingConfirmData.items : [];
+    // 2026-07-31：用户反馈"飞书秒回resolved的任务，工作台完全看不到"——查证发现任务其实
+    // 真实存在、责任人也分配对了，只是几十秒内就被resolved，从"任务"tab消失，只在"已完成"
+    // tab才能看到。但"已完成"tab之前完全没有数字角标，用户看到的是一个空白按钮，根本
+    // 不会点进去找，才误以为任务"根本不存在"。补上角标数字，跟其它三个tab保持一致。
+    const recentlyResolvedCount = Array.isArray(recentlyResolvedData?.items) ? recentlyResolvedData.items.length : 0;
 
     const heading = persona === 'boss' ? '经营驾驶舱' : '总部工作台';
     const roleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无');
     let html = '<div class="ws-header"><h2>' + heading + '</h2>';
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
-    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
+    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     html += wsRenderPendingConfirmations(pendingConfirmations);
     html += wsSection('今日经营总览', wsRenderOverview(overview, true));
     html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
@@ -1862,21 +1871,26 @@ function wsSection(title, contentHtml) {
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const store = String(currentUser?.current_store || currentUser?.store || '').trim();
-    const [home, growthTasks, overview, approvalsData] = await Promise.all([
+    const [home, growthTasks, overview, approvalsData, recentlyResolvedData] = await Promise.all([
         wsFetchJson('/api/workspace/home'),
         wsFetchGrowthSolutionTasks(),
         wsFetchJson('/api/workspace/overview'),
         wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
+        wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24'),
     ]);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     // 2026-07-31：用户反馈"待批"是否真的连通好用——查证发现店长/出品经理视图(wsRenderStore)
     // 这里之前硬编码成空数组，从来没真正查询过审批数据，永远显示0，只有老板/总部视图
     // (wsRenderBossOrHq)是真实连通的。改成跟老板/总部视图一样查同一个/api/approvals接口。
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
+    // 2026-07-31：用户反馈"飞书秒回resolved的任务，工作台完全看不到"——任务其实真实存在、
+    // 责任人也分配对了，只是几十秒内就被resolved，从"任务"tab消失，只在"已完成"tab才能
+    // 看到。但"已完成"tab之前没有数字角标，用户看到空白按钮不会点进去找。补上角标。
+    const recentlyResolvedCount = Array.isArray(recentlyResolvedData?.items) ? recentlyResolvedData.items.length : 0;
     const storeLight = (Array.isArray(home?.storeLights) ? home.storeLights : []).find((s) => s.store === store);
     const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无') + '·门店级别' + (storeLight?.rating || '暂无');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
-    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0);
+    html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
     // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
     // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
