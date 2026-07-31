@@ -1387,6 +1387,7 @@
             const pageMeta = {
                 dashboard: { icon: '🏠', label: '首页' },
                 profile: { icon: '👤', label: '档案' },
+                workspace: { icon: '🏠', label: '工作台' },
                 attendance: { icon: '👤', label: '打卡' },
                 knowledge: { icon: '📚', label: '知识库' },
                 kitchen: { icon: '🍳', label: '执行' },
@@ -1459,7 +1460,8 @@
                     'employees': 'employees',
                     'profile': 'profile',
                     'rewards': 'rewards',
-                    'points': 'points'
+                    'points': 'points',
+                    'workspace': 'workspace'
                 };
                 
                 const mobilePage = pageMap[pageId];

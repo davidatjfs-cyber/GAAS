@@ -395,11 +395,19 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 } catch (e) {}
             }, 45000);
         }
+        // 2026-07-31：管理员/总部营运经理/店长/出品经理这4个角色的默认落地页和导航入口都
+        // 从"我的档案"换成了"工作台"——强制通知弹窗（renderProfileNotifications）之前只在
+        // currentPage==='profile'时才轮询/弹出，这4个角色几乎不再进档案页，会导致他们彻底
+        // 收不到强制通知弹窗（公告/系统通知），是必须补上的功能对等缺口。改成profile和
+        // workspace两个页面都触发。
+        function __hrmsNotifPollablePage() {
+            return typeof currentPage !== 'string' || currentPage === 'profile' || currentPage === 'workspace';
+        }
         function startProfileNotificationAutoRefresh() {
             stopProfileNotificationAutoRefresh();
             __profileNotifPollTimer = setInterval(function () {
                 try {
-                    if (typeof currentPage === 'string' && currentPage !== 'profile') return;
+                    if (!__hrmsNotifPollablePage()) return;
                     if (document.visibilityState !== 'visible') return;
                     if (typeof renderProfileNotifications === 'function') renderProfileNotifications();
                 } catch (e) {}
@@ -408,7 +416,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
         document.addEventListener('visibilitychange', function () {
             try {
                 if (document.visibilityState !== 'visible') return;
-                if (typeof currentPage === 'string' && currentPage !== 'profile') return;
+                if (!__hrmsNotifPollablePage()) return;
                 if (typeof renderProfileNotifications === 'function') renderProfileNotifications();
             } catch (e) {}
         });
@@ -988,6 +996,12 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             if (pageName === 'profile') {
                 startProfileAttendanceAutoRefresh();
                 startProfileNotificationAutoRefresh();
+            }
+            // 2026-07-31：工作台是这4个角色的新默认落地页，强制通知弹窗必须在这里也能
+            // 触发，不能只靠进档案页才启动（他们现在几乎不再进档案页）。
+            if (pageName === 'workspace') {
+                startProfileNotificationAutoRefresh();
+                try { if (typeof renderProfileNotifications === 'function') renderProfileNotifications(); } catch (e) {}
             }
             if (pageName === 'agents') startDcDashboardAutoRefresh();
         }
