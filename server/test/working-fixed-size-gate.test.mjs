@@ -258,8 +258,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-07-31 第四十次上调（71397→71401）：合并 origin/main 到 feature/workspace-shell-p1；
  * 正式晋升申请资格判断补上 trainingProgress.passed 这条兜底（此前只认
  * assessmentStatus === 'passed'，考核通过但该字段没同步的场景会显示"暂无可申请记录"）。
+ * 2026-07-31 第四十一次上调（71401→71422）：① 修复店长/出品经理工作台"待批"硬编码成空
+ * 数组、从未真正查询审批数据的bug，改成跟老板/总部视图一样查/api/approvals；
+ * ② 管理员/总部营运经理/店长/出品经理这4个角色"我的档案"入口换成"工作台"（原档案页
+ * 隐藏），其它角色保持不变。
  */
-const MAX_LINES = 71401;
+const MAX_LINES = 71422;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
