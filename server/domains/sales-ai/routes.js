@@ -15,14 +15,17 @@ import { registerSalesAiLeadsRoutes } from './routes-leads.js';
 import { registerSalesAiOpsRoutes } from './routes-ops.js';
 import { registerSalesAiSchedulers } from './routes-schedulers.js';
 import { registerSalesLeadScopeMiddleware } from './routes-lead-scope.js';
+import { registerSalesSimRoutes } from '../sales-sim/routes.js';
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'sales-ai', handler: 'routes' });
 
 
-export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLLM, sendOpsAlert, requireSalesManagerOrAbove, upload } = {}) {
+export function registerSalesAiRoutes(app, pool, platformAdminRequired, {
+  callLLM, sendOpsAlert, requireSalesManagerOrAbove, upload, authRequired,
+} = {}) {
   const gates = createSalesAiGates(pool, requireSalesManagerOrAbove);
-  const ctx = { app, pool, platformAdminRequired, gates, callLLM, sendOpsAlert, upload };
+  const ctx = { app, pool, platformAdminRequired, gates, callLLM, sendOpsAlert, upload, authRequired };
 
   if (typeof callLLM === 'function') {
     setSalesCustomerAiLlm(callLLM);
@@ -42,4 +45,5 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, { callLL
   registerSalesAiFinanceRoutes(ctx);
   registerSalesAiLeadsRoutes(ctx);
   registerSalesAiOpsRoutes(ctx);
+  registerSalesSimRoutes(ctx);
 }
