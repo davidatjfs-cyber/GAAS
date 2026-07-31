@@ -328,16 +328,7 @@ export async function submitTurn(pool, {
   };
 }
 
-export async function finishSession(pool, {
-  sessionId, username, outcome = 'completed', force = false,
-}) {
-  const session = await loadOwnedSession(pool, sessionId, username);
-  if (!session) return { ok: false, error: 'not_found' };
-  if (session.status === 'finished' && !force) {
-    return { ok: true, debrief: session.debrief, rank: await getRankStatus(pool, username, session.track) };
-  }
-
-  const turns = await loadTurns(pool, sessionId);
+function buildEvalsWithTriggers(turns, track) {
   const traineeTurns = turns.filter((t) => t.role === 'trainee');
   const evals = traineeTurns.map((t) => {
     const hits = t.principle_hits || {};
@@ -353,31 +344,30 @@ export async function finishSession(pool, {
   for (const ev of evals) {
     const cust = turns.find((t) => t.role === 'customer' && t.turn_no === ev.turn_no - 1)
       || turns.find((t) => t.role === 'customer' && t.turn_no === 0);
-    if (cust) ev.triggers = detectCustomerTriggers(cust.content, session.track);
+    if (cust) ev.triggers = detectCustomerTriggers(cust.content, track);
   }
+  return { traineeTurns, evals };
+}
 
-  let factGate = null;
+async function runFactGateForEvals(traineeTurns, evals) {
   try {
     const traineeTexts = traineeTurns.map((t) => t.content);
-    factGate = await runFactGate({
+    return await runFactGate({
       traineeTexts,
       queryHints: [...new Set(evals.flatMap((e) => e.triggers || []))].slice(0, 3),
     });
-  } catch (_) { /* ignore */ }
+  } catch (_) {
+    return null;
+  }
+}
 
-  const durationSec = Math.max(30, Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000));
-  let debrief = await buildDebrief(pool, {
-    track: session.track,
-    session: { ...session, outcome },
-    turns,
-    evals,
-    username,
-  });
-
-  const jobProfileKey = session.job_profile_key || trackToProfileKey(session.track);
+async function enrichDebriefWithCoachAndLearning(pool, {
+  session, debrief, evals, username, jobProfileKey,
+}) {
+  let nextDebrief = debrief;
   try {
     const coachPersona = await getCoachPersona(pool, session.coach_persona_key);
-    if (coachPersona) debrief = applyCoachPersonaToDebrief(debrief, coachPersona);
+    if (coachPersona) nextDebrief = applyCoachPersonaToDebrief(nextDebrief, coachPersona);
   } catch (_) { /* ignore */ }
 
   const sceneKeys = [...new Set(evals.flatMap((e) => e.triggers || []))];
@@ -385,7 +375,7 @@ export async function finishSession(pool, {
     await updateCoachMemoryFromSession(pool, {
       username,
       jobProfileKey,
-      skills: debrief.skills || {},
+      skills: nextDebrief.skills || {},
       personaKey: session.persona_key,
       scenarioKeys: sceneKeys,
     });
@@ -395,12 +385,12 @@ export async function finishSession(pool, {
   try {
     learningLoop = await recommendLearningLoop(pool, {
       jobProfileKey,
-      skills: debrief.skills || {},
-      weakestCompetency: debrief.next_focus || null,
+      skills: nextDebrief.skills || {},
+      weakestCompetency: nextDebrief.next_focus || null,
     });
     if (learningLoop?.ok) {
-      debrief = {
-        ...debrief,
+      nextDebrief = {
+        ...nextDebrief,
         learning_loop: {
           weakest: learningLoop.weakest,
           courses: learningLoop.courses,
@@ -410,62 +400,60 @@ export async function finishSession(pool, {
     }
   } catch (_) { /* ignore */ }
 
-  if (factGate?.ok) {
-    debrief = {
-      ...debrief,
-      fact_gate: {
-        warnings: factGate.warnings || [],
-        hits: (factGate.hits || []).slice(0, 4),
-      },
+  return { debrief: nextDebrief, learningLoop };
+}
+
+function applyFactGateToDebrief(debrief, factGate) {
+  if (!factGate?.ok) return debrief;
+  return {
+    ...debrief,
+    fact_gate: {
+      warnings: factGate.warnings || [],
+      hits: (factGate.hits || []).slice(0, 4),
+    },
+  };
+}
+
+function applyIncidentScoringToDebrief(debrief, { incidentSnap, evals, traineeTurns }) {
+  if (!incidentSnap?.card_key) return debrief;
+  const dual = scoreIncidentPerformance({
+    card: incidentSnap,
+    evals,
+    traineeTexts: traineeTurns.map((t) => t.content),
+  });
+  let nextDebrief = {
+    ...debrief,
+    score: dual.total_score,
+    score_grade: dual.total_score >= 91 ? '卓越'
+      : dual.total_score >= 80 ? '优秀'
+        : dual.total_score >= 70 ? '合格' : '不合格',
+    incident_scores: dual,
+    incident: {
+      card_key: incidentSnap.card_key,
+      title: incidentSnap.title,
+      brief: incidentSnap.incident_brief,
+      success_criteria: incidentSnap.success_criteria,
+    },
+    kb_articles: dual.kb_articles || incidentSnap.kb_articles || [],
+  };
+  const corrections = buildIncidentCorrections({ card: incidentSnap, traineeTurns, evals });
+  nextDebrief.model_answer = corrections.model_answer;
+  nextDebrief.turn_corrections = corrections.turn_corrections;
+  nextDebrief.coverage = corrections.coverage;
+  // 事故卡优先挂真实 KB，避免复盘出现「请配置 recommended_topic_ids」
+  const arts = nextDebrief.kb_articles || [];
+  if (arts.length) {
+    nextDebrief.learning_loop = {
+      ...(nextDebrief.learning_loop || {}),
+      courses: arts.map((a) => ({
+        type: 'knowledge_base', id: a.id, title: a.title, reason: '事故卡关联知识库',
+      })),
     };
   }
+  return nextDebrief;
+}
 
-  const incidentSnap = session.incident_snapshot
-    || (typeof session.meta === 'object' ? session.meta?.incident : null);
-  if (incidentSnap?.card_key) {
-    const dual = scoreIncidentPerformance({
-      card: incidentSnap,
-      evals,
-      traineeTexts: traineeTurns.map((t) => t.content),
-    });
-    debrief = {
-      ...debrief,
-      score: dual.total_score,
-      score_grade: dual.total_score >= 91 ? '卓越'
-        : dual.total_score >= 80 ? '优秀'
-          : dual.total_score >= 70 ? '合格' : '不合格',
-      incident_scores: dual,
-      incident: {
-        card_key: incidentSnap.card_key,
-        title: incidentSnap.title,
-        brief: incidentSnap.incident_brief,
-        success_criteria: incidentSnap.success_criteria,
-      },
-      kb_articles: dual.kb_articles || incidentSnap.kb_articles || [],
-    };
-    const corrections = buildIncidentCorrections({
-      card: incidentSnap,
-      traineeTurns,
-      evals,
-    });
-    debrief.model_answer = corrections.model_answer;
-    debrief.turn_corrections = corrections.turn_corrections;
-    debrief.coverage = corrections.coverage;
-    // 事故卡优先挂真实 KB，避免复盘出现「请配置 recommended_topic_ids」
-    const arts = debrief.kb_articles || [];
-    if (arts.length) {
-      debrief.learning_loop = {
-        ...(debrief.learning_loop || {}),
-        courses: arts.map((a) => ({
-          type: 'knowledge_base',
-          id: a.id,
-          title: a.title,
-          reason: '事故卡关联知识库',
-        })),
-      };
-    }
-  }
-
+async function persistFinishedSession(pool, { sessionId, durationSec, outcome, debrief, factGate }) {
   try {
     await pool.query(
       `UPDATE sales_sim_sessions
@@ -486,7 +474,11 @@ export async function finishSession(pool, {
       [sessionId, durationSec, outcome, JSON.stringify(debrief)]
     );
   }
+}
 
+async function recordTrainingEvent(pool, {
+  username, session, jobProfileKey, sessionId, debrief, learningLoop,
+}) {
   try {
     await pool.query(
       `INSERT INTO talent_training_events
@@ -508,22 +500,13 @@ export async function finishSession(pool, {
       ]
     );
   } catch (_) { /* migration pending */ }
+}
 
-  const rank = await applySessionToRank(pool, {
-    username,
-    track: session.track,
-    durationSec,
-    debrief,
-    difficulty: session.difficulty,
-  });
-
+async function finalizeAndNotify(pool, { username, session, sessionId, debrief, rank }) {
   let nomination = null;
   try {
     nomination = await autoNominateFromDebrief(pool, {
-      track: session.track,
-      sessionId,
-      username,
-      debrief,
+      track: session.track, sessionId, username, debrief,
     });
   } catch (_) { /* ignore */ }
 
@@ -536,14 +519,59 @@ export async function finishSession(pool, {
   let notification = null;
   try {
     notification = await notifyTraineeReport(pool, {
-      username,
-      sessionId,
-      track: session.track,
-      debrief,
-      rank,
-      personaTitle,
+      username, sessionId, track: session.track, debrief, rank, personaTitle,
     });
   } catch (_) { /* ignore notify failure */ }
+
+  return { nomination, next, notification };
+}
+
+export async function finishSession(pool, {
+  sessionId, username, outcome = 'completed', force = false,
+}) {
+  const session = await loadOwnedSession(pool, sessionId, username);
+  if (!session) return { ok: false, error: 'not_found' };
+  if (session.status === 'finished' && !force) {
+    return { ok: true, debrief: session.debrief, rank: await getRankStatus(pool, username, session.track) };
+  }
+
+  const turns = await loadTurns(pool, sessionId);
+  const { traineeTurns, evals } = buildEvalsWithTriggers(turns, session.track);
+  const factGate = await runFactGateForEvals(traineeTurns, evals);
+
+  const durationSec = Math.max(30, Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000));
+  let debrief = await buildDebrief(pool, {
+    track: session.track,
+    session: { ...session, outcome },
+    turns,
+    evals,
+    username,
+  });
+
+  const jobProfileKey = session.job_profile_key || trackToProfileKey(session.track);
+  let learningLoop;
+  ({ debrief, learningLoop } = await enrichDebriefWithCoachAndLearning(pool, {
+    session, debrief, evals, username, jobProfileKey,
+  }));
+
+  debrief = applyFactGateToDebrief(debrief, factGate);
+
+  const incidentSnap = session.incident_snapshot
+    || (typeof session.meta === 'object' ? session.meta?.incident : null);
+  debrief = applyIncidentScoringToDebrief(debrief, { incidentSnap, evals, traineeTurns });
+
+  await persistFinishedSession(pool, { sessionId, durationSec, outcome, debrief, factGate });
+  await recordTrainingEvent(pool, {
+    username, session, jobProfileKey, sessionId, debrief, learningLoop,
+  });
+
+  const rank = await applySessionToRank(pool, {
+    username, track: session.track, durationSec, debrief, difficulty: session.difficulty,
+  });
+
+  const { nomination, next, notification } = await finalizeAndNotify(pool, {
+    username, session, sessionId, debrief, rank,
+  });
 
   return {
     ok: true,
