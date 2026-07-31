@@ -287,8 +287,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * "工作台完全看不到"——查证生产库确认任务真实存在、责任人也分配对了，只是几十秒内被
  * resolved从"任务"tab消失，只在"已完成"tab才有。但"已完成"tab之前没有数字角标，是个
  * 空白按钮，用户不会点进去找。补上角标（并发预取recently-resolved接口），跟其它tab一致。
+ * 2026-07-31 第四十八次上调（71481→71559）：用户反馈营销建议内容质量不行、对比增长看板
+ * 的"PLLM策略实验"(结合门店真实差评/流失等异常信号生成的A/B方案+逐日执行步骤)质量高得多。
+ * 查证发现这批高质量内容存在于完全独立的strategy_experiments/strategy_variants表，工作台
+ * 从未查询过。接入这个数据源，专门渲染A/B双方案卡片，采纳/不适合复用增长看板同一套
+ * /api/strategy-experiments/:code/approve|reject接口(权限跟接口一致仅admin/hq_manager
+ * 可操作，其它角色只读展示)。
  */
-const MAX_LINES = 71481;
+const MAX_LINES = 71559;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

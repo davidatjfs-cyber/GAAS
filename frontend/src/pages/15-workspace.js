@@ -661,6 +661,42 @@ function wsMarketingMarkSeen(actionKeys) {
         localStorage.setItem(WS_MARKETING_SEEN_KEY, JSON.stringify([...seen].slice(-500)));
     } catch (e) { /* ignore */ }
 }
+// 2026-07-31：PLLM策略实验卡片——每条方案本身就是"结合门店真实异常信号(差评/流失/储值等)
+// 生成的可直接执行A/B方案+逐日执行指引"，跟通用营销建议单方案卡片结构不同，需要专门渲染
+// 两个variant。采纳/不适合复用增长看板同一套接口(/api/strategy-experiments/:code/
+// approve|reject)，权限跟接口一致仅admin/hq_manager可操作，其它角色只读展示（了解总部
+// 在为自己门店评估什么方案，不重复造一套权限判断）。
+function wsRenderPllmExperimentCard(it, seen) {
+    const isNew = it.actionKey && !seen.has(it.actionKey);
+    const canDecide = ['admin', 'hq_manager'].includes(String(currentUser?.role || ''));
+    const variantsHtml = (it.variants || []).map((v) => (
+        '<div class="ws-card__desc" style="margin-top:8px;padding:8px 10px;background:rgba(134,201,162,0.05);border:1px solid rgba(134,201,162,0.18);border-radius:8px;">' +
+        '<div style="font-weight:700;margin-bottom:4px;">方案' + wsEsc(v.variantCode || '') + (v.label ? ' — ' + wsEsc(v.label) : '') + '</div>' +
+        wsEsc(v.action || '') +
+        (v.executionGuide ? '<div style="margin-top:4px;opacity:.7;font-size:11px;">' + wsEsc(v.executionGuide) + '</div>' : '') +
+        '</div>'
+    )).join('');
+    return (
+        '<details class="ws-card ws-detail-collapse" data-action-key="' + wsEsc(it.actionKey || '') + '" data-marketing-store="' + wsEsc(it.store || '') + '">' +
+        '<summary class="ws-detail-summary" style="cursor:pointer;list-style:none;">' +
+        (isNew ? '<span class="ws-tag" style="background:#e74c3c;color:#fff;">新</span> ' : '') +
+        '<span class="ws-tag" style="background:rgba(209,143,160,0.18);color:#D18FA0;">🎯 PLLM策略实验</span> ' +
+        wsEsc((it.store || '') + ' — ' + (it.title || '')) +
+        '</summary>' +
+        '<div style="margin-top:10px;">' +
+        (it.anomalyType ? '<div class="ws-card__desc">触发信号：' + wsEsc(it.anomalyType) + (it.goal ? '（' + wsEsc(it.goal) + '）' : '') + '</div>' : '') +
+        variantsHtml +
+        (canDecide
+            ? '<div class="ws-card__acts">' +
+              '<button type="button" class="ws-btn ws-btn--primary" data-ws-pllm-approve="' + wsEsc(it.actionKey || '') + '">采纳·我要执行</button>' +
+              '<button type="button" class="ws-btn" data-ws-pllm-reject="' + wsEsc(it.actionKey || '') + '">不适合</button>' +
+              '</div>'
+            : '<div class="ws-card__desc" style="opacity:.6;">待总部审批决策，暂不需要门店操作</div>') +
+        '<div class="ws-action-result"></div>' +
+        '</div>' +
+        '</details>'
+    );
+}
 async function wsRenderMarketingSuggestions() {
     const data = await wsFetchJson('/api/workspace/marketing-suggestions');
     const items = Array.isArray(data?.items) ? data.items : [];
@@ -669,6 +705,11 @@ async function wsRenderMarketingSuggestions() {
     // 2026-07-30：跟任务卡片一样，改成折叠形式——默认只显示一行(渠道标签+门店+标题)，
     // 点开才展开详情和执行/忽略按钮，跟8大AI督导指挥中心的记录展示保持一致。
     const html = items.map((it) => {
+        // 2026-07-31：用户反馈增长看板"PLLM策略实验"卡片(结合门店真实差评/流失等异常信号生成
+        // 的A/B方案+逐日执行步骤)质量远高于这里的通用模板文案——把这个数据源接进来(见
+        // marketing-suggestions.js的getStrategyExperimentSuggestions)，用专门的卡片渲染
+        // 完整展示两个方案，不能沿用下面通用建议的单方案卡片结构。
+        if (it.kind === 'pllm_experiment') return wsRenderPllmExperimentCard(it, seen);
         const assignees = wsMarketingAssigneeOptions(it.store);
         const isNew = it.actionKey && !seen.has(it.actionKey);
         return (
@@ -702,6 +743,43 @@ async function wsRenderMarketingSuggestions() {
 }
 
 function wsBindMarketingSuggestionsEvents(root) {
+    // 2026-07-31：PLLM策略实验的采纳/不适合——复用增长看板同一套接口，不新建。
+    root.querySelectorAll('[data-ws-pllm-approve]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('采纳此PLLM策略实验方案？\n\n请人工按方案执行，系统记录为已采纳。')) return;
+            const code = btn.getAttribute('data-ws-pllm-approve');
+            const resultEl = btn.closest('.ws-card')?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/approve', { method: 'POST', headers: wsAuthHeaders() });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已采纳，请按方案执行</span>';
+                btn.closest('.ws-card__acts')?.remove();
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">采纳失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
+    root.querySelectorAll('[data-ws-pllm-reject]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('标记为不适合执行？该实验将从待审批列表中移除。')) return;
+            const code = btn.getAttribute('data-ws-pllm-reject');
+            const resultEl = btn.closest('.ws-card')?.querySelector('.ws-action-result');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/reject', { method: 'POST', headers: wsAuthHeaders() });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已标记为不适合</span>';
+                btn.closest('.ws-card__acts')?.remove();
+            } catch (e) {
+                btn.disabled = false;
+                if (resultEl) resultEl.innerHTML = '<span class="ws-err">操作失败：' + wsEsc(e?.message || e) + '</span>';
+            }
+        });
+    });
     root.querySelectorAll('[data-ws-marketing-execute-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const key = btn.getAttribute('data-ws-marketing-execute-toggle');
