@@ -1337,7 +1337,6 @@ function wsBindSixToolsEvents(root) {
 // 什么时候关闭的、有没有人处理过。改成点击展开详情（复用已有的GET /api/agent-task-board/
 // tasks/:id，本来就是同一批admin/hq_manager在用，权限一致），展示状态流转时间线+证据+
 // 审核记录；这个页面本身就只有admin/hq_manager能看到，不是新开权限口子。
-const _wsAtbDetailCache = new Map();
 // 2026-07-30：用户反馈折叠后的记录"很难辨识"、条数多了根本找不到——两个问题：① 每条记录
 // 只有标题+状态，没有日期，标题又经常被截断，看不出是哪天的任务；② 没有筛选，"已结案"的
 // 历史记录跟"正在进行"的混在一起，找一条正在处理的任务要翻很久。改成：① 每条摘要行补上
@@ -1388,6 +1387,36 @@ function wsBoardStatusZh(s) {
     return WS_BOARD_STATUS_ZH[s] || s;
 }
 
+// 2026-08-01：用户反馈状态流转看不清——两个真实问题：① to_agent直接回显英文agent key
+// （ops_supervisor/data_auditor等），门店发起人根本看不懂；② 催办事件(reminder_card_sent/
+// reminder_sent)本身不改变status字段(还是dispatched)，之前直接按status_before→after
+// 渲染，连续几行全是"已分配→已分配"，看不出这是"没人管"还是"系统正在催办"。改成：催办
+// 事件单独渲染成"催办中（第N次）"；agent key经wsAgentKeyZh翻译成中文岗位名；自动备案
+// (hr_filed)单独标注"多次催办无响应，系统自动归档"，不再是普普通通一行状态转移。
+const WS_AGENT_KEY_ZH = {
+    ops_supervisor: '运营督导', food_quality: '食安专员', train_advisor: '培训顾问',
+    marketing_planner: '营销策划', marketing_executor: '营销执行', data_auditor: '数据审计',
+    master: '调度中枢', task_watchdog: '系统监控', reminder_queue: '催办队列',
+    task_orchestrator: '任务编排', review_handler: '审核处理', agent: 'Agent',
+};
+function wsAgentKeyZh(key) {
+    return WS_AGENT_KEY_ZH[key] || key;
+}
+function wsFormatAtbEventLine(e) {
+    const time = wsEsc(String(e.created_at || '').slice(0, 16).replace('T', ' '));
+    if (e.event_type === 'reminder_card_sent' || e.event_type === 'reminder_sent') {
+        const n = e.payload?.reminderCount;
+        return time + ' <strong>催办中</strong>' + (n ? '（第' + wsEsc(String(n)) + '次催办，责任人尚未响应）' : '（责任人尚未响应）');
+    }
+    if (e.status_after === 'hr_filed') {
+        return time + ' <strong>已备案</strong>（多次催办无响应，系统自动归档，需人工介入）';
+    }
+    const before = wsBoardStatusZh(e.status_before);
+    const after = wsBoardStatusZh(e.status_after);
+    const agent = e.to_agent ? '（' + wsEsc(wsAgentKeyZh(e.to_agent)) + '）' : '';
+    return time + ' ' + wsEsc(before) + ' → ' + wsEsc(after) + agent;
+}
+
 function wsFormatAgentBoardDetail(task) {
     if (!task) return '<div class="ws-card__desc">加载失败或记录不存在</div>';
     const rows = [];
@@ -1397,10 +1426,7 @@ function wsFormatAgentBoardDetail(task) {
     if (events.length) {
         rows.push('<div class="ws-card__desc" style="font-weight:600;margin-top:6px;">状态流转</div>');
         rows.push(events.map((e) =>
-            '<div class="ws-card__desc" style="margin-bottom:2px;">' +
-            wsEsc(String(e.created_at || '').slice(0, 16).replace('T', ' ')) + ' ' +
-            wsEsc(wsBoardStatusZh(e.status_before)) + ' → ' + wsEsc(wsBoardStatusZh(e.status_after)) +
-            (e.to_agent ? '（' + wsEsc(e.to_agent) + '）' : '') + '</div>'
+            '<div class="ws-card__desc" style="margin-bottom:2px;">' + wsFormatAtbEventLine(e) + '</div>'
         ).join(''));
     }
     const evidences = Array.isArray(task.evidences) ? task.evidences : [];
@@ -1438,16 +1464,14 @@ function wsBindAgentBoardListClick(root) {
         const isOpen = detailEl.style.display !== 'none';
         if (isOpen) { detailEl.style.display = 'none'; return; }
         detailEl.style.display = 'block';
-        if (_wsAtbDetailCache.has(taskId)) {
-            detailEl.innerHTML = _wsAtbDetailCache.get(taskId);
-            return;
-        }
+        // 2026-08-01：用户反馈状态流转"要更新"——查证发现详情之前用_wsAtbDetailCache永久
+        // 缓存，第一次打开后不管过多久重新打开都是当时的旧数据，看不到之后新增的催办/备案
+        // 事件。改成每次打开都重新拉取最新数据，不再依赖缓存（这类详情本身访问频率不高，
+        // 不需要为了省一次请求牺牲数据新鲜度）。
         detailEl.innerHTML = '<div class="ws-card__desc">加载中...</div>';
         try {
             const d = await wsFetchJson('/api/agent-task-board/tasks/' + encodeURIComponent(taskId));
-            const html = wsFormatAgentBoardDetail(d?.task);
-            _wsAtbDetailCache.set(taskId, html);
-            detailEl.innerHTML = html;
+            detailEl.innerHTML = wsFormatAgentBoardDetail(d?.task);
         } catch (e) {
             detailEl.innerHTML = '<div class="ws-card__desc ws-err">加载失败：' + wsEsc(e?.message || e) + '</div>';
         }
