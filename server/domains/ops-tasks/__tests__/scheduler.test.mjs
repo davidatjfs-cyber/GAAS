@@ -30,7 +30,8 @@ test('runOpsTaskSchedulerTick：ensure + overdue update；租户内错误吞掉'
   await runOpsTaskSchedulerTick();
   assert.equal(calls.ensureTable, 2);
   assert.deepEqual(calls.ensureDate, ['2026-07-26']);
-  assert.equal(calls.queries, 1);
+  // 1次t1的overdue-update查询 + 1次tick结束时的心跳写入（2026-08-01新增，见scheduler.js）
+  assert.equal(calls.queries, 2);
 });
 
 test('runOpsTaskSchedulerTick：runForActiveTenants 外层失败不抛', async () => {

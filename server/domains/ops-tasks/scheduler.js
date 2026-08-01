@@ -1,4 +1,5 @@
 import { childLogger } from '../../utils/logger.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'ops-tasks', handler: 'scheduler' });
 
@@ -29,6 +30,7 @@ export function createOpsTaskScheduler({
           log.error({ msg: 'ops_scheduler_tick_failed', detail: [tenantId, e?.message || e] });
         }
       }, { continueOnError: true });
+      await beatHeartbeatSimple(pool, 'ops_task_scheduler_tick');
     } catch (e) {
       log.error({ msg: 'ops_scheduler_runforactivetenants_error', err: e?.message || e });
     }

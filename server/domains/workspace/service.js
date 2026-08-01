@@ -24,8 +24,8 @@ function generateTaskId(now = new Date()) {
 export async function getOpenTaskSummaryByStore(pool, tenantId) {
   const r = await pool.query(
     `SELECT store,
-            COUNT(*) FILTER (WHERE status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')) AS open_count,
-            COUNT(*) FILTER (WHERE severity = 'high' AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')) AS high_count
+            COUNT(*) FILTER (WHERE status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','cancelled')) AS open_count,
+            COUNT(*) FILTER (WHERE severity = 'high' AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','cancelled')) AS high_count
        FROM master_tasks
       WHERE tenant_id = $1 AND store IS NOT NULL AND store <> ''
       GROUP BY store
@@ -131,7 +131,7 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
        LEFT JOIN employees e
          ON lower(e.username) = lower(master_tasks.created_by) AND e.tenant_id = master_tasks.tenant_id
       WHERE master_tasks.tenant_id = $1 AND lower(assignee_username) = lower($2)
-        AND master_tasks.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+        AND master_tasks.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','cancelled')
         ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4').replace('source =', 'master_tasks.source =').replace('category ILIKE', 'master_tasks.category ILIKE')}
       ORDER BY master_tasks.created_at DESC LIMIT $3`,
     [tenantId, username, lim, WS_ALLOWED_TASK_SOURCES]
@@ -200,7 +200,7 @@ export async function getNotableOpenTasks(pool, tenantId, limit = 8, viewerUsern
     `SELECT t.task_id, t.title, t.detail, t.severity, t.store, t.status, t.category, t.source, t.created_at
        FROM master_tasks t
       WHERE t.tenant_id = $1
-        AND t.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+        AND t.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','cancelled')
         AND (t.category ILIKE '%food_safety%' OR t.category ILIKE '%food_quality%')${ackFilter}
       ORDER BY (t.severity = 'high') DESC, t.created_at DESC LIMIT $2`,
     params
@@ -398,7 +398,7 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
     `UPDATE master_tasks SET status = 'pending_review', response_text = $1, response_images = $2::jsonb,
             responded_at = NOW(), updated_at = NOW()
        WHERE task_id = $3 AND tenant_id = $4 AND lower(assignee_username) = lower($5)
-         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','pending_review')
+         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed','cancelled','pending_review')
        RETURNING task_id, store, title, source_data`,
     [text, JSON.stringify(images), taskId, tenantId, username]
   );

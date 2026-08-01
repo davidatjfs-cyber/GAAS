@@ -4,6 +4,7 @@
 import axios from 'axios';
 import { getActiveTenantIds, tenantContext } from '../../utils/database.js';
 import { childLogger } from '../../utils/logger.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'growth-phases', handler: 'phase-pos-sync-cron' });
 
@@ -41,6 +42,7 @@ export function startPosFeishuSyncCron(pool) {
         }
         throw new Error(`tenant=${tenantId} ${data?.error || 'unknown_error'}`);
       }
+      await beatHeartbeatSimple(pool, 'pos_feishu_sync_cron');
     } catch (e) {
       log.error({ msg: 'pos_sync_cron_failed', err: e.message });
       try {

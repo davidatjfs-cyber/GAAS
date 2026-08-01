@@ -797,7 +797,14 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
 
             if (pageName === 'approvals') {
                 const _apr = String(currentUser?.role || '').trim();
-                const canAccess = currentUser && (_apr === ROLES.ADMIN || _apr === ROLES.HQ_MANAGER || _apr === ROLES.HR_MANAGER || _apr === ROLES.STORE_MANAGER || _apr === ROLES.CASHIER || _apr.startsWith('custom_'));
+                // 2026-08-01 修复：出品经理(store_production_manager)一直不在这份白名单里——
+                // 之前几乎没人注意到，是因为厨房序列的晋升审批一直被误派给一个测试账号(见
+                // 今天的另一处修复)，真正的出品经理从未真的收到过待审批任务，这个缺口一直是
+                // "睡眠状态"。改对派工后，第一个真正收到待审批的出品经理(黎永荣)点进"待审批"
+                // 就直接被这道白名单拦在外面，报"您没有待审批权限"——出品经理本来就是既有
+                // 审批链(晋升/任务确认)里合法的审批人，这里漏掉纯属遗漏，不是权限设计上故意
+                // 排除，直接补上。
+                const canAccess = currentUser && (_apr === ROLES.ADMIN || _apr === ROLES.HQ_MANAGER || _apr === ROLES.HR_MANAGER || _apr === ROLES.STORE_MANAGER || _apr === ROLES.STORE_PRODUCTION_MANAGER || _apr === ROLES.CASHIER || _apr.startsWith('custom_'));
                 if (!canAccess) {
                     showNotification('您没有待审批权限', 'warning');
                     pageName = getHomePageName();

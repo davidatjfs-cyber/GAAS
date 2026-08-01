@@ -10,6 +10,7 @@ import {
   STALE_JOB_MIN_AGE_MIN,
   buildSilentFailureMessage,
 } from './helpers.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'growth-sms', handler: 'health' });
 
@@ -55,9 +56,11 @@ export async function checkSmsSilentFailure(pool, deps = {}) {
 export function registerSmsHealthMonitor(pool) {
   if (globalThis.__smsHealthMonitorTimer) return;
   globalThis.__smsHealthMonitorTimer = setInterval(() => {
-    checkSmsSilentFailure(pool).catch((e) =>
-      log.warn({ msg: 'sms_health_check_failed', err: e?.message || String(e) })
-    );
+    checkSmsSilentFailure(pool)
+      .then(() => beatHeartbeatSimple(pool, 'sms_health_monitor'))
+      .catch((e) =>
+        log.warn({ msg: 'sms_health_check_failed', err: e?.message || String(e) })
+      );
   }, 30 * 60 * 1000);
   setTimeout(() => {
     checkSmsSilentFailure(pool).catch((e) =>

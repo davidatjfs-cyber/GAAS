@@ -7,6 +7,7 @@ import { listSmsTemplates } from '../../sms-templates.js';
 import { getSendGrowthAlert } from '../../growth-api.js';
 import { childLogger } from '../../utils/logger.js';
 import { normalizeSmsContent } from './helpers.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'growth-sms', handler: 'reconcile' });
 
@@ -67,9 +68,11 @@ export async function runSmsTemplateReconcile(pool, deps = {}) {
 export function registerSmsReconcileJob(pool) {
   if (globalThis.__smsReconcileTimer) return;
   globalThis.__smsReconcileTimer = setInterval(() => {
-    runSmsTemplateReconcile(pool).catch((e) =>
-      log.warn({ msg: 'sms_template_reconcile_run_failed', err: e?.message })
-    );
+    runSmsTemplateReconcile(pool)
+      .then(() => beatHeartbeatSimple(pool, 'sms_template_reconcile'))
+      .catch((e) =>
+        log.warn({ msg: 'sms_template_reconcile_run_failed', err: e?.message })
+      );
   }, 24 * 60 * 60 * 1000);
   setTimeout(() => {
     runSmsTemplateReconcile(pool).catch((e) =>
