@@ -302,8 +302,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 注入培训页（ensureJobCoachEntryCard），对练 UI 在独立 job-coach.html，不堆培训 HTML；
  * ②与上条PLLM责任人下拉框改动合并自两个各自基于71481的独立分支，实际行数以重新构建
  * working-fixed.html后的真实行数为准。
+ * 2026-08-01 第五十一次上调（71630→71649）：差评展示补上来源筛选chip（桌访/大众点评/
+ * 外卖/全部），跟日期chip同款交互，独立的单选组不互相清除active状态。
  */
-const MAX_LINES = 71630;
+const MAX_LINES = 71649;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

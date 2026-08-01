@@ -38,7 +38,18 @@ const DATE_GUARD = `(agent_data->'fields'->>'date') ~ '^[0-9]+$'`;
  * 门店名/飞书别名双向映射，store_name_aliases表驱动）把每个门店名展开成所有已知别名，
  * 再用 ANY() 匹配，不再要求字符串完全相等。
  */
-export async function getBadReviewFeed(pool, tenantId, { store = '', startDate = '', endDate = '', limit = 30, storeFilter = [] } = {}) {
+// 2026-08-01：用户要求差评展示支持按来源筛选（桌访 / 平台-大众点评 / 平台-外卖）。
+// 平台差评的真实platform取值只有'大众点评'/'美团外卖'/'饿了吗'（查生产库确认），
+// 外卖归为platform ILIKE '%外卖%' OR platform='饿了吗'，覆盖两个外卖平台。
+const SOURCE_TYPES = {
+  table_visit: 'table_visit',
+  platform_dianping: 'platform_dianping',
+  platform_delivery: 'platform_delivery',
+};
+
+export async function getBadReviewFeed(pool, tenantId, {
+  store = '', startDate = '', endDate = '', limit = 30, storeFilter = [], sourceType = '',
+} = {}) {
   const lim = Math.min(100, Math.max(1, Number(limit) || 30));
   const scoped = Array.isArray(storeFilter) && storeFilter.length > 0;
   const effectiveStore = store && (!scoped || storeFilter.includes(store)) ? store : '';
@@ -46,12 +57,21 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
     ? expandAgentStoreLabels(effectiveStore)
     : (scoped ? [...new Set(storeFilter.flatMap((s) => expandAgentStoreLabels(s)))] : []);
   const hasStoreFilter = storeAliasList.length > 0;
+  const type = Object.values(SOURCE_TYPES).includes(sourceType) ? sourceType : '';
+  const wantPlatform = type === '' || type === SOURCE_TYPES.platform_dianping || type === SOURCE_TYPES.platform_delivery;
+  const wantVisit = type === '' || type === SOURCE_TYPES.table_visit;
   try {
     const platformParams = [tenantId];
     let platformWhere = '';
     if (hasStoreFilter) { platformParams.push(storeAliasList); platformWhere += ` AND agent_data->'fields'->>'store' = ANY($${platformParams.length})`; }
     if (startDate) { platformParams.push(startDate); platformWhere += ` AND ${DATE_EXPR} >= $${platformParams.length}`; }
     if (endDate) { platformParams.push(endDate); platformWhere += ` AND ${DATE_EXPR} <= $${platformParams.length}`; }
+    if (type === SOURCE_TYPES.platform_dianping) {
+      platformParams.push('大众点评');
+      platformWhere += ` AND agent_data->'fields'->>'platform' = $${platformParams.length}`;
+    } else if (type === SOURCE_TYPES.platform_delivery) {
+      platformWhere += ` AND (agent_data->'fields'->>'platform' ILIKE '%外卖%' OR agent_data->'fields'->>'platform' = '饿了吗')`;
+    }
 
     const visitParams = [tenantId];
     let visitWhere = '';
@@ -60,7 +80,7 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
     if (endDate) { visitParams.push(endDate); visitWhere += ` AND ${DATE_EXPR} <= $${visitParams.length}`; }
 
     const [platformR, visitR] = await Promise.all([
-      pool.query(
+      wantPlatform ? pool.query(
         `SELECT agent_data->'fields'->>'store' AS store, ${DATE_EXPR} AS date,
                 agent_data->'fields'->>'content' AS content,
                 agent_data->'fields'->>'platform' AS platform,
@@ -69,8 +89,8 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
           WHERE tenant_id = $1 AND content_type = 'bad_review' AND ${DATE_GUARD}${platformWhere}
           ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
         platformParams
-      ),
-      pool.query(
+      ) : Promise.resolve({ rows: [] }),
+      wantVisit ? pool.query(
         `SELECT agent_data->'fields'->>'store' AS store, ${DATE_EXPR} AS date,
                 agent_data->'fields'->>'product_issue' AS product_issue,
                 agent_data->'fields'->>'service_issue' AS service_issue,
@@ -86,7 +106,7 @@ export async function getBadReviewFeed(pool, tenantId, { store = '', startDate =
             )${visitWhere}
           ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
         visitParams
-      ),
+      ) : Promise.resolve({ rows: [] }),
     ]);
 
     const platformItems = (platformR.rows || []).map((row) => ({

@@ -893,13 +893,17 @@ function shanghaiTodayYmd() {
 
 async function wsLoadBadReviews(container) {
     const store = container.querySelector('#ws-br-store')?.value || '';
-    const activeChip = container.querySelector('.ws-br-chip.active');
+    const activeChip = container.querySelector('.ws-br-chip[data-days].active');
     const days = activeChip ? Number(activeChip.getAttribute('data-days') || 0) : 30;
     const { start, end } = wsDateRangeFromChip(days);
+    // 2026-08-01：用户要求差评展示支持按来源筛选（桌访/大众点评/外卖），跟日期chip同款交互。
+    const activeSourceChip = container.querySelector('.ws-br-source-chip.active');
+    const sourceType = activeSourceChip ? (activeSourceChip.getAttribute('data-source') || '') : '';
     const qs = new URLSearchParams();
     if (store) qs.set('store', store);
     if (start) qs.set('startDate', start);
     if (end) qs.set('endDate', end);
+    if (sourceType) qs.set('sourceType', sourceType);
     const list = container.querySelector('#ws-br-feed');
     if (list) list.innerHTML = '<div class="ws-loading">加载中...</div>';
     const data = await wsFetchJson('/api/workspace/bad-reviews?' + qs.toString());
@@ -932,14 +936,29 @@ function wsRenderBadReviewSection(allStores) {
         '<button type="button" class="ws-br-chip" data-days="0">全部</button>' +
         '<select class="ws-input" id="ws-br-store" style="flex:none;"' + (isSingleStore ? ' disabled' : '') + '>' + storeOptions + '</select>' +
         '</div>' +
+        '<div class="ws-br-filters" style="margin-top:4px;">' +
+        '<button type="button" class="ws-br-chip ws-br-source-chip active" data-source="">全部来源</button>' +
+        '<button type="button" class="ws-br-chip ws-br-source-chip" data-source="table_visit">桌访</button>' +
+        '<button type="button" class="ws-br-chip ws-br-source-chip" data-source="platform_dianping">大众点评</button>' +
+        '<button type="button" class="ws-br-chip ws-br-source-chip" data-source="platform_delivery">外卖</button>' +
+        '</div>' +
         '<div class="ws-br-feed" id="ws-br-feed"><div class="ws-empty">加载中...</div></div>'
     );
 }
 
 function wsBindBadReviewEvents(root) {
-    root.querySelectorAll('.ws-br-chip').forEach((chip) => {
+    // 2026-08-01：来源筛选chip跟日期chip共用.ws-br-chip视觉样式，但各自是独立的单选组——
+    // 用[data-days]/.ws-br-source-chip分开选择器，避免点其中一组清掉另一组的active状态。
+    root.querySelectorAll('.ws-br-chip[data-days]').forEach((chip) => {
         chip.addEventListener('click', () => {
-            root.querySelectorAll('.ws-br-chip').forEach((c) => c.classList.remove('active'));
+            root.querySelectorAll('.ws-br-chip[data-days]').forEach((c) => c.classList.remove('active'));
+            chip.classList.add('active');
+            wsLoadBadReviews(root);
+        });
+    });
+    root.querySelectorAll('.ws-br-source-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            root.querySelectorAll('.ws-br-source-chip').forEach((c) => c.classList.remove('active'));
             chip.classList.add('active');
             wsLoadBadReviews(root);
         });

@@ -87,3 +87,36 @@ test('平台差评不应被桌访记录挤出：limit=3时桌访记录有5条，
   const platformCount = result.filter((r) => r.source.startsWith('平台差评')).length;
   assert.equal(platformCount, 2, '平台差评应该全部保留，不能被桌访记录挤掉');
 });
+
+// 2026-08-01：用户要求差评展示支持按来源筛选（桌访 / 平台-大众点评 / 平台-外卖）。
+// 锁定：sourceType='table_visit'时不查平台差评；'platform_dianping'/'platform_delivery'
+// 时不查桌访记录，且平台差评的SQL带上对应的platform过滤条件。
+test('sourceType=table_visit：只查桌访记录，不查平台差评', async () => {
+  const pool = makePool();
+  await getBadReviewFeed(pool, 'default', { sourceType: 'table_visit' });
+  assert.equal(pool.calls.length, 1, '不应该发起平台差评的查询');
+  assert.match(pool.calls[0].sql, /content_type = 'table_visit'/);
+});
+
+test('sourceType=platform_dianping：只查平台差评且限定platform=大众点评，不查桌访记录', async () => {
+  const pool = makePool();
+  await getBadReviewFeed(pool, 'default', { sourceType: 'platform_dianping' });
+  assert.equal(pool.calls.length, 1, '不应该发起桌访记录的查询');
+  assert.match(pool.calls[0].sql, /content_type = 'bad_review'/);
+  assert.match(pool.calls[0].sql, /platform' = \$\d+/);
+  assert.ok(pool.calls[0].params.includes('大众点评'));
+});
+
+test('sourceType=platform_delivery：只查平台差评且限定外卖平台(美团外卖/饿了吗)，不查桌访记录', async () => {
+  const pool = makePool();
+  await getBadReviewFeed(pool, 'default', { sourceType: 'platform_delivery' });
+  assert.equal(pool.calls.length, 1, '不应该发起桌访记录的查询');
+  assert.match(pool.calls[0].sql, /content_type = 'bad_review'/);
+  assert.match(pool.calls[0].sql, /platform' ILIKE '%外卖%' OR agent_data->'fields'->>'platform' = '饿了吗'/);
+});
+
+test('sourceType未传或非法值：退回默认行为，桌访+平台差评都查', async () => {
+  const pool = makePool();
+  await getBadReviewFeed(pool, 'default', { sourceType: 'not_a_real_type' });
+  assert.equal(pool.calls.length, 2);
+});
