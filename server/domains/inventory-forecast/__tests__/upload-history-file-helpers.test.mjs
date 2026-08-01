@@ -149,11 +149,11 @@ test('persistUploadHistoryGroups: aggregates counters', async () => {
   assert.equal(out.accepted, 2);
 });
 
-test('parseUploadHistoryRows: parses csv file', () => {
+test('parseUploadHistoryRows: parses csv file', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inv-upload-'));
   const filePath = path.join(dir, 'history.csv');
   fs.writeFileSync(filePath, '菜品名称,销售数量\n牛腩,5\n');
-  const out = parseUploadHistoryRows(
+  const out = await parseUploadHistoryRows(
     { path: filePath, originalname: 'history.csv', mimetype: 'text/csv', size: 20 },
     ctx,
     log,

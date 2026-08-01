@@ -3,7 +3,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import XLSX from 'xlsx';
+import { parseXlsxSafely } from '../uploads/xlsx-safe-parse.js';
 
 export function validateUploadHistoryAuth(input, ctx) {
   const username = String(input.username || '').trim();
@@ -39,16 +39,18 @@ export function createUploadHistoryParsers(file, ctx, log, uploadsDir) {
     fs.copyFileSync(file.path, path.join(uploadsDir, '__last_inventory_upload' + ext));
   } catch (_e) { /* ignore */ }
 
-  const tryParseExcel = () => {
-    const wb = XLSX.readFile(file.path, { raw: false });
-    const sheetNames = Array.isArray(wb.SheetNames) ? wb.SheetNames : [];
+  const tryParseExcel = async () => {
+    const parsedWorkbook = await parseXlsxSafely(file.path, {
+      readOpts: { raw: false },
+      sheetToJsonOpts: { header: 1, raw: false, defval: '' },
+    });
+    const sheetNames = Array.isArray(parsedWorkbook.sheetNames) ? parsedWorkbook.sheetNames : [];
     if (!sheetNames.length) throw new Error('empty_sheets');
     for (let si = 0; si < sheetNames.length; si += 1) {
       const sn = String(sheetNames[si] || '').trim();
       if (!sn) continue;
-      const ws = wb.Sheets[sn];
-      if (!ws) continue;
-      const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      const matrix = parsedWorkbook.sheets[sn];
+      if (!matrix) continue;
       if (!__debugMatrixSample.length && matrix.length) {
         __debugMatrixSample = matrix.slice(0, 12).map((r) => Array.isArray(r) ? r.map((c) => String(c ?? '').slice(0, 40)) : []);
         log.debug({
@@ -110,7 +112,7 @@ export function createUploadHistoryParsers(file, ctx, log, uploadsDir) {
   };
 }
 
-export function parseUploadHistoryRows(file, ctx, log, uploadsDir) {
+export async function parseUploadHistoryRows(file, ctx, log, uploadsDir) {
   const {
     ext,
     mime,
@@ -133,7 +135,7 @@ export function parseUploadHistoryRows(file, ctx, log, uploadsDir) {
   if (extLooksExcel || mimeLooksExcel || unknownType) {
     parseMode = parseMode ? `${parseMode}|excel_attempt` : 'excel_attempt';
     try {
-      parsedRows = tryParseExcel();
+      parsedRows = await tryParseExcel();
       if (parsedRows.length) parseMode = 'excel';
     } catch (e) {
       parseErrors.push(`excel:${String(e?.message || e)}`);
@@ -163,7 +165,7 @@ export function parseUploadHistoryRows(file, ctx, log, uploadsDir) {
   if (!parsedRows.length && !(extLooksExcel || mimeLooksExcel || unknownType)) {
     parseMode = parseMode ? `${parseMode}|excel_fallback_attempt` : 'excel_fallback_attempt';
     try {
-      parsedRows = tryParseExcel();
+      parsedRows = await tryParseExcel();
       if (parsedRows.length) parseMode = 'excel_fallback';
     } catch (e) {
       parseErrors.push(`excel_fallback:${String(e?.message || e)}`);
@@ -325,7 +327,7 @@ export async function runUploadHistoryFile(ctx, input, deps) {
       return { ok: false, status: 400, error: 'invalid_biz_type', message: '请选择业务类型（外卖/堂食）后再上传。' };
     }
 
-    const parseResult = parseUploadHistoryRows(file, ctx, log, uploadsDir);
+    const parseResult = await parseUploadHistoryRows(file, ctx, log, uploadsDir);
     const parseFailure = buildUploadHistoryParseFailure(file, parseResult);
     if (parseFailure) return parseFailure;
 

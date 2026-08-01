@@ -3,6 +3,7 @@
  */
 import path from 'path';
 import XLSX from 'xlsx';
+import { parseXlsxSafely } from '../uploads/xlsx-safe-parse.js';
 
 function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
@@ -122,11 +123,10 @@ export function inferMapping(headers, sampleRows) {
   return { mapping, fieldScores };
 }
 
-function worksheetTables(workbook) {
+function worksheetTables(parsedWorkbook) {
   const tables = [];
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
+  for (const sheetName of parsedWorkbook.sheetNames) {
+    const matrix = parsedWorkbook.sheets[sheetName] || [];
     if (!matrix.length) continue;
     let best = { rowIndex: 0, score: -1 };
     const maxHeaderScan = Math.min(12, matrix.length);
@@ -188,12 +188,15 @@ export function classifyCustomer(c, nowTs) {
   return { lifecycle, tags, daysSince };
 }
 
-export function normalizeWorkbook(filePath, opts = {}) {
-  const workbook = XLSX.readFile(filePath, { cellDates: true });
+export async function normalizeWorkbook(filePath, opts = {}) {
+  const parsedWorkbook = await parseXlsxSafely(filePath, {
+    readOpts: { cellDates: true },
+    sheetToJsonOpts: { header: 1, defval: '', raw: false, blankrows: false },
+  });
   const orders = new Map();
   const itemsByOrder = new Map();
   const diagnostics = { source_file: opts.sourceFile || path.basename(filePath), sheets: [], missing_required: [], warnings: [], confidence_score: 0, record_types: {} };
-  for (const table of worksheetTables(workbook)) {
+  for (const table of worksheetTables(parsedWorkbook)) {
     const { sheetName, headerRow, mapping, dataRows } = table;
     const sheetKind = inferSheetKind(mapping, sheetName);
     const present = Object.fromEntries(Object.keys(FIELD_DEFS).map((f) => [f, !!mapping[f]]));
