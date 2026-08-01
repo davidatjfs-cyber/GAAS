@@ -101,7 +101,13 @@ export async function getStoreHealthLights(pool, tenantId) {
 // 2026-07-30 追加 growth_marketing_action：营销活动建议"执行"改成必须先分配责任人生成
 // 真实任务（见growth-actions/service.js#assignMarketingActionTask），这是真实指派给某个
 // 人的工作，符合这份白名单"真实任务不是噪音"的初衷，需要出现在责任人的任务栏里。
-const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board', 'growth_marketing_action'];
+// 2026-08-01 追加 bi_anomaly：用户核实发现充值异常/差评报告/包房异常这几类BI异常追踪
+// 任务(source='bi_anomaly')全部被这份白名单挡在任务栏外面（此前只有category命中
+// food_safety/food_quality才漏得进来），责任人只能靠飞书卡片看到——生产实测"差评报告
+// 产品异常"任务连续3天(07-29/30/31)都因无人响应超时自动hr_filed归档，高度符合"看不
+// 见→没人理→自动放弃"模式，跟之前hrms_task_board那次assignee_username缺失是同一类
+// 可见性问题。用户明确要求bi_anomaly整体纳入任务栏（不再局限于food_safety子集）。
+const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board', 'growth_marketing_action', 'bi_anomaly'];
 const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')`;
 
 // 2026-07-30 修复：出品经理/店长反馈任务栏一直是0，跟通知栏同一个根因——生产库里
