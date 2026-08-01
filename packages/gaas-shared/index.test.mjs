@@ -9,6 +9,11 @@ import {
   SHARED_TABLES,
   SHARED_TABLE_WRITERS,
   HR_RATING_CONFIG_KEYS,
+  TENANT_RLS_EXCLUDED_TABLES,
+  TENANT_RLS_POLICY_NAME,
+  TENANT_RLS_GUC_TENANT_ID,
+  TENANT_RLS_SYSTEM_TENANT_VALUE,
+  isTenantRlsExcluded,
 } from './index.js';
 
 test('shared: signature roundtrip', () => {
@@ -36,6 +41,7 @@ test('shared: signature roundtrip', () => {
 test('shared: table writer matrix covers master_tasks / hrms_state / employees', () => {
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.MASTER_TASKS], 'agents');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HRMS_STATE], 'gaas');
+  assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.LICENSES], 'gaas');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.EMPLOYEES], 'gaas');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.HR_RATING_CONFIGS], 'gaas');
   assert.equal(SHARED_TABLE_WRITERS[SHARED_TABLES.EXAM_RESULTS], 'gaas');
@@ -65,6 +71,25 @@ test('shared: fetchFeishuTenantAccessToken uses fetchImpl', async () => {
     }),
   });
   assert.equal(token.token, 't-demo');
+});
+
+test('shared: 租户 RLS 作用域契约是冻结的单一真源', () => {
+  assert.deepEqual(TENANT_RLS_EXCLUDED_TABLES, [
+    'tenants',
+    'licenses',
+    'agent_v2_configs',
+    'analysis_rules',
+    'analysis_sop',
+    'cn_holiday_calendar',
+    'hrms_state',
+  ]);
+  assert.equal(Object.isFrozen(TENANT_RLS_EXCLUDED_TABLES), true);
+  assert.equal(TENANT_RLS_POLICY_NAME, 'tenant_isolation');
+  assert.equal(TENANT_RLS_GUC_TENANT_ID, 'app.tenant_id');
+  assert.equal(TENANT_RLS_SYSTEM_TENANT_VALUE, '__system__');
+  assert.equal(isTenantRlsExcluded('tenants'), true);
+  assert.equal(isTenantRlsExcluded('licenses'), true);
+  assert.equal(isTenantRlsExcluded('daily_reports'), false);
 });
 
 test('shared: onRefresh 只在真取新 token 时触发，缓存命中静默', async () => {

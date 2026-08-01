@@ -8,6 +8,7 @@
     ".": "./index.js",
     "./feishu-webhook-verify.js": "./feishu-webhook-verify.js",
     "./feishu-token.js": "./feishu-token.js",
-    "./tables.js": "./tables.js"
+    "./tables.js": "./tables.js",
+    "./tenant-rls-scope.js": "./tenant-rls-scope.js"
   }
 }
