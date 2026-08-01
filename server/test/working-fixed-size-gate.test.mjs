@@ -304,8 +304,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * working-fixed.html后的真实行数为准。
  * 2026-08-01 第五十一次上调（71630→71649）：差评展示补上来源筛选chip（桌访/大众点评/
  * 外卖/全部），跟日期chip同款交互，独立的单选组不互相清除active状态。
+ * 2026-08-01 第五十二次上调（71649→71673）：8大AI督导指挥中心状态流转翻译agent key为
+ * 中文岗位名、催办事件单独渲染成"催办中（第N次）"而不是含糊的"已分配→已分配"、去掉
+ * 详情永久缓存改成每次打开都拉取最新数据。
  */
-const MAX_LINES = 71649;
+const MAX_LINES = 71673;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
