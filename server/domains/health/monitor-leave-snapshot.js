@@ -11,7 +11,7 @@ export function scheduleLeaveCumulativeSnapshot(deps) {
     upsertPayrollDomainFromState: _upsertPayrollDomainFromState, getExpectedMonthlyPerformancePeriodShanghai: _getExpectedMonthlyPerformancePeriodShanghai,
     countEligibleMonthlyPerformanceUsers: _countEligibleMonthlyPerformanceUsers, leaveAttendanceHelpers, safeErrMessage,
     allowSchemaChanges: _allowSchemaChanges, setIntervalFn = setInterval, setTimeoutFn: _setTimeoutFn = setTimeout,
-    beatHeartbeat: _beatHeartbeat, sendSystemAlert,
+    beatHeartbeat, sendSystemAlert,
     isPosSalesCheckWindow: _isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow,
     findMissingPosStores: _findMissingPosStores, expectedStoresFromState: _expectedStoresFromState,
     dailyReportItemFromPgRow: _dailyReportItemFromPgRow,
@@ -49,6 +49,10 @@ setIntervalFn(async () => {
         if (r?.ok) {
           _leaveCumulativeSnapshotDoneCurYm.set(tenantId, curYm);
           log.info({ msg: 'monitor', detail: ['[leave-cumulative-snapshot] locked tenant=', tenantId, 'closedMonth=', r.closedMonth, 'employees=', r.employees].map((x) => (x == null ? '' : String(x))).join(' ') });
+          // 2026-08-01 补：这个月度任务之前完全没有心跳，导致今天整窗口(06:00-06:14)连续失败
+          // 14次都没人知道，直到用户自己发现月度报表缺数据。现在跟其它 monitor 一样打心跳，
+          // /api/health 能据此发现"这个月没打过卡"。
+          await beatHeartbeat(deps, 'leave_cumulative_snapshot');
         } else {
           await sendSystemAlert([
             '🔴 [HRMS] 上月累计假期自动快照失败',

@@ -19,6 +19,23 @@ import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'sales-ai', handler: 'routes-schedulers' });
 
+// 2026-08-01：这批 sales-ai 定时任务（含今天 setTimeout 溢出那次事故的两个任务）之前完全
+// 没有心跳/失败告警——runner() 抛错只会走 log.warn 落到本地日志，没人会主动去看，也没有
+// scheduler_heartbeat 记录可供 /api/health 判断"这个任务多久没成功过了"。跟其它 monitor
+// 补齐同一套心跳机制；这里直接写表而不复用 monitor-beat.js 的 beatHeartbeat(deps,...)，
+// 因为这个文件目前只收到 pool 一个依赖，不想为了心跳把整条依赖链改一遍。
+async function beat(pool, taskName) {
+  try {
+    await pool.query(
+      `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
+       VALUES ($1, NOW(), 1, 'default')
+       ON CONFLICT (task_name)
+       DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
+      [taskName]
+    );
+  } catch (_) { /* ignore */ }
+}
+
 // Node's setTimeout delay is a 32-bit signed int (~24.8 days). Passing a larger
 // delay silently overflows and fires almost immediately (TimeoutOverflowWarning),
 // which turned monthly schedules into a fire-immediately-then-reschedule tight
@@ -41,8 +58,10 @@ function scheduleDailyAt(pool, sendOpsAlert, globalKey, hour, minute, runner, fa
     globalThis[globalKey] = safeSetTimeout(async () => {
       try {
         await runner();
+        await beat(pool, globalKey);
       } catch (e) {
         log.warn({ msg: failMsg, err: e?.message || e });
+        await sendOpsAlert(`⚠️ 【sales-ai定时任务失败】${failMsg}\n错误：${String(e?.message || e).slice(0, 800)}`).catch(() => {});
       }
       schedule();
     }, next - now);
@@ -67,8 +86,11 @@ function scheduleWeeklyKpi(pool, sendOpsAlert, globalKey, period) {
     globalThis[globalKey] = safeSetTimeout(async () => {
       try {
         await runAutoKpiRollupAndNotify(pool, sendOpsAlert, period);
+        await beat(pool, globalKey);
       } catch (e) {
-        log.warn({ msg: period === 'week' ? 'sales_ai_weekly_kpi_rollup_failed' : 'sales_ai_monthly_kpi_rollup_failed', err: e?.message || e });
+        const failMsg = period === 'week' ? 'sales_ai_weekly_kpi_rollup_failed' : 'sales_ai_monthly_kpi_rollup_failed';
+        log.warn({ msg: failMsg, err: e?.message || e });
+        await sendOpsAlert(`⚠️ 【sales-ai定时任务失败】${failMsg}\n错误：${String(e?.message || e).slice(0, 800)}`).catch(() => {});
       }
       schedule();
     }, next - now);
