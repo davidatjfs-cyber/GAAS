@@ -182,8 +182,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `daily_reports` | GAAS | agents 只读 |
 | `hrms_state` | GAAS | agents 只读 |
 | `pos_order_items` / `pos_sales_detail` | GAAS | agents 只读 |
-| `tenants` / `tenant_integrations` | GAAS | agents 读配置 |
+| `tenants` / `licenses` / `tenant_integrations` | GAAS | agents 读配置（唯一例外见下） |
 | schema migration（共享表） | GAAS `server/migrations/` | agents 禁止并行建共享表 |
+
+**例外（2026-08-01 拍板，029/030 所有权收敛）**：agents-service-v2 的 license 心跳
+仅允许写 `licenses.last_seen_at`（X-License-Key 校验中间件的异步心跳，热路径不走 HTTP）；
+`tenant_integrations` 的运行时写入权归 GAAS，agents 侧不得再自愈写入（`saveTenantIntegrationConfig`
+已移除，改纯读回退）。租户 RLS 排除清单单一真源在 `packages/gaas-shared/tenant-rls-scope.js`，
+demo 环境的 RLS 开启由 `server/scripts/apply-tenant-rls.mjs`（TENANT_MODE=multi 硬闸门）显式执行，
+不在编号迁移链内。
 
 ### ⚠️ 远程操作：ssh 和 scp 分工不同，别用错，别用 ssh pipe 传大文件
 
