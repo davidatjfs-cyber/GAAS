@@ -1624,8 +1624,11 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
             return;
         }
         if (tab === 'approval') {
+            // 2026-08-01：用户反馈这里之前只是一行静态文字，点了没反应，要去别的页面才能审批，
+            // 很不方便——复用全局已有的 openApprovalDetailModal(见01-boot.js的data-click委托)，
+            // 点这一行直接弹出完整审批详情(含接受/拒绝按钮)，不用离开工作台。
             pane.innerHTML = pendingApprovals.length
-                ? pendingApprovals.map((a) => '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
+                ? pendingApprovals.map((a) => '<div class="ws-rank-row" data-click="openApprovalDetailModal" data-arg="' + wsEsc(String(a.id || '')) + '" style="cursor:pointer;"><span class="ws-rank-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
                 : '<div class="ws-empty">暂无待批事项</div>';
             return;
         }
@@ -2041,18 +2044,25 @@ function wsSection(title, contentHtml) {
 async function wsRenderStore(root) {
     root.innerHTML = '<div class="ws-loading">加载中...</div>';
     const store = String(currentUser?.current_store || currentUser?.store || '').trim();
-    const [home, growthTasks, overview, approvalsData, recentlyResolvedData] = await Promise.all([
+    const [home, growthTasks, overview, approvalsData, recentlyResolvedData, pendingConfirmData] = await Promise.all([
         wsFetchJson('/api/workspace/home'),
         wsFetchGrowthSolutionTasks(),
         wsFetchJson('/api/workspace/overview'),
         wsFetchJson('/api/approvals?view=assigned&status=pending&limit=50'),
         wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24'),
+        wsFetchJson('/api/workspace/pending-confirmations'),
     ]);
     const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     // 2026-07-31：用户反馈"待批"是否真的连通好用——查证发现店长/出品经理视图(wsRenderStore)
     // 这里之前硬编码成空数组，从来没真正查询过审批数据，永远显示0，只有老板/总部视图
     // (wsRenderBossOrHq)是真实连通的。改成跟老板/总部视图一样查同一个/api/approvals接口。
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
+    // 2026-08-01：用户反馈"待批"点开只是一行静态文字，没法直接审批，很不方便——查证发现
+    // wsRenderBossOrHq(老板/总部视图)早就接了/api/workspace/pending-confirmations，渲染出
+    // 带"确认通过/打回重做"按钮的可操作卡片，但店长/出品经理视图(wsRenderStore)从来没接过
+    // 这一块，"待批"tab里那个静态列表(/api/approvals，见上面pendingApprovals)本来就没有
+    // 操作按钮——不是这次新坏的，是从一开始就没做。补上跟老板视图同款的可操作区块。
+    const pendingConfirmations = Array.isArray(pendingConfirmData?.items) ? pendingConfirmData.items : [];
     // 2026-07-31：用户反馈"飞书秒回resolved的任务，工作台完全看不到"——任务其实真实存在、
     // 责任人也分配对了，只是几十秒内就被resolved，从"任务"tab消失，只在"已完成"tab才能
     // 看到。但"已完成"tab之前没有数字角标，用户看到空白按钮不会点进去找。补上角标。
@@ -2061,6 +2071,7 @@ async function wsRenderStore(root) {
     const storeRoleLabel = (typeof getRoleDisplayName === 'function' ? getRoleDisplayName(currentUser?.role) : '') + (currentUser?.position ? '·' + currentUser.position : '') + '·级别' + (currentUser?.level || '暂无') + '·门店级别' + (storeLight?.rating || '暂无');
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
+    html += wsRenderPendingConfirmations(pendingConfirmations);
     // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
     // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
     // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
@@ -2079,6 +2090,7 @@ async function wsRenderStore(root) {
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
+    wsBindPendingConfirmationsEvents(root);
     wsBindOperationalStoreSelector(root);
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
