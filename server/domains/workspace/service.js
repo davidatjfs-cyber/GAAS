@@ -130,7 +130,7 @@ export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
        FROM master_tasks
        LEFT JOIN employees e
          ON lower(e.username) = lower(master_tasks.created_by) AND e.tenant_id = master_tasks.tenant_id
-      WHERE master_tasks.tenant_id = $1 AND lower(master_tasks.assignee_username) = lower($2)
+      WHERE master_tasks.tenant_id = $1 AND lower(assignee_username) = lower($2)
         AND master_tasks.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
         ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4').replace('source =', 'master_tasks.source =').replace('category ILIKE', 'master_tasks.category ILIKE')}
       ORDER BY master_tasks.created_at DESC LIMIT $3`,
