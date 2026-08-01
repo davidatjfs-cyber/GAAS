@@ -1,6 +1,9 @@
 /** 上月末累计池快照读写 */
 
 import { upsertLeaveDomain } from './domain-service.js';
+import { childLogger } from '../../utils/logger.js';
+
+const log = childLogger({ domain: 'leave-attendance', handler: 'close-snapshot' });
 
 export function createCloseSnapshotHelpers({
   safeMonthOnly,
@@ -114,6 +117,7 @@ export function createCloseSnapshotHelpers({
         invalidateSharedStateCache(tid);
       }
     } catch (e) {
+      log.error({ msg: 'close_snapshot_upsert_failed', closedMonth: m, err: e?.message || e, stack: e?.stack });
       return { ok: false, error: 'internal_error', closedMonth: m };
     }
     return { ok: true, closedMonth: m, nextMonth: nextM, employees: n };
