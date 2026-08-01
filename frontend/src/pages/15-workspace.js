@@ -281,7 +281,12 @@ async function wsFetchGrowthSolutionTasks() {
 // 它自己的 /complete 接口（那条线本来就没有这个 403 问题）。
 function wsRenderTaskCard(task, opts) {
     const hideProgressLink = !!(opts && opts.hideProgressLink);
-    const sevTag = task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>';
+    // 2026-08-01 修复：用户反馈"抄送给我知晓、责任人另有其人"的任务，标签仍显示"待处理"/
+    // "需拍板"，跟真正指派给自己的任务视觉上分不清，误以为是自己要处理的任务。_ccOnly
+    // 任务改用中性的"仅抄送知悉"标签，不再借用 severity 的待处理/需拍板措辞。
+    const sevTag = task._ccOnly
+        ? '<span class="ws-tag">仅抄送知悉</span>'
+        : (task.severity === 'high' ? '<span class="ws-tag ws-tag--red">需拍板</span>' : '<span class="ws-tag">待处理</span>');
     const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(task.category || ''));
     const progressLabel = hasDiagnosis ? '查看经营诊断 →' : '查看任务详情 →';
     // 门店名单独显示，不拼进标题——master_tasks.title 本身可能已经包含门店名

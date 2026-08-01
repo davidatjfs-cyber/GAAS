@@ -3,6 +3,7 @@
  * (behavior-preserving extract from index.js)
  */
 import { childLogger } from '../../utils/logger.js';
+import { checkNotifyCircuitBreaker } from '../../utils/notify-circuit-breaker.js';
 
 const log = childLogger({ domain: 'notifications', handler: 'system-alert' });
 
@@ -23,7 +24,7 @@ export function createSendAdminSystemAlert({
   resolveTenantIdDefault,
 }) {
   return async function sendAdminSystemAlert(msg, options = {}) {
-    const text = String(msg || '').trim();
+    let text = String(msg || '').trim();
     if (!text) return { recipients: [], feishuSent: 0, feishuFailed: 0 };
 
     // 2026-07-28 修复：这两处「群发管理员」查询原来没有 tenant_id 过滤，会把 admin/hq_manager/
@@ -52,6 +53,20 @@ export function createSendAdminSystemAlert({
     const title = String(options?.title || '').trim() || titleFromMsg(text);
     const notificationType = String(options?.notificationType || 'system_alert').trim();
     const meta = options?.meta && typeof options.meta === 'object' ? options.meta : {};
+
+    // 熔断：同一条告警(按 tenant+标题归一化)短时间内重复触发，说明上游大概率是死循环/重复
+    // 调度而不是真的有那么多新问题——拦截，只放一条"已限流"提示过去，不再逐条群发轰炸。
+    const breakerKey = `${tenantId}:${title}`;
+    const breaker = checkNotifyCircuitBreaker(breakerKey, { maxPerWindow: 5, windowMs: 5 * 60 * 1000 });
+    if (!breaker.allowed) {
+      log.warn({ msg: 'system_alert_circuit_breaker_tripped', tenantId, title, count: breaker.count });
+      if (!breaker.justTripped) {
+        return { recipients: [], feishuSent: 0, feishuFailed: 0, circuitBreakerTripped: true };
+      }
+      // 越过阈值的这一次，把消息改写成"已自动限流"提示，仍然正常走下面完整流程发一次，
+      // 之后同 key 的调用会被上面的 return 直接拦掉。
+      text = `⚠️ 【通知熔断】"${title}" 5分钟内已触发超过5次，判断为重复/异常调度，已自动限流，后续同类消息将被拦截直到窗口重置。\n最初内容：${text.slice(0, 300)}`;
+    }
 
     if (options?.persistToHrms !== false) {
       const notifs = recipients.map((username) => makeNotif(username, title, text, {

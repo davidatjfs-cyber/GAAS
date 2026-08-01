@@ -123,15 +123,17 @@ const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
-    `SELECT task_id, title, detail, severity, store, status, category, source, created_at,
-            timeout_at, COALESCE(NULLIF(e.name, ''), master_tasks.created_by) AS created_by_name
+    `SELECT master_tasks.task_id, master_tasks.title, master_tasks.detail, master_tasks.severity,
+            master_tasks.store, master_tasks.status, master_tasks.category, master_tasks.source,
+            master_tasks.created_at, master_tasks.timeout_at,
+            COALESCE(NULLIF(e.name, ''), master_tasks.created_by) AS created_by_name
        FROM master_tasks
        LEFT JOIN employees e
          ON lower(e.username) = lower(master_tasks.created_by) AND e.tenant_id = master_tasks.tenant_id
-      WHERE tenant_id = $1 AND lower(assignee_username) = lower($2)
-        AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
-        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4')}
-      ORDER BY created_at DESC LIMIT $3`,
+      WHERE master_tasks.tenant_id = $1 AND lower(assignee_username) = lower($2)
+        AND master_tasks.status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
+        ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4').replace('source =', 'master_tasks.source =').replace('category ILIKE', 'master_tasks.category ILIKE')}
+      ORDER BY master_tasks.created_at DESC LIMIT $3`,
     [tenantId, username, lim, WS_ALLOWED_TASK_SOURCES]
   );
   return r.rows || [];

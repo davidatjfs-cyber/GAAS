@@ -6,6 +6,8 @@ import path from 'path';
 import axios from 'axios';
 import { agentsOutboundHeaders } from '../shared/agents-service-auth.js';
 import { buildRootDiskHealthInfo, createDiskPressureNotifier } from './disk.js';
+import { checkSchedulerHeartbeatStaleness } from './scheduler-heartbeat-status.js';
+import { listTrippedCircuitBreakers } from '../../utils/notify-circuit-breaker.js';
 
 /** 与 agents-service-v2 /health 对齐；生产在 .env 设置 AGENTS_SERVICE_HEALTH_URL=http://127.0.0.1:3101/health */
 async function fetchAgentsServiceHealthSnapshot(req) {
@@ -93,6 +95,9 @@ export function registerHealthRoutes(app, deps) {
         /* ignore size errors */
       }
 
+      const schedulerHeartbeats = await checkSchedulerHeartbeatStaleness(pool).catch((e) => ({ ok: false, stale: [], checked: 0, error: String(e?.message || e) }));
+      const trippedCircuitBreakers = listTrippedCircuitBreakers();
+
       const payload = {
         ok: true,
         database: true,
@@ -102,7 +107,12 @@ export function registerHealthRoutes(app, deps) {
         agents: agentHealth,
         disk: diskInfo,
         databaseSizeBytes,
-        databaseSizeGb
+        databaseSizeGb,
+        /** 定时任务心跳过期检测——stale 非空说明有任务该跑没跑/跑了但没成功，见
+         * scheduler-heartbeat-status.js 的阈值登记表。 */
+        schedulerHeartbeats,
+        /** 当前被通知熔断器拦截的 key（说明有什么东西在短时间内重复发送同一条消息）。 */
+        trippedCircuitBreakers,
       };
       if (agentsService != null) payload.agentsService = agentsService;
       return res.json(payload);

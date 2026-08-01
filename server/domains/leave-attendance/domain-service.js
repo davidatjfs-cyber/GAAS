@@ -193,14 +193,20 @@ export async function upsertLeaveDomain(pool, tenantId, fields) {
         ? mergeLeaveDomainObjectField(currentSnapshots, patch.leaveCumulativeCloseSnapshots)
         : (currentSnapshots && typeof currentSnapshots === 'object' ? currentSnapshots : {});
 
+      // 2026-08-01 修复：这里之前用 "AND updated_at = $5"（$5=上面 SELECT FOR UPDATE 读到的
+      // row.updated_at）做乐观锁校验，但 node-pg 把 timestamp 读成 JS Date 只保留毫秒精度，
+      // 而这张表的 updated_at 是微秒精度（如 .047825）——转一圈回传回去精度必丢，WHERE 永远
+      // 匹配不到那一行，每次都 UPDATE 0 行、重试 10 次后报 "max retries exceeded"。实际上
+      // 上面的 SELECT ... FOR UPDATE 已经在本事务内锁住这一行，不会有其他写者插进来，这个
+      // 时间戳比对是多余且被精度问题搞坏的，直接去掉，只用行锁保证互斥。
       const result = await client.query(
         `UPDATE hrms_leave_domain
             SET leave_balance_overrides = $2::jsonb,
                 leave_balance_adjustments = $3::jsonb,
                 leave_cumulative_close_snapshots = $4::jsonb,
                 updated_at = NOW()
-          WHERE id = $1 AND updated_at = $5`,
-        [tid, JSON.stringify(nextOverrides), JSON.stringify(nextAdjustments), JSON.stringify(nextSnapshots), row.updated_at]
+          WHERE id = $1`,
+        [tid, JSON.stringify(nextOverrides), JSON.stringify(nextAdjustments), JSON.stringify(nextSnapshots)]
       );
       if (result.rowCount > 0) {
         await client.query('COMMIT');

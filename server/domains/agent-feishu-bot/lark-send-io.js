@@ -5,6 +5,14 @@ import {
   deepSanitizeFeishuCardStrings,
   sanitizePerformanceZhText,
 } from './lark-send-helpers.js';
+import { checkNotifyCircuitBreaker } from '../../utils/notify-circuit-breaker.js';
+
+// 2026-08-01：这里是 GAAS 全部飞书文本/卡片外发的最底层唯一出口(sendLarkMessage/
+// sendLarkCard/sendAdminSystemAlert/sendOpsAlert等所有上层封装最终都走到这两个函数)，
+// 熔断放在这一层能兜住任何未来的上游 bug（不管是哪个 domain 的哪个定时任务写出了死循环）。
+function outboundCircuitBreakerKey(openId, fingerprint) {
+  return String(openId || '') + '::' + String(fingerprint || '').slice(0, 80);
+}
 
 export async function sendLarkMessageBody(deps, openId, text, options = {}) {
   const {
@@ -23,6 +31,15 @@ export async function sendLarkMessageBody(deps, openId, text, options = {}) {
   }
   if (!options.skipDedup && !deduplicateMessage(text, openId)) {
     return { ok: true, deduplicated: true };
+  }
+
+  // 熔断：同一收件人+同一内容指纹，5分钟内超过10次视为异常重复调度（死循环/重复定时任务），
+  // 无条件拦截——包括 skipDedup=true 的告警路径（今天的消息轰炸恰恰是走 skipDedup 才没被
+  // 上面那个 dedup 机制拦住的）。
+  const breaker = checkNotifyCircuitBreaker(outboundCircuitBreakerKey(openId, text), { maxPerWindow: 10, windowMs: 5 * 60 * 1000 });
+  if (!breaker.allowed) {
+    if (breaker.justTripped) log.error('[feishu] circuit breaker tripped for', openId, 'count=', breaker.count);
+    return { ok: false, error: 'circuit_breaker_tripped' };
   }
 
   const token = await getLarkTenantToken(options.tenantId);
@@ -89,6 +106,13 @@ export async function sendLarkCardBody(deps, openId, card, options = {}) {
   } catch (e) {
     log.warn('[feishu] card sanitize skipped:', e?.message);
   }
+
+  const cardBreaker = checkNotifyCircuitBreaker(outboundCircuitBreakerKey(openId, JSON.stringify(card)), { maxPerWindow: 10, windowMs: 5 * 60 * 1000 });
+  if (!cardBreaker.allowed) {
+    if (cardBreaker.justTripped) log.error('[feishu] circuit breaker tripped for card to', openId, 'count=', cardBreaker.count);
+    return { ok: false, error: 'circuit_breaker_tripped' };
+  }
+
   const token = await getLarkTenantToken(options.tenantId);
   if (!token) return { ok: false, error: 'no_token' };
 
