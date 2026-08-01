@@ -804,7 +804,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 // 就直接被这道白名单拦在外面，报"您没有待审批权限"——出品经理本来就是既有
                 // 审批链(晋升/任务确认)里合法的审批人，这里漏掉纯属遗漏，不是权限设计上故意
                 // 排除，直接补上。
-                const canAccess = currentUser && (_apr === ROLES.ADMIN || _apr === ROLES.HQ_MANAGER || _apr === ROLES.HR_MANAGER || _apr === ROLES.STORE_MANAGER || _apr === ROLES.STORE_PRODUCTION_MANAGER || _apr === ROLES.CASHIER || _apr.startsWith('custom_'));
+                const canAccess = currentUser && (_apr === ROLES.ADMIN || _apr === ROLES.HQ_MANAGER || _apr === ROLES.HR_MANAGER || _apr === ROLES.STORE_MANAGER || _apr === ROLES.PRODUCTION_MANAGER || _apr === ROLES.CASHIER || _apr.startsWith('custom_'));
                 if (!canAccess) {
                     showNotification('您没有待审批权限', 'warning');
                     pageName = getHomePageName();
@@ -875,7 +875,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
             }
 
             if (pageName === 'strategy') {
-                const canAccess = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.STORE_MANAGER || currentUser.role === ROLES.STORE_PRODUCTION_MANAGER);
+                const canAccess = currentUser && (currentUser.role === ROLES.ADMIN || currentUser.role === ROLES.HQ_MANAGER || currentUser.role === ROLES.STORE_MANAGER || currentUser.role === ROLES.PRODUCTION_MANAGER);
                 if (!canAccess) {
                     showNotification('门店营销策略需要门店或总部角色权限', 'warning');
                     pageName = getHomePageName();
