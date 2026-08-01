@@ -118,6 +118,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
         startDate: String(req.query?.startDate || '').trim(),
         endDate: String(req.query?.endDate || '').trim(),
         storeFilter: resolveOverviewStoreFilter(req),
+        sourceType: String(req.query?.sourceType || '').trim(),
       });
       res.json({ ok: true, items });
     } catch (e) {

@@ -107,7 +107,10 @@ export async function getStoreHealthLights(pool, tenantId) {
 // 产品异常"任务连续3天(07-29/30/31)都因无人响应超时自动hr_filed归档，高度符合"看不
 // 见→没人理→自动放弃"模式，跟之前hrms_task_board那次assignee_username缺失是同一类
 // 可见性问题。用户明确要求bi_anomaly整体纳入任务栏（不再局限于food_safety子集）。
-const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board', 'growth_marketing_action', 'bi_anomaly'];
+// 2026-08-01 追加 data_auditor：用户进一步要求人效/桌访占比/实收营业额这几类也要能
+// 进任务栏——查证这几类的source其实是'data_auditor'（充值异常/人效值异常/桌访占比
+// 异常/总实收毛利率异常等），同样100%已正确分配assignee_username，只是没在白名单里。
+const WS_ALLOWED_TASK_SOURCES = ['rhythm_engine', 'random_inspection', 'scheduled_inspection', 'hrms_task_board', 'growth_marketing_action', 'bi_anomaly', 'data_auditor'];
 const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE '%food_safety%' OR category ILIKE '%food_quality%')`;
 
 // 2026-07-30 修复：出品经理/店长反馈任务栏一直是0，跟通知栏同一个根因——生产库里

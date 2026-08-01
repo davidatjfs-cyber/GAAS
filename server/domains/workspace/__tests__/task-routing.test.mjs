@@ -146,3 +146,19 @@ test('getMyOpenTasks 来源白名单包含bi_anomaly——充值异常/差评/�
   const sourcesParam = calls[0].params.find((p) => Array.isArray(p));
   assert.ok(sourcesParam.includes('bi_anomaly'), 'WS_ALLOWED_TASK_SOURCES 必须包含 bi_anomaly');
 });
+
+// 2026-08-01：用户进一步要求"人效、桌访占比、实收营业额"这几类也要进任务栏——查证
+// 发现这几类的source其实是'data_auditor'(人效值异常/桌访占比异常/总实收毛利率异常等)，
+// 同样已100%正确分配责任人，只是没在白名单里。锁定：白名单里必须包含'data_auditor'。
+test('getMyOpenTasks 来源白名单包含data_auditor——人效值异常/桌访占比异常/总实收毛利率异常不再被挡在任务栏外', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  await getMyOpenTasks(pool, 'default', 'someone');
+  const sourcesParam = calls[0].params.find((p) => Array.isArray(p));
+  assert.ok(sourcesParam.includes('data_auditor'), 'WS_ALLOWED_TASK_SOURCES 必须包含 data_auditor');
+});
