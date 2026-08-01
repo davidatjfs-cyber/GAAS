@@ -76,6 +76,8 @@ export function registerAgentRecordsRoutes(app, authRequired, deps) {
       const result = await getMyAgentScore(pool(), withRequestId(req, {
         username: req.user?.username,
         tenantId: req.tenantId || req.user?.tenant_id || 'default',
+        // 2026-08-01：我的绩效加月份筛选，?month=YYYY-MM。
+        month: String(req.query?.month || '').trim(),
         getSharedState,
         inferBrandFromStoreName,
         fetchStoreRatingForProfileDisplay,

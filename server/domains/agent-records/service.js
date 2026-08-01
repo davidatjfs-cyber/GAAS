@@ -323,8 +323,11 @@ export async function getMyAgentScore(pool, deps) {
   const username = String(deps.username || '').trim();
   if (!username) return { ok: false, status: 400, error: 'missing_username' };
   const now = deps.now || new Date();
-  const personalPeriod = profilePerformanceDisplayPeriodShanghai(now);
-  const storePeriod = shanghaiPrevCalendarYm(now);
+  // 2026-08-01：我的绩效加月份筛选，deps.month=YYYY-MM 时直接查该月，不传保持原行为
+  // （按10号分界显示上上月/上月的自动收口结果）。
+  const monthOverride = /^\d{4}-\d{2}$/.test(String(deps.month || '')) ? String(deps.month) : '';
+  const personalPeriod = monthOverride || profilePerformanceDisplayPeriodShanghai(now);
+  const storePeriod = monthOverride || shanghaiPrevCalendarYm(now);
   const tenantIdQ = deps.tenantId || 'default';
 
   let store = null;

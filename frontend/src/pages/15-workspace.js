@@ -576,6 +576,62 @@ function wsBindOperationalStoreSelector(root) {
     });
 }
 
+// 2026-08-01：门店经营明细/营业额排名/客流量排名/人效排名/门店红绿灯/我的绩效 6个模块
+// 加月份筛选。这几块本来就分别读3个不同接口(/api/workspace/overview、/api/workspace/home
+// 的storeLights、/api/agent-scores/me)，没有一个能一口气覆盖全部6项的接口，所以用一个
+// 共享的月份下拉框驱动3次并发refetch，分别替换各自的容器innerHTML，而不是整页重新加载
+// （避免"待办"、任务栏等跟月份无关的区块也跟着重置/丢失交互状态）。
+function wsMonthFilterOptions() {
+    const opts = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        opts.push(ym);
+    }
+    return opts;
+}
+function wsRenderMonthFilterControl() {
+    const opts = wsMonthFilterOptions();
+    const options = opts.map((ym, i) => '<option value="' + ym + '"' + (i === 0 ? ' selected' : '') + '>' + ym + (i === 0 ? '（本月）' : '') + '</option>').join('');
+    return (
+        '<div class="ws-section" style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:13px;color:var(--ws-ink2);">查询月份</span>' +
+        '<select class="ws-input" id="ws-month-filter" style="width:auto;">' + options + '</select>' +
+        '<span class="ws-loading" id="ws-month-filter-loading" style="display:none;font-size:12px;">加载中...</span>' +
+        '</div>'
+    );
+}
+function wsBindMonthFilterControl(root, { persona } = {}) {
+    const sel = root.querySelector('#ws-month-filter');
+    if (!sel) return;
+    sel.addEventListener('change', async () => {
+        const month = sel.value;
+        const loading = root.querySelector('#ws-month-filter-loading');
+        if (loading) loading.style.display = '';
+        try {
+            const [ov, home, myPerf] = await Promise.all([
+                wsFetchJson('/api/workspace/overview?month=' + encodeURIComponent(month)),
+                wsFetchJson('/api/workspace/home?month=' + encodeURIComponent(month)),
+                wsFetchJson('/api/agent-scores/me?month=' + encodeURIComponent(month)),
+            ]);
+            const ovBody = root.querySelector('#ws-overview-body');
+            if (ovBody) {
+                ovBody.innerHTML = wsRenderOverview(ov, persona !== 'store');
+                wsBindOperationalStoreSelector(root);
+            }
+            const lightsBody = root.querySelector('#ws-store-lights-body');
+            if (lightsBody) lightsBody.innerHTML = wsRenderStoreLights(home?.storeLights);
+            const perfBody = root.querySelector('#ws-my-performance');
+            if (perfBody) perfBody.innerHTML = wsRenderMyPerformance(myPerf);
+        } catch (e) {
+            showNotification('切换月份失败：' + (e?.message || e), 'error');
+        } finally {
+            if (loading) loading.style.display = 'none';
+        }
+    });
+}
+
 // 2026-07-30：用户要求① 门店经营明细里加"门店人效值"、把"本月离职率"从顶层挪进去（每店
 // 各自展示，不再是跨全部门店的一个聚合数字，operationalMetrics现在已经把efficiency/
 // turnoverRate直接merge进每条门店记录里，这里直接渲染，不用单独再拼一份）；② 店长/出品
@@ -1809,12 +1865,16 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     html += wsRenderPendingConfirmations(pendingConfirmations);
-    html += wsSection('今日经营总览', wsRenderOverview(overview, true));
+    // 2026-08-01：用户要求门店经营明细/营业额排名/客流量排名/人效排名/门店红绿灯/我的绩效
+    // 都能查以往月份——这6个模块共用同一个月份下拉框（而不是每个模块各自一个选择器），
+    // 切一次月份，这几块一起联动刷新，符合用户"这几个模块增加日期筛选"的原话语境。
+    html += wsRenderMonthFilterControl();
+    html += wsSection('今日经营总览', '<div id="ws-overview-body">' + wsRenderOverview(overview, true) + '</div>');
     html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
     // 2026-07-30：门店营销活动建议之前只有每条建议内部自己折叠，整个区块本身不折叠——
     // 跟其它区块统一改用wsSection()包一层，区块级别也可以整体收起，不是只有卡片能收起。
     html += wsSection('门店营销活动建议', '<div id="ws-marketing-suggestions-body">' + marketingHtml + '</div>');
-    html += wsSection('门店红绿灯（上月）', wsRenderStoreLights(home?.storeLights));
+    html += wsSection('门店红绿灯', '<div id="ws-store-lights-body">' + wsRenderStoreLights(home?.storeLights) + '</div>');
     html += wsSection('六大管理神器', wsRenderSixTools(allStores));
     html += wsSection('餐饮总监', wsRenderCustomDirectorSection(allStores));
     html += wsSection('8大AI督导指挥中心', wsRenderAgentCommandCenter());
@@ -1827,6 +1887,7 @@ async function wsRenderBossOrHq(root, persona) {
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
     wsBindOperationalStoreSelector(root);
+    wsBindMonthFilterControl(root, { persona });
     wsBindSixToolsEvents(root);
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
@@ -2072,10 +2133,11 @@ async function wsRenderStore(root) {
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     html += wsRenderPendingConfirmations(pendingConfirmations);
+    html += wsRenderMonthFilterControl();
     // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
     // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
     // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
-    html += wsSection('今日经营总览', wsRenderOverview(overview, false));
+    html += wsSection('今日经营总览', '<div id="ws-overview-body">' + wsRenderOverview(overview, false) + '</div>');
     html += wsSection('差评展示', wsRenderBadReviewSection(store ? [store] : []));
     html += wsSection('当月目标追踪', '<div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div>');
     html += wsSection('智能备货', wsRenderSmartRestock());
@@ -2092,6 +2154,7 @@ async function wsRenderStore(root) {
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
     wsBindOperationalStoreSelector(root);
+    wsBindMonthFilterControl(root, { persona: 'store' });
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
