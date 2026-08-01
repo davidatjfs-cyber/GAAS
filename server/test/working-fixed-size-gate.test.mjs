@@ -314,8 +314,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 的"待处理"/"需拍板"，跟真正指派给自己的任务视觉上分不清，改成中性的"仅抄送知悉"。
  * 2026-08-01 第五十五次上调（71689→71699）：出品经理待审批模块权限缺口修复（两处角色
  * 白名单遗漏 store_production_manager）。
+ * 2026-08-01 第五十六次上调（71699→71711）：工作台待批可直接操作（店长/出品经理视图接入
+ * pending-confirmations + 审批链列表接入 openApprovalDetailModal）。
  */
-const MAX_LINES = 71699;
+const MAX_LINES = 71711;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
