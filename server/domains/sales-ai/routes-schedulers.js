@@ -19,6 +19,18 @@ import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'sales-ai', handler: 'routes-schedulers' });
 
+// Node's setTimeout delay is a 32-bit signed int (~24.8 days). Passing a larger
+// delay silently overflows and fires almost immediately (TimeoutOverflowWarning),
+// which turned monthly schedules into a fire-immediately-then-reschedule tight
+// loop. Chain timeouts to stay under the limit for delays further out.
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+function safeSetTimeout(fn, delay) {
+  if (delay > MAX_TIMEOUT_MS) {
+    return setTimeout(() => safeSetTimeout(fn, delay - MAX_TIMEOUT_MS), MAX_TIMEOUT_MS);
+  }
+  return setTimeout(fn, Math.max(delay, 0));
+}
+
 function scheduleDailyAt(pool, sendOpsAlert, globalKey, hour, minute, runner, failMsg) {
   if (globalThis[globalKey]) return;
   const schedule = () => {
@@ -26,7 +38,7 @@ function scheduleDailyAt(pool, sendOpsAlert, globalKey, hour, minute, runner, fa
     const next = new Date(now);
     next.setHours(hour, minute, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
-    globalThis[globalKey] = setTimeout(async () => {
+    globalThis[globalKey] = safeSetTimeout(async () => {
       try {
         await runner();
       } catch (e) {
@@ -52,7 +64,7 @@ function scheduleWeeklyKpi(pool, sendOpsAlert, globalKey, period) {
     } else if (next <= now) {
       next.setMonth(next.getMonth() + 1, 1);
     }
-    globalThis[globalKey] = setTimeout(async () => {
+    globalThis[globalKey] = safeSetTimeout(async () => {
       try {
         await runAutoKpiRollupAndNotify(pool, sendOpsAlert, period);
       } catch (e) {
