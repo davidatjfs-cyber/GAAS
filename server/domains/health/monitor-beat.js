@@ -43,6 +43,30 @@ export async function beatHeartbeatSimple(pool, taskName) {
   }
 }
 
+/**
+ * 2026-08-01：多个 monitor（sales-check每日一次去重、心跳异常告警2小时冷却）之前都是
+ * 各自维护一个进程内 Map/变量做"今天/这段时间是否已触发过"的去重——pm2 restart 就清零，
+ * 生产实测因为一天内多次重启，同一条告警在同一个日期窗口内被重复插入了几十条（比如
+ * "销售数据缺失告警"同一秒内插入4条完全相同的记录），用户被迫反复点掉"同一条"通知。
+ * 复用 scheduler_heartbeat 表做持久化去重，语义是"这个 key 距上次触发是否已经过了
+ * cooldownMinutes"，重启不再清零这个判断依据。
+ */
+export async function wasRecentlyFiredPersisted(pool, key, cooldownMinutes) {
+  try {
+    const r = await pool.query(`SELECT last_beat FROM scheduler_heartbeat WHERE task_name = $1`, [key]);
+    const lastBeat = r.rows?.[0]?.last_beat;
+    if (!lastBeat) return false;
+    const ageMin = (Date.now() - new Date(lastBeat).getTime()) / 60000;
+    return ageMin < cooldownMinutes;
+  } catch (_) {
+    return false;
+  }
+}
+
+export async function markFiredPersisted(pool, key) {
+  await beatHeartbeatSimple(pool, key);
+}
+
 export async function sendSystemAlert(deps, msg) {
   const { sendAdminSystemAlert } = deps;
   try {
