@@ -128,3 +128,21 @@ test('getMyOpenTasks 排除 hr_filed 状态——催办无响应后已备案的�
   await getMyOpenTasks(pool, 'default', 'someone');
   assert.match(calls[0].sql, /'hr_filed'/);
 });
+
+// 2026-08-01：用户核实发现充值异常/差评报告/包房异常这几类BI异常追踪任务
+// (source='bi_anomaly')之前被任务栏来源白名单挡在外面，只有category命中
+// food_safety/food_quality才漏得进来，其余(如recharge_zero/bad_review_product/
+// hongchao_jiuguang_private_room)责任人完全看不到，只能靠飞书。用户要求bi_anomaly
+// 整体纳入任务栏。锁定：白名单里必须包含'bi_anomaly'。
+test('getMyOpenTasks 来源白名单包含bi_anomaly——充值异常/差评/包房异常等BI追踪任务不再被挡在任务栏外', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  await getMyOpenTasks(pool, 'default', 'someone');
+  const sourcesParam = calls[0].params.find((p) => Array.isArray(p));
+  assert.ok(sourcesParam.includes('bi_anomaly'), 'WS_ALLOWED_TASK_SOURCES 必须包含 bi_anomaly');
+});
