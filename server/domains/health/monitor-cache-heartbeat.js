@@ -2,6 +2,7 @@
  * Extracted from createListenMonitors — P5.4.
  */
 import { childLogger } from '../../utils/logger.js';
+import { wasRecentlyFiredPersisted, markFiredPersisted } from './monitor-beat.js';
 const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export async function scheduleCacheAndHeartbeat(deps) {
@@ -36,7 +37,6 @@ if (allowSchemaChanges) {
 }
 
 const HEARTBEAT_ALERT_THRESHOLDS_MIN = DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN;
-const heartbeatAlertDedup = new Map();
 
 // 带心跳的缓存清理（覆盖原 setInterval）
 // agent_metric_cache 带tenant_id/RLS，原只清default租户会导致其他租户缓存堆积不过期；改为遍历活跃租户。
@@ -66,9 +66,11 @@ setIntervalFn(async () => {
       if (staleRows.length > 0) {
         const dead = formatStaleHeartbeatDeadLabel(staleRows);
         const dedupeKey = staleHeartbeatDedupeKey(staleRows);
-        const lastSent = Number(heartbeatAlertDedup.get(dedupeKey) || 0);
-        if (Date.now() - lastSent < 2 * 60 * 60 * 1000) return;
-        heartbeatAlertDedup.set(dedupeKey, Date.now());
+        // 2026-08-01 修复：heartbeatAlertDedup 是进程内 Map，pm2 restart 就清零——生产实测
+        // 同一次"心跳异常"检测因为重启在同一时间戳被插入了两条一模一样的通知。改成持久化
+        // 去重（复用 monitor-beat.js 的 wasRecentlyFiredPersisted），reason 见该函数注释。
+        if (await wasRecentlyFiredPersisted(pool, `heartbeat_alert_${dedupeKey}`, 2 * 60)) return;
+        await markFiredPersisted(pool, `heartbeat_alert_${dedupeKey}`);
         const msg = `🚨 [HRMS] 定时任务心跳异常\n停止任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
         log.error({ msg: 'monitor', detail: ['[monitor] Dead tasks:', dead].map((x) => (x == null ? '' : String(x))).join(' ') });
         await sendSystemAlert(msg);

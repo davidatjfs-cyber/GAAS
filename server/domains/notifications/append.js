@@ -32,10 +32,17 @@ export function createAppendHelpers({
       // 审批请求反复通知），旧的一旦超过10分钟就不再被识别为"重复"，日积月累堆积到
       // 6万+条。改成：只要还存在同用户+同类型+同文案的未读通知（不限时间），就跳过
       // 插入——这才是真正的意图："同一条未读通知不需要重复提醒"，不是"只挡突发短时重复"。
+      // 2026-08-01 再修一个设计缺陷：这道锁只挡"未读"的——用户一旦点了"已读"，锁就立刻
+      // 松开，如果上游的告警/检查任务本身有 bug 反复触发同一句文案（今天实测：
+      // 定时任务心跳异常/上月累计假期自动快照失败/培训任务逾期提醒/销售数据缺失告警
+      // 都出现过"acked后没多久又插入一条一模一样的"，用户在一天内被同一件事反复强制
+      // 弹窗确认），用户体验上跟完全没去重一样——"点掉了又弹出来"。改成：已读的也纳入
+      // 去重窗口，但只挡最近 COOLDOWN_HOURS 小时内acked过的（不是永久挡，跨天/长时间
+      // 后同一句文案如果真的又发生，还是应该能提醒到）。
       const dup = await pool.query(
         `SELECT 1 FROM hrms_user_notifications
           WHERE lower(target_username) = lower($1) AND type = $2 AND message = $3
-            AND read_at IS NULL
+            AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
           LIMIT 1`,
         [target, type, message]
       );

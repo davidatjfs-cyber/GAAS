@@ -2,6 +2,7 @@
  * Extracted from createListenMonitors — P5.4.
  */
 import { childLogger } from '../../utils/logger.js';
+import { wasRecentlyFiredPersisted, markFiredPersisted } from './monitor-beat.js';
 const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export function schedulePosSalesCheck(deps) {
@@ -23,15 +24,20 @@ export function schedulePosSalesCheck(deps) {
 // 用 setInterval 每5分钟检查时间窗口
 // 原用 runWithBootstrapTenantContext 只处理default租户，改为遍历活跃租户各自检查；
 // 去重标记也从单一值改为按租户区分的 Map。
-const _salesCheckFiredDate = new Map();
+// 2026-08-01 修复：上面这个 Map 是进程内状态，pm2 restart 就清零——生产实测一天内因为
+// 部署多次重启，同一个"缺失门店"检查在23:30~23:35窗口内被触发了4次，插入4条一模一样的
+// "销售数据缺失告警"，用户被迫反复点掉"同一条"通知。改成读写 scheduler_heartbeat 表
+// 持久化去重，重启不再清零判断依据（cooldown 20小时，比窗口长但不到24小时，避免真的
+// 隔天还没查过）。
 setIntervalFn(async () => {
   try {
   await runForActiveTenants(async (tenantId) => {
     const now = new Date();
     // 每天 23:30~23:35 触发一次
     if (!isPosSalesCheckWindow(now)) return;
-    if (_salesCheckFiredDate.get(tenantId) === now.getDate()) return;
-    _salesCheckFiredDate.set(tenantId, now.getDate());
+    const dedupeKey = `pos_sales_check_fired_${tenantId}`;
+    if (await wasRecentlyFiredPersisted(pool, dedupeKey, 20 * 60)) return;
+    await markFiredPersisted(pool, dedupeKey);
 
     try {
       // 获取昨天日期（sales_raw已下线，改查pos_sales_detail视图，一般T+1检查）
