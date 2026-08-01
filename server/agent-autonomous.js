@@ -7,6 +7,7 @@ import { pool } from './master-agent.js';
 import { getActiveTenantIds, tenantContext } from './utils/database.js';
 import AgentCommunicationSystem from './agent-communication-system.js';
 import { childLogger } from './utils/logger.js';
+import { beatHeartbeatSimple } from './domains/health/monitor-beat.js';
 
 const log = childLogger({ domain: 'agent-autonomous' });
 
@@ -74,7 +75,11 @@ export class AgentAutonomousScheduler {
     this.running = true;
     
     // 每分钟检查一次是否有任务需要执行
-    this.checkInterval = setInterval(() => this.checkScheduledTasks(), 60000);
+    this.checkInterval = setInterval(() => {
+      Promise.resolve(this.checkScheduledTasks())
+        .then(() => beatHeartbeatSimple(pool(), 'agent_autonomous_scheduler_tick'))
+        .catch((e) => log.warn({ msg: 'checkScheduledTasks_failed', err: e?.message }));
+    }, 60000);
     
     log.info({ msg: 'scheduler_started' });
   }

@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getMigrationDriftReport } from './schema-migrations.js';
 import { childLogger } from './utils/logger.js';
+import { beatHeartbeatSimple } from './domains/health/monitor-beat.js';
 
 const log = childLogger({ domain: 'schema-migration-drift' });
 
@@ -61,9 +62,11 @@ export async function runSchemaMigrationDriftCheck(pool, opts = {}) {
  */
 export function startSchemaMigrationDriftMonitor(pool, opts = {}) {
   const tick = () => {
-    runSchemaMigrationDriftCheck(pool, opts).catch((e) => {
-      log.error({ msg: 'drift_tick_error', err: e?.message || String(e) });
-    });
+    runSchemaMigrationDriftCheck(pool, opts)
+      .then(() => beatHeartbeatSimple(pool, 'schema_migration_drift_check'))
+      .catch((e) => {
+        log.error({ msg: 'drift_tick_error', err: e?.message || String(e) });
+      });
   };
   // 启动后 2 分钟首次，之后每 6 小时（与 freshness 同频）
   setTimeout(tick, 120000);

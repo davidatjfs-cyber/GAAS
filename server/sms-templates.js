@@ -9,6 +9,7 @@
 // 找不到DB配置时（表还没灌数据/新slot还没建）回退读 env，兼容过渡期。
 import { getStoreSmsEnvSuffix } from './brands-config.js';
 import { childLogger } from './utils/logger.js';
+import { beatHeartbeatSimple } from './domains/health/monitor-beat.js';
 
 const log = childLogger({ domain: 'sms-templates' });
 
@@ -28,6 +29,7 @@ export async function refreshSmsTemplatesCache() {
     next.set(`${row.tenant_id}:${row.brand_suffix}:${row.slot}`, row);
   }
   _cache = next;
+  await beatHeartbeatSimple(_pool, 'sms_templates_cache_refresh');
 }
 
 export function initSmsTemplatesCache(pool) {

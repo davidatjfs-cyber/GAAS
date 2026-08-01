@@ -19,6 +19,7 @@ import { computeChurnScores } from '../growth-churn/service.js';
 import { generateMenuHealthReport } from '../growth-menu-health/service.js';
 import { cleanText } from '../growth-phase-auth.js';
 import { childLogger } from '../../utils/logger.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'growth-phases', handler: 'phase-cron' });
 
@@ -171,5 +172,6 @@ export function startGrowthPhaseCrons(pool) {
     } catch (e) {
       log.warn({ msg: 'snapshot_cron_failed', err: e?.message });
     }
+    await beatHeartbeatSimple(pool, 'growth_phase_cron_tick');
   }, 10 * 60 * 1000);
 }

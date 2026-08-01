@@ -4323,7 +4323,10 @@ th { background: #F2EAEE; font-weight: 700; }
         const _defaultRoleModules = {
             [ROLES.EMPLOYEE]:           ['profile', 'attendance', 'exam', 'points', 'kitchen', 'training'],
             [ROLES.STORE_MANAGER]:      ['profile', 'attendance', 'exam', 'points', 'employees', 'daily-report', 'approvals', 'payment', 'rewards', 'reports', 'agents', 'kitchen', 'training'],
-            [ROLES.PRODUCTION_MANAGER]: ['profile', 'attendance', 'exam', 'points', 'rewards', 'forecast', 'kitchen', 'training'],
+            // 2026-08-01 修复：出品经理默认模块列表一直没有 'approvals'，但后端审批链(晋升/
+            // 任务确认)本来就会把出品经理设成审批人——这个缺口长期"睡眠"是因为厨房序列的
+            // 晋升审批之前被误派给测试账号（另一处修复），真正的出品经理几乎没触发过这条路径。
+            [ROLES.PRODUCTION_MANAGER]: ['profile', 'attendance', 'exam', 'points', 'rewards', 'forecast', 'approvals', 'kitchen', 'training'],
             [ROLES.HQ_MANAGER]:         ['profile', 'attendance', 'exam', 'points', 'employees', 'daily-report', 'approvals', 'payment', 'rewards', 'reports', 'kitchen', 'training'],
             [ROLES.HR_MANAGER]:         ['profile', 'attendance', 'exam', 'points', 'employees', 'approvals', 'payment', 'rewards', 'reports', 'training'],
             [ROLES.FRONT_MANAGER]:      ['profile', 'attendance', 'exam', 'points', 'daily-report', 'payment', 'training'],

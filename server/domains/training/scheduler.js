@@ -3,6 +3,7 @@
  */
 import { runForActiveTenants } from '../../utils/database.js';
 import { childLogger } from '../../utils/logger.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 import {
   pool,
   getShanghaiDateKey,
@@ -272,6 +273,7 @@ export function startTrainingReminderScheduler() {
     ).catch((e) => {
       log.error({ msg: 'training_cert_expiry_scheduler_bootstrap_failed', err: e?.message || String(e) });
     });
+    beatHeartbeatSimple(pool(), 'training_reminder_scheduler_tick').catch(() => {});
   };
 
   setTimeout(tick, 90 * 1000);
