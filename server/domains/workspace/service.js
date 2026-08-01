@@ -52,10 +52,13 @@ export async function getOpenTaskSummaryByStore(pool, tenantId) {
 // "数据报表里有哪些"这种自由文本，不是真门店名），全都混进了门店红绿灯/六大神器/餐饮总监的
 // 门店下拉框里。改成用真实门店台账（hrms_state.data.stores，/api/stores 用的同一个数据源）
 // 做门店全集，master_tasks 只用来读评级，不再贡献"门店名单"。
-export async function getStoreHealthLights(pool, tenantId) {
+// 2026-08-01：加月份筛选——month 传 YYYY-MM 时直接用该月份评级，不传时保持原行为
+// （固定显示"上个自然月"）。校验格式，非法值忽略退回默认。
+export async function getStoreHealthLights(pool, tenantId, month) {
   const now = new Date();
   const lastMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const lastMonthPeriod = `${lastMonthDate.getUTCFullYear()}-${String(lastMonthDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  const defaultPeriod = `${lastMonthDate.getUTCFullYear()}-${String(lastMonthDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  const lastMonthPeriod = /^\d{4}-\d{2}$/.test(String(month || '')) ? String(month) : defaultPeriod;
   const [ratedRows, stateRow] = await Promise.all([
     pool.query(
       `SELECT store, rating, achievement_rate, period
@@ -301,11 +304,11 @@ export async function getPendingConfirmations(pool, tenantId, username, role) {
   return r.rows || [];
 }
 
-export async function getWorkspaceHome(pool, tenantId, username, { role = '' } = {}) {
+export async function getWorkspaceHome(pool, tenantId, username, { role = '', month = '' } = {}) {
   const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
   const [storeSummary, storeLights, myTasks, ccTasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
-    getStoreHealthLights(pool, tenantId),
+    getStoreHealthLights(pool, tenantId, month),
     getMyOpenTasks(pool, tenantId, username),
     isFoodSafetyCcRole ? getNotableOpenTasks(pool, tenantId, 8, username) : Promise.resolve([]),
     getUnreadInboxCount(pool, tenantId, username),

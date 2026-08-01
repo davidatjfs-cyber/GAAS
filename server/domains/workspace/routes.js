@@ -49,7 +49,9 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       // 管理员），不能再由前端传的 scope 参数决定"看谁的任务"——那会导致任何角色只要传
       // scope=notable 就能看到全租户任务。改成服务端按 req.user.role 判断。
       const role = String(req.user?.role || '').trim();
-      const data = await getWorkspaceHome(pool, tenantId, username, { role });
+      // 2026-08-01：门店红绿灯加月份筛选，?month=YYYY-MM，不传保持原行为(固定上个自然月)。
+      const month = String(req.query?.month || '').trim();
+      const data = await getWorkspaceHome(pool, tenantId, username, { role, month });
       res.json({ ok: true, ...data });
     } catch (e) {
       log.error({ msg: 'workspace_home_failed', request_id: req.requestId, err: e?.message });
@@ -65,7 +67,9 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
     const tenantId = resolveTenantIdDefault(req.tenantId);
     try {
       const storeFilter = resolveOverviewStoreFilter(req);
-      const data = await getBossOverview(pool, tenantId, storeFilter);
+      // 2026-08-01：门店经营明细/营业额/客流量/人效排名加月份筛选，?month=YYYY-MM。
+      const month = String(req.query?.month || '').trim();
+      const data = await getBossOverview(pool, tenantId, storeFilter, month);
       if (!data.ok) return res.status(500).json({ error: data.error });
       res.json(data);
     } catch (e) {

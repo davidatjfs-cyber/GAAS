@@ -373,8 +373,22 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
  *   （hq_manager/营运经理按各自负责的门店范围传入，范围本身由现有 allowed_stores/
  *   current_store 机制解析，这个函数不关心权限判断，只接收结果）。
  */
-export async function getBossOverview(pool, tenantId, storeFilter = []) {
+// 2026-08-01：加月份筛选——所有下游(revenueRollup/operationalMetrics/storeRankings/
+// marginTracking)本来就是纯按传入的 today 参数算"本月/本周/昨日"等区间，没有任何内部
+// 硬编码 new Date()，所以查历史月份不需要改这些函数，只需要把 today 换成"该月最后一天"
+// （当月本身若被选中则用真实今天，避免"本月至今"变成整月虚报未发生的数据）。
+function resolveAsOfDate(month) {
+  const m = String(month || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(m)) return shanghaiToday();
   const today = shanghaiToday();
+  if (m === today.slice(0, 7)) return today; // 选中的就是当月，仍用真实今天
+  const [y, mo] = m.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate(); // 次月第0天=当月最后一天
+  return `${m}-${String(lastDay).padStart(2, '0')}`;
+}
+
+export async function getBossOverview(pool, tenantId, storeFilter = [], month = '') {
+  const today = resolveAsOfDate(month);
   try {
     const [revenue, operational, rankings, team, margin] = await Promise.all([
       revenueRollup(pool, tenantId, today, storeFilter),
