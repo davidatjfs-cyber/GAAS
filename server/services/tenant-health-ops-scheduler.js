@@ -13,6 +13,39 @@ import { childLogger } from '../utils/logger.js';
 
 const log = childLogger({ domain: 'tenant-health', handler: 'ops-scheduler' });
 
+// 2026-08-01 修复：runDigest/runSla 的"今天发过了"去重之前只存在进程内存变量(lastDigestYmd/
+// lastSlaYmd)里——(1) 每次 pm2 restart 这个变量都会清零，(2) catch 块里还会在失败时主动清零
+// 这个变量，"重试"，等于自己废掉了自己的去重。今天连续多次 restart(修复其它bug)期间，这个
+// SLA 提醒被反复重置、反复重发，用户看到的"每隔几十分钟就来一遍一模一样的SLA提醒"就是这个
+// 设计缺陷，跟今天其它几个bug是同一类"进程内状态没有持久化"的问题。改成读写数据库持久化的
+// "今天是否已发送"标记，重启/偶发失败都不会清空这个标记，只有真正跨自然日才会重新允许发送。
+async function hasSentTodayPersisted(pool, taskName, ymd) {
+  try {
+    const r = await pool.query(`SELECT last_beat FROM scheduler_heartbeat WHERE task_name = $1`, [taskName]);
+    const lastBeat = r.rows?.[0]?.last_beat;
+    if (!lastBeat) return false;
+    const lastYmd = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date(lastBeat));
+    return lastYmd === ymd;
+  } catch (e) {
+    log.warn({ msg: 'hasSentTodayPersisted_check_failed', taskName, err: e?.message });
+    return false;
+  }
+}
+
+async function markSentTodayPersisted(pool, taskName) {
+  try {
+    await pool.query(
+      `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
+       VALUES ($1, NOW(), 1, 'default')
+       ON CONFLICT (task_name)
+       DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
+      [taskName]
+    );
+  } catch (e) {
+    log.warn({ msg: 'markSentTodayPersisted_failed', taskName, err: e?.message });
+  }
+}
+
 /**
  * @param {import('pg').Pool} pool
  * @param {{
@@ -26,8 +59,6 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
   const intervalMs = opts.intervalMs ?? 60 * 1000;
   const digestHour = opts.digestHour ?? 8;
   const digestMinuteEnd = opts.digestMinuteEnd ?? 44;
-  let lastDigestYmd = '';
-  let lastSlaYmd = '';
   let runningDigest = false;
   let runningSla = false;
 
@@ -35,15 +66,14 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
     if (runningDigest) return;
     const { ymd, hour, minute } = shanghaiParts();
     if (hour !== digestHour || minute < 30 || minute > digestMinuteEnd) return;
-    if (lastDigestYmd === ymd) return;
+    if (await hasSentTodayPersisted(pool, 'health_queue_digest_daily', ymd)) return;
     runningDigest = true;
-    lastDigestYmd = ymd;
     try {
       const sent = await sendQueueDigests(pool);
+      await markSentTodayPersisted(pool, 'health_queue_digest_daily');
       log.info({ msg: 'digest_sent', cs: sent.digests?.cs?.count ?? 0, eng: sent.digests?.eng?.count ?? 0 });
     } catch (e) {
       log.error({ msg: 'digest_failed', err: e?.message || String(e) });
-      lastDigestYmd = '';
     } finally {
       runningDigest = false;
     }
@@ -53,15 +83,14 @@ export function startHealthOpsLoopScheduler(pool, opts = {}) {
     if (runningSla) return;
     const { ymd, hour } = shanghaiParts();
     if (hour < 9 || hour > 20) return;
-    if (lastSlaYmd === ymd) return;
+    if (await hasSentTodayPersisted(pool, 'health_sla_reminder_daily', ymd)) return;
     runningSla = true;
-    lastSlaYmd = ymd;
     try {
       const r = await sendSlaReminders(pool);
+      await markSentTodayPersisted(pool, 'health_sla_reminder_daily');
       if (r.count > 0) log.info({ msg: 'sla_reminder', count: r.count, sent: r.sent });
     } catch (e) {
       log.error({ msg: 'sla_reminder_failed', err: e?.message || String(e) });
-      lastSlaYmd = '';
     } finally {
       runningSla = false;
     }

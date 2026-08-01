@@ -312,8 +312,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * created_by结构化列）。
  * 2026-08-01 第五十四次上调（71684→71689）：抄送(_ccOnly)任务标签之前复用severity算出
  * 的"待处理"/"需拍板"，跟真正指派给自己的任务视觉上分不清，改成中性的"仅抄送知悉"。
+ * 2026-08-01 第五十五次上调（71689→71699）：出品经理待审批模块权限缺口修复（两处角色
+ * 白名单遗漏 store_production_manager）。
  */
-const MAX_LINES = 71689;
+const MAX_LINES = 71699;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
