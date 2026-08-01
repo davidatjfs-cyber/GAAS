@@ -133,7 +133,11 @@ test('scorePracticeMediaWithRubric: video fallback to ffmpeg frames', async () =
     pathModule: path,
     fsModule: fs,
     execFileSync: (_cmd, args) => {
-      const outDir = args[args.length - 2];
+      // 生产调用（service-sessions.js）的最后一个参数是帧输出模板路径
+      // （join(frameDir, '%03d.jpg')），frameDir 是 uploadsDir 下的绝对路径。
+      // 之前误取 args[length-2]（-frames:v 的值 '8'）导致写到相对路径 "8/"，
+      // 测试在 server/ 目录下运行时会在仓库里留下 server/8/001.jpg 残留。
+      const outDir = path.dirname(args[args.length - 1]);
       fs.mkdirSync(outDir, { recursive: true });
       fs.writeFileSync(path.join(outDir, '001.jpg'), 'frame');
     },
