@@ -318,7 +318,18 @@ function wsRenderTaskCard(task, opts) {
         sevTag + ' ' + (task.store ? '<span class="ws-tag">' + wsEsc(task.store) + '</span> ' : '') +
         (isGrowthTask ? '<span class="ws-tag">经营诊断</span> ' : '') +
         wsEsc((showStoreSeparately ? task.store + ' — ' : '') + titleText);
+    // 2026-08-01：用户要求责任人看到的任务卡片补上"发起人/开始时间/完成期限"三行，
+    // 才能追踪紧迫感——created_by_name/timeout_at 由 GAAS 的 getMyOpenTasks 联表补上
+    // （agents-service-v2 的 createBoardTask 默认给 timeout_at 2 天期限）。
+    const metaLines = [];
+    if (task.created_by_name) metaLines.push('发起人：' + wsEsc(task.created_by_name));
+    if (task.created_at) metaLines.push('开始时间：' + wsEsc(String(task.created_at).slice(0, 16).replace('T', ' ')));
+    if (task.timeout_at) metaLines.push('完成期限：' + wsEsc(String(task.timeout_at).slice(0, 16).replace('T', ' ')));
+    const metaHtml = metaLines.length
+        ? '<div class="ws-card__desc" style="opacity:.75;">' + metaLines.join(' · ') + '</div>'
+        : '';
     const bodyHtml =
+        metaHtml +
         wsFormatTaskDetail(task.detail) +
         '<div class="ws-card__acts">' +
         actsHtml +

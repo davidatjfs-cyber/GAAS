@@ -307,8 +307,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-01 第五十二次上调（71649→71673）：8大AI督导指挥中心状态流转翻译agent key为
  * 中文岗位名、催办事件单独渲染成"催办中（第N次）"而不是含糊的"已分配→已分配"、去掉
  * 详情永久缓存改成每次打开都拉取最新数据。
+ * 2026-08-01 第五十三次上调（71673→71684）：任务卡片补上发起人/开始时间/完成期限三行
+ * （agents-service-v2的createBoardTask默认给2天期限，写入master_tasks.timeout_at/
+ * created_by结构化列）。
  */
-const MAX_LINES = 71673;
+const MAX_LINES = 71684;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
