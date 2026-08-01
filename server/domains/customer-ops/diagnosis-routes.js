@@ -30,7 +30,7 @@ export function registerCustomerOpsDiagnosisRoutes(app, deps) {
       await ensureCustomerOpsTables(pool);
       await recordUploadOwnership(files.map((f) => f.filename), getTenantId(req), req.user?.username);
       const tenantId = getTenantId(req);
-      const parsed = files.map((file) => normalizeWorkbook(file.path, { sourceFile: file.originalname || file.filename }));
+      const parsed = await Promise.all(files.map((file) => normalizeWorkbook(file.path, { sourceFile: file.originalname || file.filename })));
       const batchRecords = dedupeRecords(parsed.flatMap((x) => x.orders || []));
       const mergePrevious = String(req.body?.merge_previous ?? 'true') !== 'false';
       const existingRecords = mergePrevious ? await loadExistingSourceRecords(pool, tenantId) : [];

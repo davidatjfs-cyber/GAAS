@@ -116,7 +116,7 @@ test('analyzeOrders aggregates revenue and customer profiles', () => {
   assert.equal(report.customer_mix.lifecycle.occasional, 1);
 });
 
-test('normalizeWorkbook parses a minimal POS xlsx file', () => {
+test('normalizeWorkbook parses a minimal POS xlsx file', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'customer-ops-'));
   const filePath = path.join(tmpDir, 'sample.xlsx');
   const ws = XLSX.utils.aoa_to_sheet([
@@ -128,7 +128,7 @@ test('normalizeWorkbook parses a minimal POS xlsx file', () => {
   XLSX.utils.book_append_sheet(wb, ws, 'POS明细');
   XLSX.writeFile(wb, filePath);
 
-  const { orders, diagnostics } = normalizeWorkbook(filePath, { sourceFile: 'sample.xlsx' });
+  const { orders, diagnostics } = await normalizeWorkbook(filePath, { sourceFile: 'sample.xlsx' });
   assert.equal(orders.length, 2);
   assert.equal(diagnostics.confidence_score, 100);
   assert.equal(orders[0].phone, '13812345678');
