@@ -117,11 +117,17 @@ const WS_TASK_SOURCE_FILTER_SQL = `AND (source = ANY($SRC_IDX) OR category ILIKE
 // master_tasks.assignee_username 大小写不统一（如 NNYXWSB39 全大写 vs 登录用户名
 // nnyxwsb39），这里之前是大小写敏感的精确匹配，实际匹配不到任何行。respondToTask()/
 // getPendingConfirmations() 的 assignee_username/promoted_by 比较同理一并改成 lower()。
+// 2026-08-01：用户反馈责任人看到的任务卡片应该显示发起人/开始时间/完成期限，才能
+// 追踪紧迫感——加上created_by(migration 176补的结构化列)/timeout_at(既有的"截止
+// 时间"列，之前只有proactive_llm来源在用，hrms_task_board一直没写)。
 export async function getMyOpenTasks(pool, tenantId, username, limit = 20) {
   const lim = Math.min(50, Math.max(1, Number(limit) || 20));
   const r = await pool.query(
-    `SELECT task_id, title, detail, severity, store, status, category, source, created_at
+    `SELECT task_id, title, detail, severity, store, status, category, source, created_at,
+            timeout_at, COALESCE(NULLIF(e.name, ''), master_tasks.created_by) AS created_by_name
        FROM master_tasks
+       LEFT JOIN employees e
+         ON lower(e.username) = lower(master_tasks.created_by) AND e.tenant_id = master_tasks.tenant_id
       WHERE tenant_id = $1 AND lower(assignee_username) = lower($2)
         AND status NOT IN ('resolved','pending_settlement','settled','closed','rejected','hr_filed')
         ${WS_TASK_SOURCE_FILTER_SQL.replace('$SRC_IDX', '$4')}

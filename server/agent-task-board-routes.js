@@ -56,8 +56,15 @@ export function registerAgentTaskBoardRoutes(app, deps) {
     return proxyAgentTaskBoard(req, res, 'GET', '/tasks' + (qs.toString() ? `?${qs}` : ''));
   });
 
+  // 2026-08-01：用户要求责任人能在任务卡上看到"发起人"——由GAAS这边(已知登录用户)
+  // 补上createdBy/createdByRole再转发，不依赖前端传递（前端发布框本来就没有这两个字段，
+  // 且发起人应该是服务端权威判断的登录身份，不该让客户端自己声明）。
   app.post('/api/agent-task-board/tasks', authRequired, (req, res) => {
-    return proxyAgentTaskBoard(req, res, 'POST', '/tasks', req.body || {});
+    return proxyAgentTaskBoard(req, res, 'POST', '/tasks', {
+      ...(req.body || {}),
+      createdBy: req.user?.username || null,
+      createdByRole: req.user?.role || null,
+    });
   });
 
   app.post('/api/agent-task-board/tasks/bulk-close-open', authRequired, (req, res) => {

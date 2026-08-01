@@ -162,3 +162,19 @@ test('getMyOpenTasks 来源白名单包含data_auditor——人效值异常/桌�
   const sourcesParam = calls[0].params.find((p) => Array.isArray(p));
   assert.ok(sourcesParam.includes('data_auditor'), 'WS_ALLOWED_TASK_SOURCES 必须包含 data_auditor');
 });
+
+// 2026-08-01：用户要求责任人看到的任务卡片显示发起人/完成期限——锁定SELECT带上
+// timeout_at + JOIN employees取created_by真实姓名(created_by_name)。
+test('getMyOpenTasks 查询里包含timeout_at字段和created_by的employees联表', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  await getMyOpenTasks(pool, 'default', 'someone');
+  assert.match(calls[0].sql, /timeout_at/);
+  assert.match(calls[0].sql, /created_by_name/);
+  assert.match(calls[0].sql, /LEFT JOIN employees/);
+});
