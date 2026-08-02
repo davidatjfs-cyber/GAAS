@@ -252,17 +252,20 @@ export async function resolveFoodSafetyTask(pool, tenantId, { taskId, reviewerUs
 // 用户名 nnyxwsb39），"我的档案"走的 listMyNotifications() 一直用 lower() 做大小写不敏感
 // 匹配，这里之前是大小写敏感的精确匹配，同一个人两处查出来的结果不一致。改成同样用 lower()。
 // 2026-07-30 第二次修复：大小写改对之后角标还是0——再查证发现是两边对"未读"的定义根本不
-// 一样："我的档案"(09-resignation.js#renderProfileNotifications)的角标显示的是"今天创建了
-// 几条"(todayCount，按createdAt日期算，不看read_at)，这里之前是"read_at IS NULL的真未读
-// 数"——很多通知几分钟内就被自动ack/已读(比如打开过一次工作台/档案页就会调用ack接口)，
-// 导致这个"真未读"定义几乎总是0，而"我的档案"的"今天N条"定义还是非零，两边看起来数字对
-// 不上。这里改成跟"我的档案"完全一致的口径：当天创建的通知数量，不看read_at，才能真正
-// "看到同一个数字"。
+// 2026-08-02：用户反馈工作台"未读消息N条"/"通知N条"角标不管点多少次确认都不降——查证
+// 发现这个函数名叫"未读数"，标签也明明白白写着"未读"，但SQL压根不看read_at，统计的是
+// "今天创建了多少条通知"，跟点没点确认毫无关系，当天只要有新通知这个数字就不会降，跟
+// 标签承诺的语义完全对不上，是这次confusion的真正根源。
+// 历史上这里曾经改成"今天创建数"是为了跟"我的档案"页面自己的"今日N条新通知"角标对齐
+// 数字（那边的注释还留着）——但那个角标标签本来就写的是"今日"，不是"未读"，本来就该是
+// 两个不同含义的数字，不需要故意做成一样。这里改回真正的未读数(read_at IS NULL)，
+// 让"未读"这个标签名副其实，不再动"我的档案"的"今日N条"（那个继续按天算是对的，没有
+// 名不副实的问题）。
 export async function getUnreadInboxCount(pool, tenantId, username) {
   const r = await pool.query(
     `SELECT COUNT(*)::int AS n FROM hrms_user_notifications
       WHERE tenant_id = $1 AND lower(target_username) = lower($2)
-        AND (created_at AT TIME ZONE 'Asia/Shanghai')::date = (NOW() AT TIME ZONE 'Asia/Shanghai')::date`,
+        AND read_at IS NULL`,
     [tenantId, username]
   ).catch((e) => {
     // 兼容旧库无 read_at 列
