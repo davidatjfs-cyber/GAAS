@@ -10,6 +10,9 @@
 
 import { detectCustomerTriggers } from './principles.js';
 
+/** 知识题查证承诺：不确定时的专业答法（查证后答复，不编造） */
+const VERIFY_COMMIT_RE = /我.{0,3}(查|核实|确认|问|看)一下|确认后(答复|回复|告诉|发您)|稍后(给|答复|回复|告诉)|问清楚(再|后)|查清楚(再|后|给)|核实后/;
+
 const normKey = (s) => String(s || '')
   .replace(/[「」""'：:，,。！？?\s]/g, '')
   .slice(0, 36);
@@ -100,7 +103,7 @@ const CS_SCRIPTS = {
       },
       {
         key: 'expectation',
-        covered: [/希望.{0,6}怎么|期望|方便告诉|想怎么|当时想|怎么操作|您觉得|建议|按您/],
+        covered: [/希望.{0,6}怎么|期望|方便告诉|想怎么|当时想|怎么操作|您觉得|建议|按您|按你说|明白|收到|很有道理|记录|反馈|采纳|会尽快|没问题|可以|一定改|安排/],
         press: [
           '那你们到底打算怎么改？',
           '我就想知道这个功能怎么用，或者能不能改简单点？',
@@ -294,7 +297,7 @@ const CS_SCRIPTS = {
       },
       {
         key: 'expectation',
-        covered: [/希望.{0,6}怎么|期望|想怎么|简单|直接|一键|更好用|建议/],
+        covered: [/希望.{0,6}怎么|期望|想怎么|简单|直接|一键|更好用|建议|明白|收到|很有道理|记录|反馈|采纳|会尽快|没问题|可以|一定改|安排/],
         press: [
           '我就想要简单点，这要求过分吗？',
           '你们做产品的人自己不用吗？',
@@ -317,6 +320,215 @@ const CS_SCRIPTS = {
     ],
     resolved: [
       '行，改好告诉我，我再用用看。',
+    ],
+  },
+
+  cs_member_points_rule: {
+    concerns: [
+      {
+        key: 'points_rule',
+        covered: [/1元.{0,6}(1|一)积分|按实付|实付金额|消费金额|积分按|储值消费/],
+        press: [
+          '那积分到底按什么算？是消费金额还是实付金额？',
+          '给个准确规则，别让我猜。',
+        ],
+        ack: [
+          '行，积分规则清楚了。那积分能抵现吗？',
+        ],
+      },
+      {
+        key: 'redeem',
+        covered: [/抵现|抵扣|抵用|兑换|核销|不能抵|不参与|使用规则|消费时抵/],
+        press: [
+          '积分到底能不能当钱用？',
+          '能抵多少？有没有门槛？',
+        ],
+        ack: [
+          '明白了。那积分会不会清零？有效期多久？',
+        ],
+      },
+      {
+        key: 'expire',
+        covered: [/有效期|清零|过期|作废|一年|12个月|年底|次年|长期有效|不过期/],
+        press: [
+          '积分有效期多久？会不会自动清零？',
+          '有效期是多久，到什么时候？',
+        ],
+        ack: [
+          '行，有效期知道了。',
+        ],
+      },
+      {
+        key: 'follow_up',
+        covered: [/回电|回访|告知|通知|发您|发给您|消息|告诉您|把.{0,6}(规则|结果|答案).{0,4}(发|给|告诉)/],
+        press: [
+          '你说的这些去哪核实？查清楚谁来告诉我？',
+          '给我一个准确答复的时间。',
+        ],
+        ack: [
+          '好，那我等你准确答复。',
+        ],
+      },
+    ],
+    resolved: [
+      '行，规则和调整方式查清楚后发我一份，我好给顾客统一说法。',
+      '好，等你答复，规则定了我让店员统一口径。',
+    ],
+  },
+
+  cs_stored_value_rule: {
+    concerns: [
+      {
+        key: 'gift_rule',
+        covered: [/充.{0,5}送|赠送|到账|比例|送.{0,3}充|规则/],
+        press: [
+          '充送活动的赠送金额怎么算的？',
+          '赠送的部分到账吗？',
+        ],
+        ack: [
+          '行，赠送规则清楚了。那赠送的钱能退吗？',
+        ],
+      },
+      {
+        key: 'refund_rule',
+        covered: [/(能|不能)退|按比例退|剩余|余额|原路|退款|退卡/],
+        press: [
+          '赠送金额能不能退？',
+          '顾客要退余额，怎么退？',
+        ],
+        ack: [
+          '明白了。余额能跨店用吗？',
+        ],
+      },
+      {
+        key: 'cross_store',
+        covered: [/跨店|通用|分店|连锁|所有店|只限本店/],
+        press: [
+          '余额能跨店用吗？',
+          '其他分店能不能用？',
+        ],
+        ack: [
+          '好，那我知道了。',
+        ],
+      },
+      {
+        key: 'follow_up',
+        covered: [/回电|回访|告知|通知|发您|发给您|消息|告诉您|把.{0,6}(规则|结果|答案).{0,4}(发|给|告诉)/],
+        press: [
+          '这些规则你能确认吗？确认后告诉我。',
+          '给我一个准确答复。',
+        ],
+        ack: [
+          '好，那我等你答复。',
+        ],
+      },
+    ],
+    resolved: [
+      '行，规则确认后发我一份，我让店员统一口径。',
+    ],
+  },
+
+  cs_activity_setup: {
+    concerns: [
+      {
+        key: 'entry',
+        covered: [/创建|新建|入口|菜单|页面|找到|进入|后台|活动中心/],
+        press: [
+          '第一步去哪创建？',
+          '入口在哪，我怎么找不到？',
+        ],
+        ack: [
+          '好，创建入口知道了。那活动时间、参与人群怎么设？',
+        ],
+      },
+      {
+        key: 'config',
+        covered: [/时间|人群|会员|规则|名称|内容|条件|设置|配置/],
+        press: [
+          '活动时间、参与条件在哪设置？',
+          '要填哪些内容？',
+        ],
+        ack: [
+          '配置会了。那短信群发怎么发？',
+        ],
+      },
+      {
+        key: 'send',
+        covered: [/短信|群发|发送|模板|审核|签名|内容/],
+        press: [
+          '群发短信在哪操作？',
+          '会不会审核？多久能发出去？',
+        ],
+        ack: [
+          '发送也清楚了。',
+        ],
+      },
+      {
+        key: 'verify',
+        covered: [/预览|测试|确认|小范围|发送记录|报表|查|试/],
+        press: [
+          '发之前能预览测试吗？',
+          '发送后在哪看结果？',
+        ],
+        ack: [
+          '好，那我按你说的试一下。',
+        ],
+      },
+    ],
+    resolved: [
+      '步骤都清楚了，我操作一遍，有问题再找你。',
+    ],
+  },
+
+  cs_billing_dispute: {
+    concerns: [
+      {
+        key: 'verify_process',
+        covered: [/对账|流水|导出|核对|核实|查|排查|订单|报表/],
+        press: [
+          '你们打算怎么核？给个过程。',
+          '别只说会查，具体怎么对账？',
+        ],
+        ack: [
+          '行，那你们核对流程我了解了。差异怎么处理？',
+        ],
+      },
+      {
+        key: 'diff_fix',
+        covered: [/差异|原因|补|调整|修正|退差|更正/],
+        press: [
+          '对不上的差额怎么处理？',
+          '什么时候能修正？',
+        ],
+        ack: [
+          '好。那退款什么时候到账？',
+        ],
+      },
+      {
+        key: 'refund_eta',
+        covered: [/到账|退款|工作日|时间|原路|3-5|几个工作日|当天|次日/],
+        press: [
+          '退款到底多久到账？',
+          '给个准确时间。',
+        ],
+        ack: [
+          '时间知道了。',
+        ],
+      },
+      {
+        key: 'follow_up',
+        covered: [/回电|回访|告知|通知|发您|发给您|消息|告诉您|把.{0,6}(规则|结果|答案).{0,4}(发|给|告诉)/],
+        press: [
+          '核完谁告诉我结果？',
+          '给我一个答复时间。',
+        ],
+        ack: [
+          '好，那我等你们结果。',
+        ],
+      },
+    ],
+    resolved: [
+      '行，那按你们说的流程走，结果出来第一时间告诉我。',
     ],
   },
 };
@@ -380,6 +592,32 @@ const CS_CONCERN_LABELS = {
   eta: '完成时限',
   close: '结果确认',
   legal_response: '对法务函的正式回应',
+  points_rule: '积分计算规则',
+  redeem: '积分使用方式',
+  expire: '积分有效期',
+  follow_up: '查证与告知',
+  gift_rule: '充送规则',
+  refund_rule: '余额退款规则',
+  cross_store: '跨店使用',
+  entry: '活动创建入口',
+  config: '活动配置项',
+  send: '短信群发设置',
+  verify: '预览与结果查看',
+  verify_process: '对账流程',
+  diff_fix: '差异处理',
+  refund_eta: '退款时效',
+  roi_calc: '回本测算',
+  assumption: '测算假设',
+  boundary: '承诺边界',
+  next_step: '下一步方案',
+  diff: '差异点',
+  evidence: '案例与数据',
+  migration: '迁移与对接',
+  fair_compare: '客观对比',
+  week1: '第一周落地',
+  month1: '第一个月节奏',
+  who: '责任分工',
+  measure: '衡量指标',
 };
 
 /**
@@ -458,6 +696,171 @@ const SALES_OBJECTION_LABELS = {
   ai_useless: 'AI没用',
 };
 
+/**
+ * sales 业务专业度剧本：客户提具体经营问题，学员要给准确测算/方案/边界。
+ * covered 命中关键事实或查证承诺（VERIFY_COMMIT_RE）即算回应。
+ */
+const SALES_SCRIPTS = {
+  sales_roi_question: {
+    concerns: [
+      {
+        key: 'roi_calc',
+        covered: [/回本|收益|投入|成本|算|账|毛利|营业额|万|元/],
+        press: [
+          '别讲概念，具体怎么算出回本？',
+          '一年两万，我要看到账本。',
+        ],
+        ack: [
+          '这个账我能看懂。那数据按什么假设算的？',
+        ],
+      },
+      {
+        key: 'assumption',
+        covered: [/假设|预估|按.{0,4}(客流|复购|客单|营业额)|保守|预计|参考|同行/],
+        press: [
+          '你的假设依据是什么？',
+          '保守还是乐观？',
+        ],
+        ack: [
+          '假设能接受。那效果你们敢保证吗？',
+        ],
+      },
+      {
+        key: 'boundary',
+        covered: [/(不|没)(做)?保证|不能承诺|不承诺|看执行|以实际|数据验证|试点|试用|先跑|效果取决于|取决于/],
+        press: [
+          '你敢保证30天见效吗？',
+          '如果没效果怎么办？',
+        ],
+        ack: [
+          '边界清楚了，这反而是实话。',
+        ],
+      },
+      {
+        key: 'next_step',
+        covered: [/方案|先做|第一步|具体计划|合同|试用期|开始|出方案/],
+        press: [
+          '下一步具体做什么？',
+          '给个能落地的计划。',
+        ],
+        ack: [
+          '行，那出个方案我看看。',
+        ],
+      },
+    ],
+    resolved: [
+      '方案出来发我，我算一下再定。',
+      '行，那你先把方案和账本一起发我。',
+    ],
+  },
+
+  sales_competitor_compare: {
+    concerns: [
+      {
+        key: 'diff',
+        covered: [/差异|区别|不同|优势|定位|针对|侧重|不一样/],
+        press: [
+          '你们和那家到底差在哪？',
+          '功能看着都一样，区别是什么？',
+        ],
+        ack: [
+          '差异我明白了。有什么实际案例或数据？',
+        ],
+      },
+      {
+        key: 'evidence',
+        covered: [/案例|客户|店|数据|效果|验证|使用/],
+        press: [
+          '有真实案例吗？',
+          '数据给我看看。',
+        ],
+        ack: [
+          '案例可以。那我们从旧系统迁过来麻烦吗？',
+        ],
+      },
+      {
+        key: 'migration',
+        covered: [/迁移|对接|切换|旧系统|数据导入|导出|上线|周期/],
+        press: [
+          '迁移要多久？会不会影响营业？',
+          '旧数据能全部带过来吗？',
+        ],
+        ack: [
+          '迁移周期知道了。',
+        ],
+      },
+      {
+        key: 'fair_compare',
+        covered: [/不方便评价|不了解|不能评价|看您需求|适合|以您实际|不贬低/],
+        press: [
+          '那家到底行不行，你们给个评价？',
+          '我该信谁的？',
+        ],
+        ack: [
+          '行，那我自己对比。',
+        ],
+      },
+    ],
+    resolved: [
+      '你把我关心的几个点整理一下发我，我对比完再说。',
+      '行，方案和数据发我邮箱。',
+    ],
+  },
+
+  sales_solution_demo: {
+    concerns: [
+      {
+        key: 'week1',
+        covered: [/第一周|第一天|第一步|先|盘点|导入|培训|初始化|建档/],
+        press: [
+          '第一周具体做什么？',
+          '别讲流程，讲动作。',
+        ],
+        ack: [
+          '第一周明白了。第一个月呢？',
+        ],
+      },
+      {
+        key: 'month1',
+        covered: [/第一个月|月度|节奏|复盘|调整|优化|第二周|四周/],
+        press: [
+          '第一个月的节奏是什么？',
+          '多久复盘一次？',
+        ],
+        ack: [
+          '节奏清楚了。谁来做这些事？',
+        ],
+      },
+      {
+        key: 'who',
+        covered: [/谁负责|分工|实施顾问|我们的人|你们的人|专人|配合|顾问|项目组/],
+        press: [
+          '具体谁来做？你们的人还是我们的人？',
+          '要不要我们抽人配合？',
+        ],
+        ack: [
+          '分工明确了。',
+        ],
+      },
+      {
+        key: 'measure',
+        covered: [/指标|效果|衡量|营业额|复购|客流|月报|数据报表|怎么算|看什么/],
+        press: [
+          '怎么算落地成功？看什么指标？',
+          '效果怎么衡量？',
+        ],
+        ack: [
+          '衡量标准我认可。',
+        ],
+      },
+    ],
+    resolved: [
+      '行，就按这个来，你们先出实施计划。',
+      '计划出来我们内部过一下。',
+    ],
+  },
+};
+
 const SALES_DISCOVERY = [
   '你继续说。',
   '然后呢？跟我现在有什么关系？',
@@ -491,9 +894,14 @@ function buildScriptedPlan({ script, track, traineeText, priorTraineeTexts, prio
   const priorTraineeOnly = priorTraineeTexts.filter(Boolean);
   const usedKeys = priorCustomerTexts.map(normKey);
   const concerns = script.concerns || [];
+  // 查证承诺按「一诺一问」覆盖：累计承诺次数决定前 N 个未答问题被覆盖，防止一句「我查一下」跳过整场
+  const verifyPromises = allTrainee.filter((t) => VERIFY_COMMIT_RE.test(t)).length;
+  const verifyPromisesBefore = priorTraineeOnly.filter((t) => VERIFY_COMMIT_RE.test(t)).length;
+  const coveredNow = (c, i) => isCovered(allTrainee, c.covered) || i < verifyPromises;
+  const coveredBefore = (c, i) => isCovered(priorTraineeOnly, c.covered) || i < verifyPromisesBefore;
 
   const newlyCovered = concerns.filter(
-    (c) => isCovered(allTrainee, c.covered) && !isCovered(priorTraineeOnly, c.covered)
+    (c, i) => coveredNow(c, i) && !coveredBefore(c, i)
   );
   if (newlyCovered.length) {
     const c = newlyCovered[newlyCovered.length - 1];
@@ -501,7 +909,7 @@ function buildScriptedPlan({ script, track, traineeText, priorTraineeTexts, prio
       || pickUnused(c.press, usedKeys)
       || pickUnused(script.resolved || [], usedKeys)
       || CLOSE_LINES[track][0];
-    const next = concerns.find((x) => !isCovered(allTrainee, x.covered));
+    const next = concerns.find((x, j) => !coveredNow(x, j));
     const nextLabel = next ? `「${concernLabel(next.key)}」` : '收束';
     return {
       reply,
@@ -510,7 +918,7 @@ function buildScriptedPlan({ script, track, traineeText, priorTraineeTexts, prio
     };
   }
 
-  const current = concerns.find((c) => !isCovered(allTrainee, c.covered));
+  const current = concerns.find((c, i) => !coveredNow(c, i));
   if (!current) {
     const reply = pickUnused(script.resolved || [], usedKeys)
       || pickUnused(script.concerns.flatMap((c) => c.ack), usedKeys)
@@ -591,8 +999,19 @@ export function buildCsDialogueReply(...args) {
 }
 
 export function buildSalesDialogueTurn({
-  evalResult, traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [],
+  evalResult, personaKey = '', traineeText = '',
+  priorTraineeTexts = [], priorCustomerTexts = [], cumulativeStrengths = 0,
 }) {
+  if (SALES_SCRIPTS[personaKey]) {
+    return buildScriptedPlan({
+      script: SALES_SCRIPTS[personaKey],
+      track: 'sales',
+      traineeText,
+      priorTraineeTexts,
+      priorCustomerTexts,
+      cumulativeStrengths,
+    });
+  }
   const allTrainee = [...priorTraineeTexts, traineeText].filter(Boolean);
   const priorTraineeOnly = priorTraineeTexts.filter(Boolean);
   const usedKeys = priorCustomerTexts.map(normKey);

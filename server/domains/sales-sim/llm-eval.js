@@ -82,6 +82,7 @@ export async function maybeRefineEvaluationWithLLM(callLLM, {
       '3) 禁止翻旧账：上一轮或更早的问题不得算到本轮；本轮这句话本身没有违规，就不要写 violations；',
       '4) 学员做得好的点（回应了客户问题、给了时间/方案/闭环）要记为 strengths；',
       '5) coach 给一句话教练旁白（≤30字）：有违规就纠正，有优点就表扬，中性就给下一步建议，不要空话套话。',
+      '6) 业务专业度：学员给出数字/规则/步骤时必须准确；不确定时正确做法是承诺查证后答复，编造或含糊要指出。',
       '只输出 JSON：{"violations":[{"principle_id":"","detail":""}],"strengths":[{"principle_id":"","detail":""}],"coach":""}',
     ].filter(Boolean).join('\n');
 
