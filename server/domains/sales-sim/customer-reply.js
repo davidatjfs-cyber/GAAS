@@ -138,7 +138,7 @@ export function buildCustomerReply({
 
 /** 可选：用 LLM 让客户语气更贴人格；失败则返回 ruleReply */
 export async function maybePolishCustomerReply(callLLM, {
-  persona, ruleReply, history, lockedFacts = [], priorCustomerTexts = [],
+  persona, ruleReply, history, lockedFacts = [], priorCustomerTexts = [], state = null,
 }) {
   if (typeof callLLM !== 'function' || !ruleReply) return ruleReply;
   try {
@@ -147,14 +147,23 @@ export async function maybePolishCustomerReply(callLLM, {
       ? `本事故已锁定事实（禁止另起新问题）：${lockedFacts.join('；')}`
       : '';
     const ban = priorCustomerTexts.slice(-4).filter(Boolean).join(' / ');
+    const stateLine = state && Number.isFinite(Number(state.emotion))
+      ? `当前你的情绪${Number(state.emotion)}/100、信任${Number(state.trust)}/100、满意度${Number(state.satisfaction)}/100——你的语气和内容必须匹配这个情绪强度。`
+      : '';
+    const dialogue = (history || [])
+      .filter((h) => h.role === 'customer' || h.role === 'trainee')
+      .slice(-6)
+      .map((h) => `${h.role === 'customer' ? '客户' : '学员'}: ${h.content}`)
+      .join('\n');
     const prompt = [
-      '你在岗位陪练中扮演对话对方，只输出一句原话，不要解释。',
+      `你正在扮演「${persona?.title || '对话对方'}」本人，是顾客/客户，不是客服。只输出一句你的原话，不要解释。`,
       `角色场景：${persona?.title || ''} ${JSON.stringify(profile)}`,
       factsLine,
       ban ? `禁止与下列已问过的话意思重复（必须换新角度）：${ban}` : '',
-      `最近对话：\n${history.slice(-6).map((h) => `${h.role}: ${h.content}`).join('\n')}`,
-      `本轮必须表达的核心意思（可改写语气，勿增加新事实/新投诉点）：${ruleReply}`,
-      '要求：口语自然；紧扣已锁定事实；推进下一问；不超过80字；禁止「我再确认一下」套话复读。',
+      `最近对话：\n${dialogue}`,
+      `本轮必须表达的核心意思（保留情绪强度，可换更口语的说法；不得改变说话人、不得新增事实/投诉点）：${ruleReply}`,
+      stateLine,
+      '要求：你始终是顾客本人，绝不能说服务方才会说的话（如「我帮您跟进」「马上告诉您」「您看还有什么需要帮忙」「我们会尽快处理」）；如果学员上一句承认了你的感受或给了承诺，先顺着承认一句再推进；口语自然；推进下一问；不超过80字；禁止「我再确认一下」套话复读。',
     ].filter(Boolean).join('\n');
     // callLLM(messages, options) — 勿传对象作第一参
     const r = await callLLM(
@@ -168,7 +177,9 @@ export async function maybePolishCustomerReply(callLLM, {
       }
     );
     const text = String(r?.content || r?.text || '').trim().replace(/^["「]|["」]$/g, '');
-    if (r?.ok !== false && text && text.length < 120) return text;
+    // 服务方口吻（视角反转）→ 回退规则句，避免客户替客服承诺
+    const serviceVoice = /帮您跟进|为您跟进|马上告诉您|随时为您|您看(还|是否)?有.{0,8}需要|还需要我|我会尽快(处理|跟进|通知)|帮您处理|为您处理|我们(会|将).{0,6}(服务|跟进)|为您服务/.test(text);
+    if (r?.ok !== false && text && text.length < 120 && !serviceVoice) return text;
   } catch (_) {
     /* fall back */
   }

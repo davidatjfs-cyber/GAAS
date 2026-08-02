@@ -310,6 +310,7 @@ export async function submitTurn(pool, {
       history,
       lockedFacts: incidentSnap.locked_facts || [],
       priorCustomerTexts,
+      state,
     });
     // 润色若仍高度重复上一句对方话，回退规则句
     if (priorCustomerTexts.length) {
