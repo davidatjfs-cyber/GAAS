@@ -1,48 +1,19 @@
 /**
- * AI 扮演客户：规则状态机生成下一句；可选 LLM 润色（失败则回退模板）。
+ * AI 扮演客户：
+ * - 规则状态机决定「意图 + 引导 + 兜底句」（buildCustomerTurn）；
+ * - 人格路径用 LLM 按意图+状态+学员上一句生成整句（maybeGenerateCustomerReply）；
+ * - 事故卡/门店轨仍走专用规则路径 + 可选润色（maybePolishCustomerReply）。
  */
 
 import { isStoreTrack, buildStoreCustomerReply, shouldEndStoreSession } from './store-tracks.js';
 import { buildIncidentLockedReply } from './incident-dialogue.js';
+import { buildCsDialogueTurn, buildSalesDialogueTurn } from './persona-dialogue.js';
 export { buildIncidentLockedReply } from './incident-dialogue.js';
 
 const SALES_REPLIES = {
-  default: [
-    '你继续说。',
-    '然后呢？跟我现在有什么关系？',
-    '我听着呢，重点是什么？',
-  ],
   early_pitch: [
     '又开始讲功能了。我问你，你到底知不知道我门店现在最头疼什么？',
     '别念说明书。你们能解决什么具体问题？',
-  ],
-  too_expensive: [
-    '一年两万对我来说不便宜。你们能保证回本吗？',
-    '竞品更便宜，凭什么你们贵？',
-  ],
-  has_system: [
-    '我们已经有系统了，再买一套不是重复浪费吗？',
-    '数据都在旧系统里，你们怎么接？',
-  ],
-  think_again: [
-    '我再考虑考虑吧，你们先别天天催。',
-    '以后再说，这阵子没空决策。',
-  ],
-  no_time: [
-    '真的没时间，你发资料我有空再看。',
-    '（沉默了几秒）…你还有别的事吗？没有我先挂了。',
-  ],
-  ask_features: [
-    '那你们到底有什么功能？别绕。',
-    '功能列表发我看看，我自己判断。',
-  ],
-  ai_useless: [
-    'AI有什么用？我们店里又不缺聊天机器人。',
-    '上次被AI方案坑过，别跟我画饼。',
-  ],
-  good_question: [
-    '这个问题问到点上了。我们现在最烦的是老客不回来。',
-    '你既然问了…复购这块确实差，大概百分之十几。',
   ],
   hangup: [
     '行了，我先忙了，有需要再联系你们。',
@@ -67,17 +38,25 @@ const SALES_REPLIES = {
 };
 
 const CS_REPLIES = {
-  default: ['那你打算怎么处理？', '你倒是给个准话。'],
   no_soothe: ['你们就这态度？我是来解决问题的，不是听你推诿的。', '越说我越生气。'],
-  good_soothe: ['行，那你先查，我等你结果。', '好，你尽快，我这边会员还在问。'],
-  refund: ['别绕弯子，能不能退就直说。', '预期完全没达到，我为什么要继续付？'],
-  ux_bad: ['我就是找不到入口，你们设计给谁用的？', '有没有更简单的操作方式？'],
-  resolved: ['如果真能处理好，我可以再观察两天。', '行，那你处理完务必跟我说一声。'],
 };
 
 function pick(arr, salt = 0) {
   if (!arr?.length) return '';
   return arr[Math.abs(salt) % arr.length];
+}
+
+/** 服务方口吻（视角反转）标记：客户绝不能说的话 */
+const CUSTOMER_SERVICE_VOICE_RE = /帮您跟进|为您跟进|马上告诉您|随时为您|您看(还|是否)?有.{0,8}需要|还需要我|我会尽快(处理|跟进|通知)|帮您处理|为您处理|我们(会|将).{0,6}(服务|跟进)|为您服务/;
+
+export function similarLine(a, b) {
+  const norm = (s) => String(s || '').replace(/[「」""'：:，,。！？?\s]/g, '');
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.includes(y.slice(0, 12)) || y.includes(x.slice(0, 12))) return true;
+  return false;
 }
 
 export function applyStateDelta(session, { evalResult, track }) {
@@ -117,65 +96,203 @@ export function shouldEndSession(session, track) {
   return { end: false };
 }
 
-export function buildCustomerReply({
+/** 满意收束：客户诉求已全部覆盖且满意度/成交信号达标 → 自然道谢收场（第二次 resolve 时触发） */
+export function shouldResolveSession({
+  track, session, turnPlan, priorCustomerIntents = [], turnNo = 1,
+}) {
+  if (turnNo < 2 || !turnPlan) return { end: false };
+  const intent = turnPlan.intent || '';
+  const priorResolves = priorCustomerIntents.filter((i) => i === 'resolve' || i === 'signal').length;
+  if (track === 'cs' && intent === 'resolve' && priorResolves >= 1) {
+    if (Number(session.satisfaction) >= 65) {
+      return { end: true, outcome: 'resolved', closingLine: '好，那就按你说的办，处理完了告诉我一声，辛苦了。' };
+    }
+    if (Number(session.satisfaction) >= 55) {
+      return { end: true, outcome: 'completed', closingLine: '行，那就先这样，处理完了跟我说一声。' };
+    }
+  }
+  if (track === 'sales' && intent === 'signal' && priorResolves >= 1) {
+    if (Number(session.close_readiness) >= 65) {
+      return { end: true, outcome: 'won', closingLine: '行，那就先按这个方案来，你出个具体计划我看看。' };
+    }
+    if (Number(session.close_readiness) >= 50) {
+      return { end: true, outcome: 'completed', closingLine: '行，方案先发我看看，回头再说。' };
+    }
+  }
+  return { end: false };
+}
+
+function plan(reply, intent, guidance = '') {
+  return { reply, intent, guidance };
+}
+
+export function buildCustomerTurn({
   track, persona, evalResult, session, turnNo,
-  traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [],
+  traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [], cumulativeStrengths = 0,
 }) {
   const incident = session?.incident_snapshot || session?.meta?.incident || null;
   if (incident?.locked_facts || incident?.card_key) {
-    return buildIncidentLockedReply({
-      incident, evalResult, turnNo, traineeText, priorTraineeTexts, priorCustomerTexts,
-    });
+    return plan(
+      buildIncidentLockedReply({
+        incident, evalResult, turnNo, traineeText, priorTraineeTexts, priorCustomerTexts,
+      }),
+      'incident_probe',
+      '按事故卡追问队列推进，只围绕锁定事实。'
+    );
   }
   if (isStoreTrack(track)) {
-    return buildStoreCustomerReply({ track, evalResult, turnNo });
+    return plan(buildStoreCustomerReply({ track, evalResult, turnNo }), 'store', '');
   }
   const tags = new Set((evalResult.coachTags || []).map((t) => t.code));
   const triggers = evalResult.triggers || [];
   const salt = turnNo + Number(session.close_readiness || 0);
+  const personaKey = persona?.persona_key || '';
 
   if (track === 'cs') {
-    if (tags.has('no_soothe') || tags.has('hard_deny')) return pick(CS_REPLIES.no_soothe, salt);
-    if (triggers.includes('refund') || /refund|lawyer/.test(persona?.persona_key || '')) {
-      return pick(CS_REPLIES.refund, salt);
+    if (tags.has('no_soothe') || tags.has('hard_deny')) {
+      return plan(pick(CS_REPLIES.no_soothe, salt), 'no_soothe', '学员没有先安抚你的情绪，你表达不满，语气符合当前状态。');
     }
-    if (triggers.includes('ux_bad')) return pick(CS_REPLIES.ux_bad, salt);
-    if (/rage|escalation/.test(persona?.persona_key || '') && (evalResult.violations || []).length) {
-      return '我已经在录音了，你们继续这样我马上曝光。';
+    if (/rage|escalation/.test(personaKey) && (evalResult.violations || []).length) {
+      return plan('我已经在录音了，你们继续这样我马上曝光。', 'rage_escalation', '你已经愤怒到要投诉曝光，语气强硬。');
     }
-    if ((evalResult.strengths || []).length >= 2) return pick(CS_REPLIES.good_soothe, salt);
-    if (session.satisfaction >= 75) return pick(CS_REPLIES.resolved, salt);
-    return pick(CS_REPLIES.default, salt);
+    return buildCsDialogueTurn({
+      personaKey,
+      evalResult,
+      traineeText,
+      priorTraineeTexts,
+      priorCustomerTexts,
+      cumulativeStrengths,
+    });
   }
 
   const traits = persona?.profile?.traits || [];
   const diff = Number(persona?.difficulty || 1);
 
-  if (session.emotion <= 18) return pick(SALES_REPLIES.hangup, salt);
+  if (session.emotion <= 18) {
+    return plan(pick(SALES_REPLIES.hangup, salt), 'hangup', '你的情绪与信任已经很低，准备结束这次沟通。');
+  }
   if (traits.includes('临门反悔') || /last_minute/.test(persona?.persona_key || '')) {
-    if (turnNo >= 2) return pick(SALES_REPLIES.last_minute, salt);
+    if (turnNo >= 2) {
+      return plan(pick(SALES_REPLIES.last_minute, salt), 'last_minute', '你在最后一刻反悔，要求一个无法拒绝的理由。');
+    }
   }
   if (traits.includes('经营真题') || persona?.source_type === 'business') {
     if (tags.has('early_pitch') || tags.has('feature_dump') || triggers.includes('ask_features')) {
-      return pick(SALES_REPLIES.business, salt);
+      return plan(pick(SALES_REPLIES.business, salt), 'business_press', '学员又在讲模块/功能，你要的是第一步具体动作和数字。');
     }
   }
-  if (tags.has('early_pitch') || tags.has('feature_dump')) return pick(SALES_REPLIES.early_pitch, salt);
-  if (traits.includes('沉默') && turnNo % 2 === 0) return pick(SALES_REPLIES.silence, salt);
-  if (diff >= 7 && turnNo >= 2 && salt % 3 === 0) return pick(SALES_REPLIES.interrupt, salt);
-  if ((evalResult.strengths || []).some((s) => s.principle_id === 'ask_first' || s.principle_id === 'no_argue')) {
-    if (turnNo >= 2) return pick(SALES_REPLIES.good_question, salt);
+  if (tags.has('early_pitch') || tags.has('feature_dump')) {
+    return plan(pick(SALES_REPLIES.early_pitch, salt), 'early_pitch', '学员过早介绍功能，你反感，要求他先说清你的痛点。');
   }
-  for (const key of ['too_expensive', 'has_system', 'think_again', 'no_time', 'ask_features', 'ai_useless']) {
-    if (triggers.includes(key)) return pick(SALES_REPLIES[key], salt);
+  if (traits.includes('沉默') && turnNo % 2 === 0) {
+    return plan(pick(SALES_REPLIES.silence, salt), 'silence', '你是沉默型客户，回应极短或不说话。');
   }
-  if (traits.includes('极忙') && turnNo >= 4) return pick(SALES_REPLIES.no_time, salt);
-  return pick(SALES_REPLIES.default, salt);
+  if (diff >= 7 && turnNo >= 2 && salt % 3 === 0) {
+    return plan(pick(SALES_REPLIES.interrupt, salt), 'interrupt', '你打断学员，要求直接讲重点。');
+  }
+  return buildSalesDialogueTurn({
+    evalResult,
+    traineeText,
+    priorTraineeTexts,
+    priorCustomerTexts,
+  });
+}
+
+export function buildCustomerReply(...args) {
+  return buildCustomerTurn(...args).reply;
+}
+
+function extractJsonReply(raw) {
+  let s = String(raw || '').trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) s = fence[1].trim();
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function isValidGeneratedReply(text, lastCustomer) {
+  if (!text || text.trim().length < 2 || text.length > 120) return false;
+  if (!/[\u4e00-\u9fff]/.test(text)) return false;
+  if (CUSTOMER_SERVICE_VOICE_RE.test(text)) return false;
+  if (lastCustomer && similarLine(lastCustomer, text)) return false;
+  return true;
+}
+
+/**
+ * 中期方案：LLM 作为「对话推进器」——规则层给出意图+引导，LLM 生成整句。
+ * 要求接住学员上一句实质内容；输出 JSON { intent, reply }；不满足校验回退规则句。
+ */
+export async function maybeGenerateCustomerReply(callLLM, {
+  persona, track = 'cs', state = null, ruleReply, intent = '', guidance = '',
+  history = [], lockedFacts = [], priorCustomerTexts = [], priorCustomerIntents = [],
+}) {
+  if (typeof callLLM !== 'function' || !ruleReply) return { reply: ruleReply, intent };
+  try {
+    const profile = persona?.profile || {};
+    const roleLine = track === 'sales' ? '顾客（老板/决策人）' : '顾客/客户';
+    const factsLine = Array.isArray(lockedFacts) && lockedFacts.length
+      ? `锁定事实（不得编造/新增）：${lockedFacts.join('；')}`
+      : '';
+    const stateLine = state && Number.isFinite(Number(state.emotion))
+      ? `当前你的情绪${Number(state.emotion)}/100、信任${Number(state.trust)}/100、满意度${Number(state.satisfaction)}/100——语气必须匹配这个状态。`
+      : '';
+    const dialogue = (history || [])
+      .filter((h) => h.role === 'customer' || h.role === 'trainee')
+      .slice(-8)
+      .map((h) => `${h.role === 'customer' ? '客户' : '学员'}: ${h.content}`)
+      .join('\n');
+    const intentLine = (priorCustomerIntents || []).slice(-5).filter(Boolean).length
+      ? `你已问过/表达过的意图：${priorCustomerIntents.slice(-5).filter(Boolean).join('、')}（不要重复）`
+      : '';
+    const prompt = [
+      `你正在扮演「${persona?.title || '对话对方'}」本人，一位真实的${roleLine}，不是客服、不是教练。`,
+      `角色卡：${JSON.stringify(profile)}`,
+      factsLine,
+      stateLine,
+      `本轮意图：${intent || '自然推进'}`,
+      guidance ? `意图说明：${guidance}` : '',
+      `参考表达（仅供语气参考，不必照抄；必须根据学员上一句的实质内容自然回应）：${ruleReply}`,
+      dialogue ? `最近对话：\n${dialogue}` : '',
+      intentLine,
+      '硬性要求：1) 先接住学员上一句里你最关心的点（承认/反驳/追问），再推进你的意图；2) 你始终是顾客本人，绝不说服务方话术（如「我帮您跟进」「马上告诉您」「您看还有什么需要帮忙」）；3) 只围绕角色卡和锁定事实，不得新增事实、投诉点或产品知识；4) 不要重复已经问过的问题；5) 口语自然，像真实对话，一句话，不超过90字。',
+      '只输出 JSON：{"intent":"简短意图标签","reply":"你的原话"}',
+    ].filter(Boolean).join('\n');
+    const r = await callLLM(
+      [{ role: 'user', content: prompt }],
+      {
+        purpose: 'talent_engine_customer_actor',
+        temperature: 0.7,
+        max_tokens: 240,
+        skipCache: true,
+        trackTier: true,
+      }
+    );
+    const raw = String(r?.content || r?.text || '').trim();
+    const lastCustomer = priorCustomerTexts[priorCustomerTexts.length - 1] || '';
+    const parsed = extractJsonReply(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.reply === 'string' && isValidGeneratedReply(parsed.reply, lastCustomer)) {
+        return { reply: parsed.reply, intent: String(parsed.intent || intent) };
+      }
+      return { reply: ruleReply, intent };
+    }
+    // 模型没输出 JSON 但给了可用原话 → 接受
+    if (isValidGeneratedReply(raw, lastCustomer)) return { reply: raw, intent };
+  } catch (_) {
+    /* fall back */
+  }
+  return { reply: ruleReply, intent };
 }
 
 /** 可选：用 LLM 让客户语气更贴人格；失败则返回 ruleReply */
 export async function maybePolishCustomerReply(callLLM, {
-  persona, ruleReply, history, lockedFacts = [], priorCustomerTexts = [],
+  persona, ruleReply, history, lockedFacts = [], priorCustomerTexts = [], state = null,
 }) {
   if (typeof callLLM !== 'function' || !ruleReply) return ruleReply;
   try {
@@ -184,14 +301,23 @@ export async function maybePolishCustomerReply(callLLM, {
       ? `本事故已锁定事实（禁止另起新问题）：${lockedFacts.join('；')}`
       : '';
     const ban = priorCustomerTexts.slice(-4).filter(Boolean).join(' / ');
+    const stateLine = state && Number.isFinite(Number(state.emotion))
+      ? `当前你的情绪${Number(state.emotion)}/100、信任${Number(state.trust)}/100、满意度${Number(state.satisfaction)}/100——你的语气和内容必须匹配这个情绪强度。`
+      : '';
+    const dialogue = (history || [])
+      .filter((h) => h.role === 'customer' || h.role === 'trainee')
+      .slice(-6)
+      .map((h) => `${h.role === 'customer' ? '客户' : '学员'}: ${h.content}`)
+      .join('\n');
     const prompt = [
-      '你在岗位陪练中扮演对话对方，只输出一句原话，不要解释。',
+      `你正在扮演「${persona?.title || '对话对方'}」本人，是顾客/客户，不是客服。只输出一句你的原话，不要解释。`,
       `角色场景：${persona?.title || ''} ${JSON.stringify(profile)}`,
       factsLine,
       ban ? `禁止与下列已问过的话意思重复（必须换新角度）：${ban}` : '',
-      `最近对话：\n${history.slice(-6).map((h) => `${h.role}: ${h.content}`).join('\n')}`,
-      `本轮必须表达的核心意思（可改写语气，勿增加新事实/新投诉点）：${ruleReply}`,
-      '要求：口语自然；紧扣已锁定事实；推进下一问；不超过80字；禁止「我再确认一下」套话复读。',
+      `最近对话：\n${dialogue}`,
+      `本轮必须表达的核心意思（保留情绪强度，可换更口语的说法；不得改变说话人、不得新增事实/投诉点）：${ruleReply}`,
+      stateLine,
+      '要求：你始终是顾客本人，绝不能说服务方才会说的话（如「我帮您跟进」「马上告诉您」「您看还有什么需要帮忙」「我们会尽快处理」）；如果学员上一句承认了你的感受或给了承诺，先顺着承认一句再推进；口语自然；推进下一问；不超过80字；禁止「我再确认一下」套话复读。',
     ].filter(Boolean).join('\n');
     // callLLM(messages, options) — 勿传对象作第一参
     const r = await callLLM(
@@ -205,7 +331,8 @@ export async function maybePolishCustomerReply(callLLM, {
       }
     );
     const text = String(r?.content || r?.text || '').trim().replace(/^["「]|["」]$/g, '');
-    if (r?.ok !== false && text && text.length < 120) return text;
+    // 服务方口吻（视角反转）→ 回退规则句，避免客户替客服承诺
+    if (r?.ok !== false && text && text.length < 120 && !CUSTOMER_SERVICE_VOICE_RE.test(text)) return text;
   } catch (_) {
     /* fall back */
   }

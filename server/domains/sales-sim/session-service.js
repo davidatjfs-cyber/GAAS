@@ -2,8 +2,10 @@ import { getPersona, listPersonas, ensurePersonaSeed } from './personas.js';
 import { ensurePlaybookSeed, listPlaybooks } from './playbooks.js';
 import { evaluateTraineeUtterance, detectCustomerTriggers } from './principles.js';
 import {
-  applyStateDelta, buildCustomerReply, maybePolishCustomerReply, shouldEndSession,
+  applyStateDelta, buildCustomerTurn, maybeGenerateCustomerReply, maybePolishCustomerReply,
+  shouldEndSession, shouldResolveSession, similarLine,
 } from './customer-reply.js';
+import { maybeRefineEvaluationWithLLM, applyRefinedEvaluation } from './llm-eval.js';
 import { buildDebrief } from './debrief.js';
 import { applySessionToRank, getRankStatus } from './rank.js';
 import { recommendNextSession } from './curriculum.js';
@@ -223,13 +225,24 @@ export async function submitTurn(pool, {
   const priorTraineeCount = turns.filter((t) => t.role === 'trainee').length;
   const turnNo = priorTraineeCount + 1;
 
-  const evalResult = evaluateTraineeUtterance({
+  const priorTraineeTexts = turns.filter((t) => t.role === 'trainee').map((t) => t.content);
+  const priorCustomerTexts = turns.filter((t) => t.role === 'customer').map((t) => t.content);
+  const ruleEval = evaluateTraineeUtterance({
     track: session.track,
     traineeText,
     customerText: lastCustomer?.content || '',
     turnNo,
     priorTraineeCount,
   });
+  // LLM 复核单句判定（上下文纠偏 + 补漏 + 教练旁白）；失败回退规则判定
+  const refined = await maybeRefineEvaluationWithLLM(_callLLM, {
+    track: session.track,
+    traineeText,
+    customerText: lastCustomer?.content || '',
+    evalResult: ruleEval,
+    turnNo,
+  });
+  const evalResult = refined?.ok ? applyRefinedEvaluation(ruleEval, refined) : ruleEval;
   evalResult.turn_no = turnNo;
 
   const state = applyStateDelta(session, { evalResult, track: session.track });
@@ -280,9 +293,21 @@ export async function submitTurn(pool, {
     const incidentSnap = session.incident_snapshot
       || (typeof session.meta === 'object' ? session.meta?.incident : null)
       || {};
-    const priorTraineeTexts = turns.filter((t) => t.role === 'trainee').map((t) => t.content);
-    const priorCustomerTexts = turns.filter((t) => t.role === 'customer').map((t) => t.content);
-    const ruleReply = buildCustomerReply({
+    const priorCustomerIntents = turns
+      .filter((t) => t.role === 'customer')
+      .map((t) => t.state_delta?.customer_intent)
+      .filter(Boolean);
+    // 跨轮累计 L1 优点（按原则去重）：学员整体表现稳定 → 客户软化
+    const seenPrinciples = new Set();
+    for (const t of turns) {
+      for (const s of (t.principle_hits?.strengths || [])) {
+        if (s?.principle_id) seenPrinciples.add(s.principle_id);
+      }
+    }
+    for (const s of (evalResult.strengths || [])) {
+      if (s?.principle_id) seenPrinciples.add(s.principle_id);
+    }
+    const turnPlan = buildCustomerTurn({
       track: session.track,
       persona,
       evalResult,
@@ -291,24 +316,59 @@ export async function submitTurn(pool, {
       traineeText,
       priorTraineeTexts,
       priorCustomerTexts,
+      cumulativeStrengths: seenPrinciples.size,
     });
+    const ruleReply = turnPlan.reply;
     const history = [...turns, { role: 'trainee', content: traineeText }];
-    customerText = await maybePolishCustomerReply(_callLLM, {
-      persona: persona || { title: incidentSnap.title, profile: incidentSnap },
-      ruleReply,
-      history,
-      lockedFacts: incidentSnap.locked_facts || [],
-      priorCustomerTexts,
+    let customerIntent = turnPlan.intent || null;
+    // 满意收束：诉求全部覆盖 + 满意度达标 → 客户自然道谢收场（第二次 resolve 触发）
+    const successEnd = shouldResolveSession({
+      track: session.track,
+      session: { ...session, ...state },
+      turnPlan,
+      priorCustomerIntents,
+      turnNo,
     });
-    // 润色若仍高度重复上一句对方话，回退规则句
+    if (successEnd.end) {
+      customerText = successEnd.closingLine;
+      finished = await finishSession(pool, {
+        sessionId, username, outcome: successEnd.outcome, force: true,
+      });
+    } else if (incidentSnap?.card_key || incidentSnap?.locked_facts) {
+      // 事故卡路径保留原有规则+润色
+      customerText = await maybePolishCustomerReply(_callLLM, {
+        persona: persona || { title: incidentSnap.title, profile: incidentSnap },
+        ruleReply,
+        history,
+        lockedFacts: incidentSnap.locked_facts || [],
+        priorCustomerTexts,
+        state,
+      });
+    } else {
+      // 人格路径：LLM 按意图+状态生成整句
+      const generated = await maybeGenerateCustomerReply(_callLLM, {
+        persona,
+        track: session.track,
+        state,
+        ruleReply,
+        intent: turnPlan.intent || '',
+        guidance: turnPlan.guidance || '',
+        history,
+        priorCustomerTexts,
+        priorCustomerIntents,
+      });
+      customerText = generated.reply;
+      customerIntent = generated.intent || turnPlan.intent || null;
+    }
+    // 生成若仍高度重复上一句对方话，回退规则句
     if (priorCustomerTexts.length) {
       const last = String(priorCustomerTexts[priorCustomerTexts.length - 1] || '');
       if (last && customerText && similarLine(last, customerText)) customerText = ruleReply;
     }
     await pool.query(
-      `INSERT INTO sales_sim_turns (session_id, turn_no, role, content)
-       VALUES ($1,$2,'customer',$3)`,
-      [sessionId, turnNo, customerText]
+      `INSERT INTO sales_sim_turns (session_id, turn_no, role, content, state_delta)
+       VALUES ($1,$2,'customer',$3,$4::jsonb)`,
+      [sessionId, turnNo, customerText, JSON.stringify({ ...state, customer_intent: customerIntent })]
     );
   }
 
@@ -632,14 +692,4 @@ function publicSession(s) {
     outcome: s.outcome,
     meta: s.meta,
   };
-}
-
-function similarLine(a, b) {
-  const norm = (s) => String(s || '').replace(/[「」""'：:，,。！？?\s]/g, '');
-  const x = norm(a);
-  const y = norm(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  if (x.includes(y.slice(0, 12)) || y.includes(x.slice(0, 12))) return true;
-  return false;
 }

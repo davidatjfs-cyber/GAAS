@@ -29,6 +29,8 @@ export const PRINCIPLE_LABELS = {
   ask_expectation: '探询期望',
   dig_refund_root: '退款先挖根因',
   close_loop: '闭环交付',
+  own_problem: '先揽责不推诿',
+  no_overpromise: '承诺有边界',
   closing: '成交推进',
   greet_first: '先问候再办事',
   soothe_guest: '客诉先安抚',
