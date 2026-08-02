@@ -69,7 +69,7 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       const storeFilter = resolveOverviewStoreFilter(req);
       // 2026-08-01：门店经营明细/营业额/客流量/人效排名加月份筛选，?month=YYYY-MM。
       const month = String(req.query?.month || '').trim();
-      const data = await getBossOverview(pool, tenantId, storeFilter, month);
+      const data = await getBossOverview(pool, tenantId, storeFilter, month, role);
       if (!data.ok) return res.status(500).json({ error: data.error });
       res.json(data);
     } catch (e) {

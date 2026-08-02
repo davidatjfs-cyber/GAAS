@@ -175,23 +175,45 @@ export async function revenueRollup(pool, tenantId, today, storeFilter) {
   };
 }
 
-/** 毛利目标追踪——直接读 daily_reports 本月每日的 actual_margin/target_margin 取平均，
- * 跟营收目标同一批数据来源(营业日报)，不是另起一套计算。 */
+/** 品牌固定实收毛利目标（业务方拍板：马己仙65%，洪潮68%，不是从daily_reports读的
+ * 逐日可变值——之前那套读法 daily_reports.actual_margin/target_margin 这两列压根没人
+ * 写过，每月显示的都是空，这次改成真正对接数据源）。 */
+const WS_BRAND_MARGIN_TARGET = { 马己仙: 65, 洪潮: 68 };
+
+/** 毛利目标追踪——用户明确指出这块之前读错了数据源(daily_reports.actual_margin/
+ * target_margin 从未被写入，永远是空)。实际数据来自飞书"实际毛利率"多维表格，已经有
+ * agents-service-v2 的 bitable_actual_gross_margin 定时任务(每日05:16)在同步进
+ * monthly_margins 表(每月10号前更新上月数据，跟用户要求的时间点一致)——不是要新建一套
+ * 对接，是把这里的读取指向已经在跑的正确数据源。目标值改成品牌固定值，不再读
+ * daily_reports.target_margin。
+ * 这块UI(wsRenderTargetTracking)目前只用于门店视角(单店)，storeFilter预期是单元素数组；
+ * 传多店/空(总部不限门店)时取第一个门店做代表，没有"跨店平均毛利率"这个业务概念。
+ */
 async function marginTracking(pool, tenantId, today, storeFilter) {
-  const monthStart = monthStartOf(today);
-  const params = [tenantId, monthStart, today];
-  const filter = storeFilterClause(storeFilter, params.length + 1);
-  if (filter.param) params.push(filter.param);
-  const r = await pool.query(
-    `SELECT AVG(actual_margin) AS actual_margin, AVG(target_margin) AS target_margin
-       FROM daily_reports
-      WHERE tenant_id = $1 AND date >= $2 AND date <= $3 AND actual_margin IS NOT NULL${filter.sql}`,
-    params
-  );
-  const row = r.rows[0] || {};
-  const actualMargin = row.actual_margin != null ? Number(row.actual_margin) : null;
-  const targetMargin = row.target_margin != null ? Number(row.target_margin) : null;
-  return { actualMargin, targetMargin };
+  const store = Array.isArray(storeFilter) && storeFilter.length ? storeFilter[0] : null;
+  if (!store) return { actualMargin: null, targetMargin: null, period: null };
+  try {
+    const canon = resolveAgentCanonicalStore(store) || store;
+    const r = await pool.query(
+      `SELECT brand, period, actual_margin
+         FROM monthly_margins
+        WHERE tenant_id = $1 AND store = $2
+        ORDER BY period DESC LIMIT 1`,
+      [tenantId, canon]
+    );
+    const row = r.rows?.[0];
+    if (!row) return { actualMargin: null, targetMargin: null, period: null };
+    const brand = String(row.brand || '').trim();
+    const targetMargin = WS_BRAND_MARGIN_TARGET[brand] ?? null;
+    return {
+      actualMargin: row.actual_margin != null ? Number(row.actual_margin) : null,
+      targetMargin,
+      period: row.period || null,
+    };
+  } catch (e) {
+    log.error({ msg: 'margin_tracking_failed', err: e?.message || String(e) });
+    return { actualMargin: null, targetMargin: null, period: null };
+  }
 }
 
 /**
@@ -353,15 +375,25 @@ async function turnoverSummary(pool, tenantId, storeNames, getTurnoverRate) {
 /** 下属人员绩效/能力/态度/执行力评级总览——直接读 employee_scores 本月记录，
  * 这张表已经有 execution_rating/attitude_rating/ability_rating（A/B/C/D）+ total_score，
  * 不是新算的规则。 */
-async function teamPerformanceSummary(pool, tenantId, storeFilter, period) {
+// 2026-08-01 修复：之前不分角色一律返回同样的行，店长/出品经理视角实测只看到2条
+// （因为 employee_scores 里凑巧只有喻烽/黎永荣这两个管理岗位的分数）——用户明确要求
+// 按查看者角色区分范围：店长/出品经理("店内视角")要看自己店里**所有**员工的评级；
+// 总部经理/管理员("总部视角")只要看各店的店长/出品经理，不要普通员工；普通员工不显示
+// 这块（roleScope=null 时调用方直接不查）。
+async function teamPerformanceSummary(pool, tenantId, storeFilter, period, roleScope) {
   const params = [tenantId, period];
   const filter = storeFilterClause(storeFilter, params.length + 1, 'es.store');
   if (filter.param) params.push(filter.param);
+  let roleSql = '';
+  if (Array.isArray(roleScope) && roleScope.length) {
+    params.push(roleScope);
+    roleSql = ` AND es.role = ANY($${params.length}::text[])`;
+  }
   const r = await pool.query(
     `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
        FROM employee_scores es
        LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
-      WHERE es.tenant_id = $1 AND es.period = $2${filter.sql}
+      WHERE es.tenant_id = $1 AND es.period = $2${filter.sql}${roleSql}
       ORDER BY es.total_score DESC NULLS LAST`,
     params
   );
@@ -387,14 +419,27 @@ function resolveAsOfDate(month) {
   return `${m}-${String(lastDay).padStart(2, '0')}`;
 }
 
-export async function getBossOverview(pool, tenantId, storeFilter = [], month = '') {
+const WS_TEAM_STORE_LEVEL_ROLES = ['store_manager', 'store_production_manager', 'front_manager', 'front_supervisor'];
+
+/** 下属绩效评级板块的角色范围：总部视角(admin/hq_manager)只看各店店长/出品经理；
+ * 店内视角(store_manager/store_production_manager等)看自己店里所有人；其它角色(普通
+ * 员工)不显示这块——返回 null，调用方据此跳过整个查询。 */
+function resolveTeamRoleScope(viewerRole) {
+  const role = String(viewerRole || '').trim();
+  if (role === 'admin' || role === 'hq_manager') return ['store_manager', 'store_production_manager'];
+  if (WS_TEAM_STORE_LEVEL_ROLES.includes(role)) return [];
+  return null;
+}
+
+export async function getBossOverview(pool, tenantId, storeFilter = [], month = '', viewerRole = '') {
   const today = resolveAsOfDate(month);
   try {
+    const teamRoleScope = resolveTeamRoleScope(viewerRole);
     const [revenue, operational, rankings, team, margin] = await Promise.all([
       revenueRollup(pool, tenantId, today, storeFilter),
       operationalMetrics(pool, tenantId, today, storeFilter),
       storeRankings(pool, tenantId, today, storeFilter),
-      teamPerformanceSummary(pool, tenantId, storeFilter, periodOf(today)),
+      teamRoleScope == null ? Promise.resolve([]) : teamPerformanceSummary(pool, tenantId, storeFilter, periodOf(today), teamRoleScope),
       marginTracking(pool, tenantId, today, storeFilter),
     ]);
     // 2026-07-30：用户要求"本月离职率"从顶层挪进"门店经营明细"，按店各自展示——离职率查询
