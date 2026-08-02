@@ -325,8 +325,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * revenue_targets表，解决"目标管理"跟工作台"营业日目标"卡片各读各的表、改了不生效的问题。
  * 2026-08-02 第六十次上调（71909→71937）：admin/hq_manager工作台补"当月目标追踪"模块
  * （加门店下拉选择器，跟店长/出品经理的单店目标追踪复用同一套渲染）。
+ * 2026-08-02 第六十一次上调（71937→71953）："当月目标追踪"换月份筛选后数字不变——
+ * applyMonth补上刷新这块，且请求带上?month=。
  */
-const MAX_LINES = 71937;
+const MAX_LINES = 71953;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
