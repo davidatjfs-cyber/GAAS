@@ -38,6 +38,7 @@ const HARD_REFUND_DENY_RE = /不能退|没法退|按规定不能|退不了/;
 const EXPECTATION_ASK_RE = /希望.{0,8}怎么|期望|当时想|方便告诉/;
 const BLAME_SHIFT_RE = /不是.{0,6}(我们|我)(控制|负责|管|的问题)|不归我们|不关我们|不归我|我们(也)?(控制不了|没办法|无能为力)|都是(别人|运营商|第三方|用户自己)|(运营商|第三方|用户自己).{0,10}(问题|造成的)/;
 const OVERPROMISE_RE = /保证.{0,6}(一定|绝对|马上|立刻|没问题)|100%|百分百|肯定没问题|肯定能|绝不会再|包你满意|绝对不/;
+const NEGATED_PROMISE_RE = /不(保证|会|可能)|没法|无法|不能|不会|没有/;
 const CALM_ACK_RE = /(^|[。！？，])\s*(好|行|可以|行吧|没问题|谢谢|明白|知道|辛苦|理解)[，。!！]?/;
 const EMOTION_WORDS_RE = /生气|着急|受够|气死|投诉|什么情况|怎么回事|太差|烦|气炸|失望|崩溃|火大|恶心/;
 
@@ -217,7 +218,7 @@ function evaluateCsTurn({ text, customer, triggers, violations, strengths, coach
     violations.push({ principle_id: 'own_problem', detail: '向客户推诿责任，未先揽责' });
     coachTags.push({ code: 'blame_shift', level: 'error', message: '先揽责不推诿：承认客户处境，再说明你方会做什么' });
   }
-  if (OVERPROMISE_RE.test(text)) {
+  if (OVERPROMISE_RE.test(text) && !NEGATED_PROMISE_RE.test(text)) {
     violations.push({ principle_id: 'no_overpromise', detail: '过度承诺，未给可核验的边界' });
     coachTags.push({ code: 'overpromise', level: 'warn', message: '承诺要可兑现：给具体动作和时间，别用「保证/绝对」' });
   }
