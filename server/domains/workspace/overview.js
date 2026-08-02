@@ -133,25 +133,35 @@ export async function revenueRollup(pool, tenantId, today, storeFilter) {
   // 问题在revenue_targets这张表上又出现了一次——admin不传storeFilter时因为没有WHERE过滤
   // 侥幸能看到全部，一旦是店长/出品经理这种传了storeFilter的scoped视角，精确匹配必然
   // 查不到任何行。改用expandAgentStoreLabels()展开别名后ANY匹配，不再要求字符串完全相等。
-  const targetParams = [tenantId, periodOf(today)];
+  // 2026-08-02 第三次修复：洪潮/马己仙的"营业日目标"变成两个月份的目标相加（如洪潮显示
+  // 175万=90万+85万）——查证发现revenue_targets里同一家店有两种store字符串共存："洪潮
+  // 久光店"（旧缩写，2026-02/03两条历史行）和"洪潮大宁久光店"（官方全称，之后所有行）。
+  // 上一版SQL用`GROUP BY store`在数据库层找"每店最近period"，这两个字符串在SQL眼里是
+  // 两个不同的店，各自都算出了自己的latest_period（"洪潮久光店"最近到03月=85万，"洪潮
+  // 大宁久光店"最近到08月=90万），alias展开后WHERE条件两个字符串都命中，于是两条本该是
+  // 同一家店、只该取最新一条的记录被当成两家不同店，最终SUM两条都加了进去。SQL层做不到
+  // "先按canonical归一化再GROUP BY"（resolveAgentCanonicalStore是JS函数），改成取全量
+  // 候选行回JS里按canonical门店名去重取最新period，这份文件里operationalMetrics等多处
+  // 已经用这个模式解决过同类问题。
   const targetAliasList = Array.isArray(storeFilter) && storeFilter.length
     ? [...new Set(storeFilter.flatMap((s) => expandAgentStoreLabels(s)))]
     : null;
+  const targetParams = [tenantId, periodOf(today)];
   let targetFilterSql = '';
   if (targetAliasList) { targetParams.push(targetAliasList); targetFilterSql = ` AND store = ANY($${targetParams.length})`; }
-  const targetR = await pool.query(
-    `SELECT COALESCE(SUM(rt.target_revenue), 0) AS target
-       FROM revenue_targets rt
-       JOIN (
-         SELECT store, MAX(period) AS latest_period
-           FROM revenue_targets
-          WHERE tenant_id = $1 AND period <= $2${targetFilterSql}
-          GROUP BY store
-       ) latest ON latest.store = rt.store AND latest.latest_period = rt.period
-      WHERE rt.tenant_id = $1${targetFilterSql.replace(/\bstore\b/, 'rt.store')}`,
+  const targetRowsR = await pool.query(
+    `SELECT store, period, target_revenue FROM revenue_targets
+      WHERE tenant_id = $1 AND period <= $2${targetFilterSql}`,
     targetParams
   );
-  const targetRevenue = Number(targetR.rows[0]?.target || 0);
+  const latestByCanon = new Map();
+  for (const row of targetRowsR.rows || []) {
+    const canon = resolveAgentCanonicalStore(row.store) || row.store;
+    const prev = latestByCanon.get(canon);
+    if (!prev || String(row.period) > String(prev.period)) latestByCanon.set(canon, row);
+  }
+  let targetRevenue = 0;
+  for (const row of latestByCanon.values()) targetRevenue += Number(row.target_revenue || 0);
 
   const [y, m] = today.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
