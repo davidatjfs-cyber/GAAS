@@ -126,21 +126,27 @@ test('operationalMetrics：pos_orders的store_name是POS原始长名，归一化
 // 2026-07-30：管理员反馈"实收目标"只接入了马己仙门店——查证生产库发现洪潮门店的
 // revenue_targets最新period停在2026-03，马己仙停在2026-04，之前的SQL找"全租户范围内
 // 唯一最近的period"，取到2026-04后只有马己仙有这一行，洪潮被完全漏掉。锁定：revenue_targets
-// 查询必须按门店各自的MAX(period)分别取值再求和，不能对齐成一个全局period。
+// 必须按门店各自的最近period分别取值再求和，不能对齐成一个全局period。
+// 2026-08-02：改成取全量候选行回JS里聚合（原因见下一条测试），这条测试跟着改成验证
+// JS层聚合结果，不再断言SQL文本形状。
 test('revenueRollup：营业日目标必须按门店各自的最近period分别取值求和，不能所有店对齐到同一个全局period', async () => {
   const calls = [];
   const pool = {
     async query(sql, params) {
       calls.push({ sql, params });
       if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
-      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 1450000 }] };
+      if (/FROM revenue_targets/.test(sql)) {
+        return { rows: [
+          { store: '洪潮大宁久光店', period: '2026-03', target_revenue: 850000 },
+          { store: '马己仙上海音乐广场店', period: '2026-04', target_revenue: 600000 },
+          { store: '马己仙上海音乐广场店', period: '2026-02', target_revenue: 500000 }, // 更旧的一条，不该被取用
+        ] };
+      }
       return { rows: [] };
     },
   };
-  await revenueRollup(pool, 'default', '2026-07-30', []);
-  const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
-  assert.match(targetCall.sql, /JOIN[\s\S]*MAX\(period\) AS latest_period/, '必须按store分组取各自MAX(period)，不能是全局唯一period');
-  assert.match(targetCall.sql, /GROUP BY store/);
+  const result = await revenueRollup(pool, 'default', '2026-07-30', []);
+  assert.equal(result.target.targetRevenue, 1450000, '两店各自最新一条求和：850000+600000，不能带上马己仙更旧的500000那条');
 });
 
 // 2026-07-30：洪潮门店(scoped角色如出品经理/店长)看到的实收目标一直是0——查证生产库
@@ -153,15 +159,41 @@ test('revenueRollup：storeFilter非空时revenue_targets必须展开门店别�
     async query(sql, params) {
       calls.push({ sql, params });
       if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
-      if (/FROM revenue_targets/.test(sql)) return { rows: [{ target: 850000 }] };
+      if (/FROM revenue_targets/.test(sql)) return { rows: [{ store: '洪潮大宁久光店', period: '2026-07', target_revenue: 850000 }] };
       return { rows: [] };
     },
   };
-  await revenueRollup(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
+  const result = await revenueRollup(pool, 'default', '2026-07-30', ['洪潮大宁久光店']);
   const targetCall = calls.find((c) => /FROM revenue_targets/.test(c.sql));
   assert.match(targetCall.sql, /store = ANY/);
   const aliasParam = targetCall.params.find((p) => Array.isArray(p));
   assert.ok(aliasParam.includes('洪潮久光店'), '应该展开出revenue_targets里实际使用的缩写别名，否则scoped角色查不到任何行');
+  assert.equal(result.target.targetRevenue, 850000);
+});
+
+// 2026-08-02：用户反馈"营业日目标"变成两个月份相加（洪潮显示175万=90万+85万）——查证
+// revenue_targets里同一家店有"洪潮久光店"（旧缩写）和"洪潮大宁久光店"（官方全称）两种
+// store字符串共存，alias展开ANY匹配后两条都命中，SQL层`GROUP BY store`把它们当成两个
+// 不同的店各自算出自己的latest_period，最终SUM两条都加了进去。锁定：同一个canonical
+// 门店下，即使revenue_targets里有多种历史别名字符串，也只能取真正最新的一条，不能重复
+// 计入。
+test('revenueRollup：同一家店在revenue_targets里有新旧两种别名字符串时，只取真正最新一条，不能重复求和', async () => {
+  const pool = {
+    async query(sql) {
+      if (/FROM daily_reports/.test(sql)) return { rows: [{}] };
+      if (/FROM revenue_targets/.test(sql)) {
+        return { rows: [
+          { store: '洪潮久光店', period: '2026-02', target_revenue: 120000 },
+          { store: '洪潮久光店', period: '2026-03', target_revenue: 850000 },
+          { store: '洪潮大宁久光店', period: '2026-07', target_revenue: 900000 },
+          { store: '洪潮大宁久光店', period: '2026-08', target_revenue: 900000 },
+        ] };
+      }
+      return { rows: [] };
+    },
+  };
+  const result = await revenueRollup(pool, 'default', '2026-08-02', ['洪潮大宁久光店']);
+  assert.equal(result.target.targetRevenue, 900000, '不能是175万(90万+85万)，两种别名字符串本该是同一家店，只取最新的2026-08那条');
 });
 
 test('operationalMetrics：storeFilter按官方简称过滤时，也要能过滤掉pos_orders里POS原始长名不在范围内的门店', async () => {
