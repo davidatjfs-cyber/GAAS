@@ -193,13 +193,17 @@ async function marginTracking(pool, tenantId, today, storeFilter) {
   const store = Array.isArray(storeFilter) && storeFilter.length ? storeFilter[0] : null;
   if (!store) return { actualMargin: null, targetMargin: null, period: null };
   try {
-    const canon = resolveAgentCanonicalStore(store) || store;
+    // monthly_margins.store 存的是飞书表格里的门店简称（如"洪潮久光店"），跟
+    // resolveAgentCanonicalStore() 归一化后的官方全称（"洪潮大宁久光店"）不是同一个
+    // 字符串——精确匹配canon必然查不到行，一直显示空，跟revenue_targets同款问题，
+    // 改用expandAgentStoreLabels()展开别名后ANY匹配。
+    const aliases = expandAgentStoreLabels(store);
     const r = await pool.query(
       `SELECT brand, period, actual_margin
          FROM monthly_margins
-        WHERE tenant_id = $1 AND store = $2
+        WHERE tenant_id = $1 AND store = ANY($2)
         ORDER BY period DESC LIMIT 1`,
-      [tenantId, canon]
+      [tenantId, aliases]
     );
     const row = r.rows?.[0];
     if (!row) return { actualMargin: null, targetMargin: null, period: null };
