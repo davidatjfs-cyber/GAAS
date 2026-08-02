@@ -78,9 +78,6 @@ test('shared: 租户 RLS 作用域契约是冻结的单一真源', () => {
     'tenants',
     'licenses',
     'agent_v2_configs',
-    'analysis_rules',
-    'analysis_sop',
-    'cn_holiday_calendar',
     'hrms_state',
   ]);
   assert.equal(Object.isFrozen(TENANT_RLS_EXCLUDED_TABLES), true);

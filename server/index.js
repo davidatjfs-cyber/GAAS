@@ -189,7 +189,6 @@ pg.types.setTypeParser(1184, str => {
   return d.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace('T', ' ');
 });
 
-import XLSX from 'xlsx';
 import axios from 'axios';
 import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, getSharedState as getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, registerFeishuUser, runDataAuditor, runChiefEvaluator, pushIssuesToFeishu, pushScoresToFeishu, getLarkTenantToken, routeMessage, callVisionLLM, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { registerAgentDataCenterRoutes } from './domains/agent-data-center/routes.js';

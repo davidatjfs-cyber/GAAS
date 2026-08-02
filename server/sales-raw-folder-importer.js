@@ -12,9 +12,6 @@
  * - SALES_RAW_IMPORT_DEFAULT_STORE  Excel 无「门店」列时用默认门店名
  * - SALES_RAW_IMPORT_RECURSIVE=true 递归子目录（跳过 imported/、failed/）
  */
-import fs from 'fs';
-import path from 'path';
-import XLSX from 'xlsx';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'sales-raw-folder' });
@@ -25,77 +22,6 @@ const _LOCK = { running: false };
 let _importFailureNotifier = null;
 export function setSalesRawFolderImportFailureNotifier(fn) {
   _importFailureNotifier = typeof fn === 'function' ? fn : null;
-}
-
-function inferDateFromFilename(input, now = new Date()) {
-  const raw = String(input || '').trim();
-  if (!raw) return '';
-  const basename = raw.replace(/\.[^.]+$/, '');
-
-  const full = basename.match(/(20\d{2})[-_.\/年](\d{1,2})[-_.\/月](\d{1,2})/);
-  if (full) {
-    const y = Number(full[1]);
-    const m = Number(full[2]);
-    const d = Number(full[3]);
-    if (y >= 2000 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-  }
-
-  const mdRange = basename.match(/(^|\D)(\d{1,2})[-_.\/](\d{1,2})[-_.\/](\d{1,2})(\D|$)/);
-  if (mdRange) {
-    const m = Number(mdRange[2]);
-    const d1 = Number(mdRange[3]);
-    const d2 = Number(mdRange[4]);
-    if (m >= 1 && m <= 12 && d1 >= 1 && d1 <= 31 && d2 >= 1 && d2 <= 31) {
-      const y = now.getFullYear();
-      const day = Math.max(d1, d2);
-      return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
-  }
-
-  const md = basename.match(/(^|\D)(\d{1,2})[-_.\/](\d{1,2})(\D|$)/);
-  if (md) {
-    const m = Number(md[2]);
-    const d = Number(md[3]);
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      const y = now.getFullYear();
-      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-  }
-
-  return '';
-}
-
-async function moveUnder(destDir, filePath, tag) {
-  const base = path.basename(filePath);
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  let dest = path.join(destDir, `${tag}_${ts}_${base}`);
-  let n = 0;
-  while (fs.existsSync(dest)) {
-    n += 1;
-    dest = path.join(destDir, `${tag}_${ts}_${n}_${base}`);
-  }
-  await fs.promises.rename(filePath, dest);
-  return dest;
-}
-
-async function collectExcelFiles(baseDir, recursive) {
-  const out = [];
-  const entries = await fs.promises.readdir(baseDir, { withFileTypes: true });
-  for (const ent of entries) {
-    const full = path.join(baseDir, ent.name);
-    if (ent.isDirectory()) {
-      if (['imported', 'failed'].includes(ent.name)) continue;
-      if (recursive) out.push(...(await collectExcelFiles(full, true)));
-      continue;
-    }
-    if (!/\.(xlsx|xls)$/i.test(ent.name)) continue;
-    if (ent.name.startsWith('~$')) continue;
-    if (/\.imported\./i.test(ent.name)) continue;
-    out.push(full);
-  }
-  return out;
 }
 
 export async function runSalesRawFolderImportOnce() {
