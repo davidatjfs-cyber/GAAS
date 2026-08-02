@@ -29,6 +29,12 @@ test('评估补漏：过度承诺被判「承诺有边界」', () => {
   assert.ok(ev.coachTags.some((t) => t.code === 'overpromise'));
 });
 
+test('评估补漏：否定式承诺（不保证百分百）不误判过度承诺', () => {
+  const ev = csEval('诊断以实际数据为准，不保证百分百准确，作为经营参考', '诊断准不准？');
+  assert.ok(!ev.violations.some((v) => v.principle_id === 'no_overpromise'));
+  assert.ok(!ev.coachTags.some((t) => t.code === 'overpromise'));
+});
+
 test('误报修正：客户语气平静时不再判「先安抚再处理」', () => {
   const ev = csEval(
     '查到了，因为会员数量比较多，短信在运营商那里卡住了，我们已经重新启动，正在排队发送',

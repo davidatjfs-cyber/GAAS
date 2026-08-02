@@ -54,30 +54,96 @@ test('回归：生气人格（会话22序列）期望被接住后进入 resolve'
   assert.equal(end.outcome, 'resolved');
 });
 
-test('业务咨询：会员积分规则逐问推进，准确回答换 ack', () => {
-  const p = persona('cs_member_points_rule');
+test('业务咨询：经营诊断逐问推进（数据来源→指标→闭环→边界）', () => {
+  const p = persona('cs_growth_diagnosis');
   const plans = runPlan({
     track: 'cs',
     personaObj: p,
     opening: p.opening_line,
     state: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
     texts: [
-      '按实付金额，每消费1元累计1积分',
-      '积分可以抵现，消费时按比例抵扣',
-      '积分有效期一年，年底清零',
-      '我再核实一下，确认后把准确规则发给您',
-      '规则整理好后我发您一份',
+      '诊断数据来自POS收银和营业日报，每天自动同步',
+      '主要看营业额、毛利、复购率和执行率这些指标',
+      '诊断出的问题会生成整改任务，指定责任人并跟踪验收',
+      '诊断以实际数据为准，不保证百分百准确，作为经营参考',
+      '好的，我把报告口径整理好发您',
     ],
   });
-  assert.equal(plans[0].intent, 'ack_points_rule');
-  assert.equal(plans[1].intent, 'ack_redeem');
-  assert.equal(plans[2].intent, 'ack_expire');
-  assert.equal(plans[3].intent, 'ack_follow_up', '查证承诺算专业回应');
+  assert.equal(plans[0].intent, 'ack_data_source');
+  assert.equal(plans[1].intent, 'ack_indicator');
+  assert.equal(plans[2].intent, 'ack_diagnosis_action');
+  assert.equal(plans[3].intent, 'ack_confidence');
+  assert.equal(plans[4].intent, 'resolve');
+});
+
+test('业务咨询：POS 接入逐问推进（兼容→同步→历史→安全）', () => {
+  const p = persona('cs_pos_data_connect');
+  const plans = runPlan({
+    track: 'cs',
+    personaObj: p,
+    opening: p.opening_line,
+    state: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
+    texts: [
+      '二维火可以接，主流收银系统我们都支持对接',
+      '数据当天自动同步，最晚次日凌晨更新',
+      '上线前的历史数据可以由你们导出后导入',
+      '只有授权账号能看到数据，按权限范围展示',
+      '好的，资料清单我让店长准备',
+    ],
+  });
+  assert.equal(plans[0].intent, 'ack_support');
+  assert.equal(plans[1].intent, 'ack_sync');
+  assert.equal(plans[2].intent, 'ack_history');
+  assert.equal(plans[3].intent, 'ack_security');
+  assert.equal(plans[4].intent, 'resolve');
+});
+
+test('业务咨询：营销触达逐问推进（人群→渠道→合规→归因）', () => {
+  const p = persona('cs_marketing_sms');
+  const plans = runPlan({
+    track: 'cs',
+    personaObj: p,
+    opening: p.opening_line,
+    state: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
+    texts: [
+      '可以按人群筛选，比如只选3个月没来的沉睡会员',
+      '支持短信和企微触达，也可以同时发',
+      '有频次上限和退订机制，避免打扰顾客',
+      '发送后有回店和消费归因报表，能看到效果',
+      '好的，我先小范围试一批',
+    ],
+  });
+  assert.equal(plans[0].intent, 'ack_audience');
+  assert.equal(plans[1].intent, 'ack_channel');
+  assert.equal(plans[2].intent, 'ack_compliance');
+  assert.equal(plans[3].intent, 'ack_attribution');
+  assert.equal(plans[4].intent, 'resolve');
+});
+
+test('业务咨询：报表口径逐问推进（范围→退款→日结→核对）', () => {
+  const p = persona('cs_report_billing');
+  const plans = runPlan({
+    track: 'cs',
+    personaObj: p,
+    opening: p.opening_line,
+    state: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
+    texts: [
+      '报表统计堂食和外卖所有渠道的订单',
+      '退款按原路冲减，不计入营业额',
+      '日结按营业日零点汇总',
+      '对不上可以导出明细逐笔核对',
+      '好的，那我配合导出明细',
+    ],
+  });
+  assert.equal(plans[0].intent, 'ack_scope');
+  assert.equal(plans[1].intent, 'ack_refund');
+  assert.equal(plans[2].intent, 'ack_settle');
+  assert.equal(plans[3].intent, 'ack_reconcile');
   assert.equal(plans[4].intent, 'resolve');
 });
 
 test('业务咨询：不确定时承诺查证也算回应（不编造）', () => {
-  const p = persona('cs_member_points_rule');
+  const p = persona('cs_growth_diagnosis');
   const plan = buildCustomerTurn({
     track: 'cs',
     persona: p,
@@ -88,11 +154,11 @@ test('业务咨询：不确定时承诺查证也算回应（不编造）', () =>
     priorTraineeTexts: [],
     priorCustomerTexts: [p.opening_line],
   });
-  assert.equal(plan.intent, 'ack_points_rule');
+  assert.equal(plan.intent, 'ack_data_source');
 });
 
 test('业务咨询：查证承诺按「一诺一问」覆盖，不能一句跳过整场', () => {
-  const p = persona('cs_member_points_rule');
+  const p = persona('cs_growth_diagnosis');
   let priorT = [];
   let priorC = [p.opening_line];
   const t1 = buildCustomerTurn({
@@ -105,7 +171,7 @@ test('业务咨询：查证承诺按「一诺一问」覆盖，不能一句跳�
     priorTraineeTexts: priorT,
     priorCustomerTexts: priorC,
   });
-  assert.equal(t1.intent, 'ack_points_rule', '第一次查证承诺只覆盖第一问');
+  assert.equal(t1.intent, 'ack_data_source', '第一次查证承诺只覆盖第一问');
   priorT.push('这个我需要核实一下，确认后答复您');
   priorC.push(t1.reply);
   const t2 = buildCustomerTurn({
@@ -114,11 +180,11 @@ test('业务咨询：查证承诺按「一诺一问」覆盖，不能一句跳�
     evalResult: { coachTags: [], triggers: [], strengths: [] },
     session: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
     turnNo: 2,
-    traineeText: '积分使用规则我也需要确认后答复',
+    traineeText: '诊断指标我也需要确认后答复',
     priorTraineeTexts: priorT,
     priorCustomerTexts: priorC,
   });
-  assert.equal(t2.intent, 'ack_redeem', '第二次查证承诺只覆盖第二问');
+  assert.equal(t2.intent, 'ack_indicator', '第二次查证承诺只覆盖第二问');
   priorT.push('积分使用规则我也需要确认后答复');
   priorC.push(t2.reply);
   const t3 = buildCustomerTurn({
@@ -127,11 +193,11 @@ test('业务咨询：查证承诺按「一诺一问」覆盖，不能一句跳�
     evalResult: { coachTags: [], triggers: [], strengths: [] },
     session: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
     turnNo: 3,
-    traineeText: '再确认一下有效期规则',
+    traineeText: '诊断闭环的部分我需要再确认一下',
     priorTraineeTexts: priorT,
     priorCustomerTexts: priorC,
   });
-  assert.equal(t3.intent, 'ack_expire', '第三次查证承诺才覆盖第三问');
+  assert.equal(t3.intent, 'ack_diagnosis_action', '第三次查证承诺才覆盖第三问');
 });
 
 test('经营专业：ROI 测算按 测算→假设→边界→方案 推进', () => {
@@ -190,9 +256,11 @@ test('经营专业：落地实施方案按 第一周→首月→分工→指标 
 test('新业务人格已内置且可被种子化', () => {
   const keys = new Set(BUILTIN_PERSONAS.map((p) => p.persona_key));
   for (const k of [
-    'cs_member_points_rule', 'cs_stored_value_rule', 'cs_activity_setup', 'cs_billing_dispute',
+    'cs_growth_diagnosis', 'cs_marketing_sms', 'cs_pos_data_connect', 'cs_report_billing', 'cs_activity_setup',
     'sales_roi_question', 'sales_competitor_compare', 'sales_solution_demo',
   ]) {
     assert.ok(keys.has(k), `missing ${k}`);
   }
+  assert.ok(!keys.has('cs_member_points_rule'), '会员积分不是系统功能，不得存在');
+  assert.ok(!keys.has('cs_stored_value_rule'), '储值规则不是系统功能，不得存在');
 });
