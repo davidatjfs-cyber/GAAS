@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCustomerReply, maybePolishCustomerReply } from '../customer-reply.js';
+import {
+  buildCustomerReply, buildCustomerTurn, maybeGenerateCustomerReply, maybePolishCustomerReply,
+} from '../customer-reply.js';
 import { BUILTIN_PERSONAS } from '../personas.js';
 
 const persona = (key) => BUILTIN_PERSONAS.find((p) => p.persona_key === key);
@@ -223,4 +225,144 @@ test('润色：提示词锁定顾客视角、带情绪状态并过滤教练行',
   assert.ok(/30\/100/.test(msg), '应带情绪状态');
   assert.ok(!/coach:/.test(msg), '教练行应被过滤');
   assert.ok(/学员/.test(msg), 'trainee 应翻译为学员');
+});
+
+test('buildCustomerTurn 返回意图与引导（cs 追问）', () => {
+  const p = persona('cs_sms_fail');
+  const t = buildCustomerTurn({
+    track: 'cs',
+    persona: p,
+    evalResult: { coachTags: [], triggers: [], strengths: [] },
+    session: { emotion: 38, trust: 37, close_readiness: 0, satisfaction: 60 },
+    turnNo: 1,
+    traineeText: '我在处理，请稍等。',
+    priorTraineeTexts: [],
+    priorCustomerTexts: [],
+  });
+  assert.equal(t.intent, 'press_timeline');
+  assert.ok(/解决时限/.test(t.guidance));
+  assert.ok(t.reply.length > 0);
+});
+
+test('buildCustomerTurn 返回意图与引导（cs 答对后 ack）', () => {
+  const p = persona('cs_sms_fail');
+  const t = buildCustomerTurn({
+    track: 'cs',
+    persona: p,
+    evalResult: { coachTags: [], triggers: [], strengths: [{ principle_id: 'soothe_first' }] },
+    session: { emotion: 38, trust: 37, close_readiness: 0, satisfaction: 60 },
+    turnNo: 1,
+    traineeText: '非常抱歉，我们马上查，10 分钟内答复您。',
+    priorTraineeTexts: [],
+    priorCustomerTexts: [],
+  });
+  assert.equal(t.intent, 'ack_timeline');
+  assert.ok(/推进/.test(t.guidance));
+});
+
+test('buildCustomerTurn 返回意图（sales 异议推进）', () => {
+  const p = persona('busy_owner');
+  const t = buildCustomerTurn({
+    track: 'sales',
+    persona: p,
+    evalResult: { coachTags: [], triggers: ['no_time'], strengths: [] },
+    session: { emotion: 40, close_readiness: 10 },
+    turnNo: 1,
+    traineeText: '好的，我知道了。',
+    priorTraineeTexts: [],
+    priorCustomerTexts: [p.opening_line],
+  });
+  assert.equal(t.intent, 'press_no_time');
+});
+
+test('生成器：合法 JSON 直接采用并透传意图', async () => {
+  const out = await maybeGenerateCustomerReply(async () => ({
+    ok: true,
+    content: '{"intent":"press_cause","reply":"你们查到原因了吗？短信到底卡在哪了？"}',
+  }), {
+    persona: { title: '客户', profile: { issue: 'sms' } },
+    track: 'cs',
+    state: { emotion: 38, trust: 37, satisfaction: 60 },
+    ruleReply: '回退句',
+    intent: 'press_cause',
+    guidance: '学员没有说清失败原因。',
+    history: [{ role: 'customer', content: 'a' }, { role: 'trainee', content: 'b' }],
+  });
+  assert.equal(out.reply, '你们查到原因了吗？短信到底卡在哪了？');
+  assert.equal(out.intent, 'press_cause');
+});
+
+test('生成器：服务方口吻 JSON 回退规则句', async () => {
+  const out = await maybeGenerateCustomerReply(async () => ({
+    ok: true,
+    content: '{"intent":"ack","reply":"好的，我会尽快跟进这个问题，马上告诉您，您看还有其他需要帮忙的吗？"}',
+  }), {
+    persona: { title: '客户', profile: {} },
+    ruleReply: '谢谢理解，你们打算怎么处理？',
+    intent: 'ack_empathy',
+    history: [],
+  });
+  assert.equal(out.reply, '谢谢理解，你们打算怎么处理？');
+});
+
+test('生成器：非法 JSON 但含可用原话时采用原话', async () => {
+  const out = await maybeGenerateCustomerReply(async () => ({
+    ok: true,
+    content: '你们到底查到原因了吗？给我个说法。',
+  }), {
+    persona: { title: '客户', profile: {} },
+    ruleReply: '回退句',
+    intent: 'press_cause',
+    history: [],
+  });
+  assert.equal(out.reply, '你们到底查到原因了吗？给我个说法。');
+});
+
+test('生成器：完全不可用输出回退规则句', async () => {
+  const out = await maybeGenerateCustomerReply(async () => ({ ok: true, content: '123' }), {
+    persona: { title: '客户', profile: {} },
+    ruleReply: '回退句',
+    intent: 'press_cause',
+    history: [],
+  });
+  assert.equal(out.reply, '回退句');
+});
+
+test('生成器：与上一句客户话高度重复时回退规则句', async () => {
+  const out = await maybeGenerateCustomerReply(async () => ({
+    ok: true,
+    content: '{"intent":"press_cause","reply":"你们查到原因了吗？短信到底卡在哪个环节？"}',
+  }), {
+    persona: { title: '客户', profile: {} },
+    ruleReply: '换个角度：为什么突然发不出去？',
+    intent: 'press_cause',
+    history: [],
+    priorCustomerTexts: ['你们查到原因了吗？短信到底卡在哪个环节？'],
+  });
+  assert.equal(out.reply, '换个角度：为什么突然发不出去？');
+});
+
+test('生成器：提示词含意图/引导/状态/学员上一句，不含教练行', async () => {
+  let msg = '';
+  await maybeGenerateCustomerReply(async (messages) => {
+    msg = messages[0].content;
+    return { ok: true, content: '{"intent":"x","reply":"好的。"}' };
+  }, {
+    persona: { title: '客户', profile: { issue: 'sms' } },
+    track: 'cs',
+    state: { emotion: 30, trust: 33, satisfaction: 54 },
+    ruleReply: '回退句',
+    intent: 'press_cause',
+    guidance: '学员还没有说清失败原因。',
+    history: [
+      { role: 'customer', content: 'a' },
+      { role: 'trainee', content: 'b' },
+      { role: 'coach', content: 'c' },
+    ],
+  });
+  assert.ok(/press_cause/.test(msg), '应含意图');
+  assert.ok(/失败原因/.test(msg), '应含引导');
+  assert.ok(/30\/100/.test(msg), '应含情绪状态');
+  assert.ok(/学员: b/.test(msg), '应含学员上一句');
+  assert.ok(!/coach:/.test(msg), '不应含教练行');
 });

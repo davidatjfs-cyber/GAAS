@@ -1,10 +1,13 @@
 /**
- * AI 扮演客户：规则状态机生成下一句；可选 LLM 润色（失败则回退模板）。
+ * AI 扮演客户：
+ * - 规则状态机决定「意图 + 引导 + 兜底句」（buildCustomerTurn）；
+ * - 人格路径用 LLM 按意图+状态+学员上一句生成整句（maybeGenerateCustomerReply）；
+ * - 事故卡/门店轨仍走专用规则路径 + 可选润色（maybePolishCustomerReply）。
  */
 
 import { isStoreTrack, buildStoreCustomerReply, shouldEndStoreSession } from './store-tracks.js';
 import { buildIncidentLockedReply } from './incident-dialogue.js';
-import { buildCsDialogueReply, buildSalesDialogueReply } from './persona-dialogue.js';
+import { buildCsDialogueTurn, buildSalesDialogueTurn } from './persona-dialogue.js';
 export { buildIncidentLockedReply } from './incident-dialogue.js';
 
 const SALES_REPLIES = {
@@ -41,6 +44,19 @@ const CS_REPLIES = {
 function pick(arr, salt = 0) {
   if (!arr?.length) return '';
   return arr[Math.abs(salt) % arr.length];
+}
+
+/** 服务方口吻（视角反转）标记：客户绝不能说的话 */
+const CUSTOMER_SERVICE_VOICE_RE = /帮您跟进|为您跟进|马上告诉您|随时为您|您看(还|是否)?有.{0,8}需要|还需要我|我会尽快(处理|跟进|通知)|帮您处理|为您处理|我们(会|将).{0,6}(服务|跟进)|为您服务/;
+
+export function similarLine(a, b) {
+  const norm = (s) => String(s || '').replace(/[「」""'：:，,。！？?\s]/g, '');
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.includes(y.slice(0, 12)) || y.includes(x.slice(0, 12))) return true;
+  return false;
 }
 
 export function applyStateDelta(session, { evalResult, track }) {
@@ -80,18 +96,26 @@ export function shouldEndSession(session, track) {
   return { end: false };
 }
 
-export function buildCustomerReply({
+function plan(reply, intent, guidance = '') {
+  return { reply, intent, guidance };
+}
+
+export function buildCustomerTurn({
   track, persona, evalResult, session, turnNo,
   traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [], cumulativeStrengths = 0,
 }) {
   const incident = session?.incident_snapshot || session?.meta?.incident || null;
   if (incident?.locked_facts || incident?.card_key) {
-    return buildIncidentLockedReply({
-      incident, evalResult, turnNo, traineeText, priorTraineeTexts, priorCustomerTexts,
-    });
+    return plan(
+      buildIncidentLockedReply({
+        incident, evalResult, turnNo, traineeText, priorTraineeTexts, priorCustomerTexts,
+      }),
+      'incident_probe',
+      '按事故卡追问队列推进，只围绕锁定事实。'
+    );
   }
   if (isStoreTrack(track)) {
-    return buildStoreCustomerReply({ track, evalResult, turnNo });
+    return plan(buildStoreCustomerReply({ track, evalResult, turnNo }), 'store', '');
   }
   const tags = new Set((evalResult.coachTags || []).map((t) => t.code));
   const triggers = evalResult.triggers || [];
@@ -99,11 +123,13 @@ export function buildCustomerReply({
   const personaKey = persona?.persona_key || '';
 
   if (track === 'cs') {
-    if (tags.has('no_soothe') || tags.has('hard_deny')) return pick(CS_REPLIES.no_soothe, salt);
-    if (/rage|escalation/.test(personaKey) && (evalResult.violations || []).length) {
-      return '我已经在录音了，你们继续这样我马上曝光。';
+    if (tags.has('no_soothe') || tags.has('hard_deny')) {
+      return plan(pick(CS_REPLIES.no_soothe, salt), 'no_soothe', '学员没有先安抚你的情绪，你表达不满，语气符合当前状态。');
     }
-    return buildCsDialogueReply({
+    if (/rage|escalation/.test(personaKey) && (evalResult.violations || []).length) {
+      return plan('我已经在录音了，你们继续这样我马上曝光。', 'rage_escalation', '你已经愤怒到要投诉曝光，语气强硬。');
+    }
+    return buildCsDialogueTurn({
       personaKey,
       evalResult,
       traineeText,
@@ -116,24 +142,126 @@ export function buildCustomerReply({
   const traits = persona?.profile?.traits || [];
   const diff = Number(persona?.difficulty || 1);
 
-  if (session.emotion <= 18) return pick(SALES_REPLIES.hangup, salt);
+  if (session.emotion <= 18) {
+    return plan(pick(SALES_REPLIES.hangup, salt), 'hangup', '你的情绪与信任已经很低，准备结束这次沟通。');
+  }
   if (traits.includes('临门反悔') || /last_minute/.test(persona?.persona_key || '')) {
-    if (turnNo >= 2) return pick(SALES_REPLIES.last_minute, salt);
+    if (turnNo >= 2) {
+      return plan(pick(SALES_REPLIES.last_minute, salt), 'last_minute', '你在最后一刻反悔，要求一个无法拒绝的理由。');
+    }
   }
   if (traits.includes('经营真题') || persona?.source_type === 'business') {
     if (tags.has('early_pitch') || tags.has('feature_dump') || triggers.includes('ask_features')) {
-      return pick(SALES_REPLIES.business, salt);
+      return plan(pick(SALES_REPLIES.business, salt), 'business_press', '学员又在讲模块/功能，你要的是第一步具体动作和数字。');
     }
   }
-  if (tags.has('early_pitch') || tags.has('feature_dump')) return pick(SALES_REPLIES.early_pitch, salt);
-  if (traits.includes('沉默') && turnNo % 2 === 0) return pick(SALES_REPLIES.silence, salt);
-  if (diff >= 7 && turnNo >= 2 && salt % 3 === 0) return pick(SALES_REPLIES.interrupt, salt);
-  return buildSalesDialogueReply({
+  if (tags.has('early_pitch') || tags.has('feature_dump')) {
+    return plan(pick(SALES_REPLIES.early_pitch, salt), 'early_pitch', '学员过早介绍功能，你反感，要求他先说清你的痛点。');
+  }
+  if (traits.includes('沉默') && turnNo % 2 === 0) {
+    return plan(pick(SALES_REPLIES.silence, salt), 'silence', '你是沉默型客户，回应极短或不说话。');
+  }
+  if (diff >= 7 && turnNo >= 2 && salt % 3 === 0) {
+    return plan(pick(SALES_REPLIES.interrupt, salt), 'interrupt', '你打断学员，要求直接讲重点。');
+  }
+  return buildSalesDialogueTurn({
     evalResult,
     traineeText,
     priorTraineeTexts,
     priorCustomerTexts,
   });
+}
+
+export function buildCustomerReply(...args) {
+  return buildCustomerTurn(...args).reply;
+}
+
+function extractJsonReply(raw) {
+  let s = String(raw || '').trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) s = fence[1].trim();
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function isValidGeneratedReply(text, lastCustomer) {
+  if (!text || text.trim().length < 2 || text.length > 120) return false;
+  if (!/[\u4e00-\u9fff]/.test(text)) return false;
+  if (CUSTOMER_SERVICE_VOICE_RE.test(text)) return false;
+  if (lastCustomer && similarLine(lastCustomer, text)) return false;
+  return true;
+}
+
+/**
+ * 中期方案：LLM 作为「对话推进器」——规则层给出意图+引导，LLM 生成整句。
+ * 要求接住学员上一句实质内容；输出 JSON { intent, reply }；不满足校验回退规则句。
+ */
+export async function maybeGenerateCustomerReply(callLLM, {
+  persona, track = 'cs', state = null, ruleReply, intent = '', guidance = '',
+  history = [], lockedFacts = [], priorCustomerTexts = [], priorCustomerIntents = [],
+}) {
+  if (typeof callLLM !== 'function' || !ruleReply) return { reply: ruleReply, intent };
+  try {
+    const profile = persona?.profile || {};
+    const roleLine = track === 'sales' ? '顾客（老板/决策人）' : '顾客/客户';
+    const factsLine = Array.isArray(lockedFacts) && lockedFacts.length
+      ? `锁定事实（不得编造/新增）：${lockedFacts.join('；')}`
+      : '';
+    const stateLine = state && Number.isFinite(Number(state.emotion))
+      ? `当前你的情绪${Number(state.emotion)}/100、信任${Number(state.trust)}/100、满意度${Number(state.satisfaction)}/100——语气必须匹配这个状态。`
+      : '';
+    const dialogue = (history || [])
+      .filter((h) => h.role === 'customer' || h.role === 'trainee')
+      .slice(-8)
+      .map((h) => `${h.role === 'customer' ? '客户' : '学员'}: ${h.content}`)
+      .join('\n');
+    const intentLine = (priorCustomerIntents || []).slice(-5).filter(Boolean).length
+      ? `你已问过/表达过的意图：${priorCustomerIntents.slice(-5).filter(Boolean).join('、')}（不要重复）`
+      : '';
+    const prompt = [
+      `你正在扮演「${persona?.title || '对话对方'}」本人，一位真实的${roleLine}，不是客服、不是教练。`,
+      `角色卡：${JSON.stringify(profile)}`,
+      factsLine,
+      stateLine,
+      `本轮意图：${intent || '自然推进'}`,
+      guidance ? `意图说明：${guidance}` : '',
+      `参考表达（仅供语气参考，不必照抄；必须根据学员上一句的实质内容自然回应）：${ruleReply}`,
+      dialogue ? `最近对话：\n${dialogue}` : '',
+      intentLine,
+      '硬性要求：1) 先接住学员上一句里你最关心的点（承认/反驳/追问），再推进你的意图；2) 你始终是顾客本人，绝不说服务方话术（如「我帮您跟进」「马上告诉您」「您看还有什么需要帮忙」）；3) 只围绕角色卡和锁定事实，不得新增事实、投诉点或产品知识；4) 不要重复已经问过的问题；5) 口语自然，像真实对话，一句话，不超过90字。',
+      '只输出 JSON：{"intent":"简短意图标签","reply":"你的原话"}',
+    ].filter(Boolean).join('\n');
+    const r = await callLLM(
+      [{ role: 'user', content: prompt }],
+      {
+        purpose: 'talent_engine_customer_actor',
+        temperature: 0.7,
+        max_tokens: 240,
+        skipCache: true,
+        trackTier: true,
+      }
+    );
+    const raw = String(r?.content || r?.text || '').trim();
+    const lastCustomer = priorCustomerTexts[priorCustomerTexts.length - 1] || '';
+    const parsed = extractJsonReply(raw);
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.reply === 'string' && isValidGeneratedReply(parsed.reply, lastCustomer)) {
+        return { reply: parsed.reply, intent: String(parsed.intent || intent) };
+      }
+      return { reply: ruleReply, intent };
+    }
+    // 模型没输出 JSON 但给了可用原话 → 接受
+    if (isValidGeneratedReply(raw, lastCustomer)) return { reply: raw, intent };
+  } catch (_) {
+    /* fall back */
+  }
+  return { reply: ruleReply, intent };
 }
 
 /** 可选：用 LLM 让客户语气更贴人格；失败则返回 ruleReply */
@@ -178,8 +306,7 @@ export async function maybePolishCustomerReply(callLLM, {
     );
     const text = String(r?.content || r?.text || '').trim().replace(/^["「]|["」]$/g, '');
     // 服务方口吻（视角反转）→ 回退规则句，避免客户替客服承诺
-    const serviceVoice = /帮您跟进|为您跟进|马上告诉您|随时为您|您看(还|是否)?有.{0,8}需要|还需要我|我会尽快(处理|跟进|通知)|帮您处理|为您处理|我们(会|将).{0,6}(服务|跟进)|为您服务/.test(text);
-    if (r?.ok !== false && text && text.length < 120 && !serviceVoice) return text;
+    if (r?.ok !== false && text && text.length < 120 && !CUSTOMER_SERVICE_VOICE_RE.test(text)) return text;
   } catch (_) {
     /* fall back */
   }

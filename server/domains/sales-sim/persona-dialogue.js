@@ -363,6 +363,25 @@ const CS_DEFAULT_SCRIPT = {
   ],
 };
 
+const CS_CONCERN_LABELS = {
+  timeline: '解决时限',
+  cause: '失败原因',
+  verification: '验证与闭环',
+  empathy: '情绪安抚',
+  expectation: '期望的操作方式',
+  fix: '修复时间',
+  root_cause: '退款/不满的根因',
+  remedy: '补救方案',
+  commitment: '负责态度与承诺',
+  plan: '处理方案',
+  compensation: '补偿方案',
+  triage: '问题梳理',
+  repro: '具体复现信息',
+  eta: '完成时限',
+  close: '结果确认',
+  legal_response: '对法务函的正式回应',
+};
+
 /**
  * sales 异议覆盖：covered 命中全部学员发言 → 该异议已回应；
  * press 用于未回应时换角度追问；ack 用于刚回应时承认并推进。
@@ -430,6 +449,15 @@ const SALES_OBJECTIONS = {
   },
 };
 
+const SALES_OBJECTION_LABELS = {
+  too_expensive: '价格',
+  has_system: '已有系统',
+  think_again: '再考虑',
+  no_time: '没时间',
+  ask_features: '功能',
+  ai_useless: 'AI没用',
+};
+
 const SALES_DISCOVERY = [
   '你继续说。',
   '然后呢？跟我现在有什么关系？',
@@ -454,7 +482,11 @@ function csScriptForPersona(personaKey, triggers) {
   return CS_DEFAULT_SCRIPT;
 }
 
-function buildScriptedReply({ script, track, traineeText, priorTraineeTexts, priorCustomerTexts, cumulativeStrengths }) {
+function concernLabel(key) {
+  return CS_CONCERN_LABELS[key] || key;
+}
+
+function buildScriptedPlan({ script, track, traineeText, priorTraineeTexts, priorCustomerTexts, cumulativeStrengths }) {
   const allTrainee = [...priorTraineeTexts, traineeText].filter(Boolean);
   const priorTraineeOnly = priorTraineeTexts.filter(Boolean);
   const usedKeys = priorCustomerTexts.map(normKey);
@@ -465,42 +497,85 @@ function buildScriptedReply({ script, track, traineeText, priorTraineeTexts, pri
   );
   if (newlyCovered.length) {
     const c = newlyCovered[newlyCovered.length - 1];
-    return pickUnused(c.ack, usedKeys)
+    const reply = pickUnused(c.ack, usedKeys)
       || pickUnused(c.press, usedKeys)
       || pickUnused(script.resolved || [], usedKeys)
       || CLOSE_LINES[track][0];
+    const next = concerns.find((x) => !isCovered(allTrainee, x.covered));
+    const nextLabel = next ? `「${concernLabel(next.key)}」` : '收束';
+    return {
+      reply,
+      intent: `ack_${c.key}`,
+      guidance: `学员的回答覆盖了「${concernLabel(c.key)}」。你承认这一点（可顺着学员的话），然后把话题推进到${nextLabel}。`,
+    };
   }
 
   const current = concerns.find((c) => !isCovered(allTrainee, c.covered));
   if (!current) {
-    return pickUnused(script.resolved || [], usedKeys)
+    const reply = pickUnused(script.resolved || [], usedKeys)
       || pickUnused(script.concerns.flatMap((c) => c.ack), usedKeys)
       || CLOSE_LINES[track][0];
+    return {
+      reply,
+      intent: 'resolve',
+      guidance: '你关心的问题都已经得到回应。表达满意/收束，约好后续告知结果，语气符合当前状态。',
+    };
   }
 
   // 学员整体表现稳定（累计 ≥2 个不同 L1 优点）→ 先软化承认，再追问
   if (cumulativeStrengths >= 2) {
     const ack = pickUnused(current.ack, usedKeys);
-    if (ack) return ack;
+    if (ack) {
+      return {
+        reply: ack,
+        intent: `soft_${current.key}`,
+        guidance: `学员整体表现稳定（累计多个优点）。你先软化承认「${concernLabel(current.key)}」的进展，再继续推进。`,
+      };
+    }
   }
   const press = pickUnused(current.press, usedKeys);
-  if (press) return press;
+  if (press) {
+    const second = normKey(press) === normKey(current.press[1]);
+    return {
+      reply: press,
+      intent: `press_${current.key}`,
+      guidance: second
+        ? `学员还没有说清「${concernLabel(current.key)}」，你已追问过一次，这次用更直接/更急的语气换角度追问。`
+        : `学员还没有说清「${concernLabel(current.key)}」。换一个新角度追问，不要重复上一句的原话。`,
+    };
+  }
   const esc = pickUnused(ESCALATE_LINES[track] || [], usedKeys);
-  if (esc) return esc;
+  if (esc) {
+    return {
+      reply: esc,
+      intent: 'escalate',
+      guidance: `你已经追问「${concernLabel(current.key)}」两次仍未得到实质回答。表达失望或升级（找负责人/给最后期限），语气符合当前情绪。`,
+    };
+  }
   if (track === 'cs') {
     const ack = pickUnused(current.ack, usedKeys);
-    if (ack) return ack;
+    if (ack) {
+      return {
+        reply: ack,
+        intent: `soft_${current.key}`,
+        guidance: `追问无果后你给一次缓和机会，承认「${concernLabel(current.key)}」需要处理，请对方给出明确下一步。`,
+      };
+    }
   }
-  return CLOSE_LINES[track][0];
+  return {
+    reply: CLOSE_LINES[track][0],
+    intent: 'close',
+    guidance: '你决定先结束这次沟通，保持礼貌但明确。',
+  };
 }
 
-export function buildCsDialogueReply({
+export function buildCsDialogueTurn({
   personaKey = '', evalResult, traineeText = '',
   priorTraineeTexts = [], priorCustomerTexts = [], cumulativeStrengths = 0,
 }) {
   const triggers = evalResult.triggers || [];
   const script = csScriptForPersona(personaKey, triggers);
-  return buildScriptedReply({
+  return buildScriptedPlan({
     script,
     track: 'cs',
     evalResult,
@@ -511,7 +586,11 @@ export function buildCsDialogueReply({
   });
 }
 
-export function buildSalesDialogueReply({
+export function buildCsDialogueReply(...args) {
+  return buildCsDialogueTurn(...args).reply;
+}
+
+export function buildSalesDialogueTurn({
   evalResult, traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [],
 }) {
   const allTrainee = [...priorTraineeTexts, traineeText].filter(Boolean);
@@ -542,10 +621,15 @@ export function buildSalesDialogueReply({
   );
   if (newlyCovered.length) {
     const key = newlyCovered[newlyCovered.length - 1];
-    return pickUnused(SALES_OBJECTIONS[key].ack, usedKeys)
+    const reply = pickUnused(SALES_OBJECTIONS[key].ack, usedKeys)
       || pickUnused(SALES_OBJECTIONS[key].press, usedKeys)
       || pickUnused(SALES_SIGNAL, usedKeys)
       || CLOSE_LINES.sales[0];
+    return {
+      reply,
+      intent: `ack_${key}`,
+      guidance: `学员回应了你的异议「${SALES_OBJECTION_LABELS[key]}」。承认他的回应，然后推进到下一步（追问案例/具体方案/下一步动作）。`,
+    };
   }
 
   // 学员提出好问题 → 客户打开话题
@@ -554,24 +638,63 @@ export function buildSalesDialogueReply({
   );
   if (hasOpenQuestion) {
     const open = pickUnused(SALES_OPENUP, usedKeys);
-    if (open) return open;
+    if (open) {
+      return {
+        reply: open,
+        intent: 'openup',
+        guidance: '学员问到了点子上。你透露一个真实痛点（复购/客流/执行），说得具体一点。',
+      };
+    }
   }
 
   if (!raised.length) {
-    return pickUnused(SALES_DISCOVERY, usedKeys)
+    const reply = pickUnused(SALES_DISCOVERY, usedKeys)
       || pickUnused(SALES_OPENUP, usedKeys)
       || CLOSE_LINES.sales[0];
+    return {
+      reply,
+      intent: 'discovery',
+      guidance: '你还没抛出明确异议，保持观望，要求对方讲重点或说明与你的关系。',
+    };
   }
 
   const uncovered = raised.find((k) => !isCovered(allTrainee, SALES_OBJECTIONS[k].covered));
   if (uncovered) {
     const obj = SALES_OBJECTIONS[uncovered];
     const press = pickUnused(obj.press, usedKeys);
-    if (press) return press;
+    if (press) {
+      const second = normKey(press) === normKey(obj.press[1]);
+      return {
+        reply: press,
+        intent: `press_${uncovered}`,
+        guidance: second
+          ? `学员还没有回应你的异议「${SALES_OBJECTION_LABELS[uncovered]}」，你已追问过一次，这次更直接地追问。`
+          : `学员没有回应你的异议「${SALES_OBJECTION_LABELS[uncovered]}」。换一个新角度追问，不要重复上一句。`,
+      };
+    }
     const esc = pickUnused(ESCALATE_LINES.sales, usedKeys);
-    if (esc) return esc;
-    return CLOSE_LINES.sales[0];
+    if (esc) {
+      return {
+        reply: esc,
+        intent: 'escalate',
+        guidance: '学员始终说不清重点。你表达不耐烦，准备结束这次沟通。',
+      };
+    }
+    return {
+      reply: CLOSE_LINES.sales[0],
+      intent: 'close',
+      guidance: '你决定结束沟通，礼貌收尾。',
+    };
   }
 
-  return pickUnused(SALES_SIGNAL, usedKeys) || CLOSE_LINES.sales[0];
+  const reply = pickUnused(SALES_SIGNAL, usedKeys) || CLOSE_LINES.sales[0];
+  return {
+    reply,
+    intent: 'signal',
+    guidance: '你的异议都已得到回应。给出购买信号：要求具体方案，或表达可以考虑。',
+  };
+}
+
+export function buildSalesDialogueReply(...args) {
+  return buildSalesDialogueTurn(...args).reply;
 }
