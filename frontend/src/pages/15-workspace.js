@@ -683,7 +683,7 @@ function wsOpenMonthPickerSheet(onPick) {
         }
     });
 }
-function wsBindMonthFilterControl(root, { persona } = {}) {
+function wsBindMonthFilterControl(root, { persona, store } = {}) {
     const btn = root.querySelector('#ws-month-filter-btn');
     if (!btn) return;
     const applyMonth = async (month) => {
@@ -709,6 +709,15 @@ function wsBindMonthFilterControl(root, { persona } = {}) {
             if (lightsBody) lightsBody.innerHTML = wsRenderStoreLights(home?.storeLights);
             const perfBody = root.querySelector('#ws-my-performance');
             if (perfBody) perfBody.innerHTML = wsRenderMyPerformance(myPerf);
+            // 2026-08-02：之前这里漏刷新"当月目标追踪"，导致换月份后那块的营业日目标数字
+            // 永远不变（一直是打开页面那一刻的当前月请求）——补上。
+            const targetTrackEl = root.querySelector('#ws-target-tracking');
+            const targetStore = store || root.querySelector('#ws-target-store-select')?.value || '';
+            if (targetTrackEl && targetStore) {
+                targetTrackEl.innerHTML = '<div class="ws-loading">加载中...</div>';
+                const scopedOv = await wsFetchJson('/api/workspace/overview?month=' + encodeURIComponent(month) + '&store=' + encodeURIComponent(targetStore));
+                targetTrackEl.innerHTML = await wsRenderTargetTracking(scopedOv, targetStore);
+            }
         } catch (e) {
             showNotification('切换月份失败：' + (e?.message || e), 'error');
         } finally {
@@ -2110,13 +2119,20 @@ function wsRenderTargetTrackingStorePicker(allStores) {
         '</select>';
 }
 
+// 2026-08-02：用户反馈"当月目标追踪"换了"查询月份"筛选框后数字一直不变（永远显示当前
+// 自然月的数字）——查证发现wsBindMonthFilterControl的applyMonth只刷新了门店经营明细/
+// 排名/门店红绿灯/我的绩效这几块，完全没碰#ws-target-tracking，这里的请求也一直没带
+// month参数，无论选哪个月都是同一次"当前月"请求。改成读_wsMonthPickerValue（月份筛选框
+// 的当前选中值，wsRenderMonthFilterControl/wsOpenMonthPickerSheet已经在维护这个模块级
+// 变量）一起传给?month=，并在applyMonth里也主动刷新这块。
 function wsBindTargetTrackingStorePicker(root, defaultStore) {
     const sel = root.querySelector('#ws-target-store-select');
     const el = root.querySelector('#ws-target-tracking');
     if (!sel || !el) return;
     const load = (store) => {
         el.innerHTML = '<div class="ws-loading">加载中...</div>';
-        wsFetchJson('/api/workspace/overview?store=' + encodeURIComponent(store)).then((scopedOv) => {
+        const month = typeof _wsMonthPickerValue === 'string' && _wsMonthPickerValue ? _wsMonthPickerValue : '';
+        wsFetchJson('/api/workspace/overview?store=' + encodeURIComponent(store) + (month ? '&month=' + encodeURIComponent(month) : '')).then((scopedOv) => {
             wsRenderTargetTracking(scopedOv, store).then((h) => { el.innerHTML = h; });
         });
     };
@@ -2288,7 +2304,7 @@ async function wsRenderStore(root) {
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
     wsBindOperationalStoreSelector(root);
-    wsBindMonthFilterControl(root, { persona: 'store' });
+    wsBindMonthFilterControl(root, { persona: 'store', store });
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
