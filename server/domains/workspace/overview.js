@@ -428,7 +428,12 @@ function getRealtimeMonthlyScoreFromWeeklyRows(weeklyRows) {
   return Number.isFinite(score) ? score : null;
 }
 
-async function loadWeeklyRollupScore(pool, tenantId, username, period) {
+// 2026-08-02：查证发现喻烽同时在agent_scores里有马己仙(旧，score=81，未受本月扣分影响)
+// 和洪潮(现在实际所在门店，score=-2，已扣121分)两条记录——之前这里只按username过滤，
+// 会把两家店的周度记录混在一起，取"最新一条"全凭updated_at巧合。改成必须按store精确
+// 匹配，只统计"这个人在这家店"的周度记录，不再跨店混算（agents-service-v2那边同款查询
+// admin-api-performance-monthly.js已经同步修了）。
+async function loadWeeklyRollupScore(pool, tenantId, username, store, period) {
   const monthStart = `${period}-01`;
   const monthEnd = monthEndYmdOf(period);
   const monthKey = period.replace('-', '');
@@ -436,6 +441,7 @@ async function loadWeeklyRollupScore(pool, tenantId, username, period) {
     `SELECT period, total_score, updated_at
        FROM agent_scores
       WHERE lower(trim(username)) = lower(trim($1))
+        AND lower(trim(coalesce(store, ''))) = lower(trim($6))
         AND score_model = 'anomaly_rollups_v2'
         AND COALESCE(is_invalidated, false) = false
         AND period LIKE 'week_%'
@@ -448,7 +454,7 @@ async function loadWeeklyRollupScore(pool, tenantId, username, period) {
           (POSITION('__' IN period) > 0 AND split_part(period, '__', 2) = $4)
         )
       ORDER BY period ASC, updated_at DESC`,
-    [username, monthStart, monthEnd, monthKey, tenantId]
+    [username, monthStart, monthEnd, monthKey, tenantId, store]
   );
   return getRealtimeMonthlyScoreFromWeeklyRows(r.rows || []);
 }
@@ -502,7 +508,7 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period, roleS
 
   const rows = await Promise.all(subjects.rows.map(async (s) => {
     const finalized = await loadFinalizedMonthlyScore(pool, tenantId, s.username, s.store, s.role, period);
-    const totalScore = finalized != null ? finalized : await loadWeeklyRollupScore(pool, tenantId, s.username, period);
+    const totalScore = finalized != null ? finalized : await loadWeeklyRollupScore(pool, tenantId, s.username, s.store, period);
     const rating = ratingsByUser.get(String(s.username || '').toLowerCase()) || {};
     return {
       username: s.username, name: s.name, store: s.store, role: s.role, position: s.position,
