@@ -2,6 +2,7 @@
  * P5.4 peel: approval list/detail/read/delete route bindings from registerApprovalRoutes.
  */
 import { canAccessApprovalCenter } from '../../store-duty-bindings.js';
+import { approvalTypeLabel } from './normalize-helpers.js';
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'approvals', handler: 'approval-routes' });
@@ -54,6 +55,7 @@ async function decorateApprovalRow(state0, row, stateOrDbFindUserRecord) {
   );
   return {
     ...row,
+    type_label: approvalTypeLabel(row?.type),
     applicant_name: String(applicantRec?.name || row?.applicant_username || '').trim(),
     current_assignee_name: String(assigneeRec?.name || row?.current_assignee_username || '').trim(),
     chain: chainDecorated,
