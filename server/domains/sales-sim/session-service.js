@@ -282,6 +282,16 @@ export async function submitTurn(pool, {
       || {};
     const priorTraineeTexts = turns.filter((t) => t.role === 'trainee').map((t) => t.content);
     const priorCustomerTexts = turns.filter((t) => t.role === 'customer').map((t) => t.content);
+    // 跨轮累计 L1 优点（按原则去重）：学员整体表现稳定 → 客户软化
+    const seenPrinciples = new Set();
+    for (const t of turns) {
+      for (const s of (t.principle_hits?.strengths || [])) {
+        if (s?.principle_id) seenPrinciples.add(s.principle_id);
+      }
+    }
+    for (const s of (evalResult.strengths || [])) {
+      if (s?.principle_id) seenPrinciples.add(s.principle_id);
+    }
     const ruleReply = buildCustomerReply({
       track: session.track,
       persona,
@@ -291,6 +301,7 @@ export async function submitTurn(pool, {
       traineeText,
       priorTraineeTexts,
       priorCustomerTexts,
+      cumulativeStrengths: seenPrinciples.size,
     });
     const history = [...turns, { role: 'trainee', content: traineeText }];
     customerText = await maybePolishCustomerReply(_callLLM, {

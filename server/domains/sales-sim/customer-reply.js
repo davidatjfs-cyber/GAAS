@@ -4,45 +4,13 @@
 
 import { isStoreTrack, buildStoreCustomerReply, shouldEndStoreSession } from './store-tracks.js';
 import { buildIncidentLockedReply } from './incident-dialogue.js';
+import { buildCsDialogueReply, buildSalesDialogueReply } from './persona-dialogue.js';
 export { buildIncidentLockedReply } from './incident-dialogue.js';
 
 const SALES_REPLIES = {
-  default: [
-    '你继续说。',
-    '然后呢？跟我现在有什么关系？',
-    '我听着呢，重点是什么？',
-  ],
   early_pitch: [
     '又开始讲功能了。我问你，你到底知不知道我门店现在最头疼什么？',
     '别念说明书。你们能解决什么具体问题？',
-  ],
-  too_expensive: [
-    '一年两万对我来说不便宜。你们能保证回本吗？',
-    '竞品更便宜，凭什么你们贵？',
-  ],
-  has_system: [
-    '我们已经有系统了，再买一套不是重复浪费吗？',
-    '数据都在旧系统里，你们怎么接？',
-  ],
-  think_again: [
-    '我再考虑考虑吧，你们先别天天催。',
-    '以后再说，这阵子没空决策。',
-  ],
-  no_time: [
-    '真的没时间，你发资料我有空再看。',
-    '（沉默了几秒）…你还有别的事吗？没有我先挂了。',
-  ],
-  ask_features: [
-    '那你们到底有什么功能？别绕。',
-    '功能列表发我看看，我自己判断。',
-  ],
-  ai_useless: [
-    'AI有什么用？我们店里又不缺聊天机器人。',
-    '上次被AI方案坑过，别跟我画饼。',
-  ],
-  good_question: [
-    '这个问题问到点上了。我们现在最烦的是老客不回来。',
-    '你既然问了…复购这块确实差，大概百分之十几。',
   ],
   hangup: [
     '行了，我先忙了，有需要再联系你们。',
@@ -67,12 +35,7 @@ const SALES_REPLIES = {
 };
 
 const CS_REPLIES = {
-  default: ['那你打算怎么处理？', '你倒是给个准话。'],
   no_soothe: ['你们就这态度？我是来解决问题的，不是听你推诿的。', '越说我越生气。'],
-  good_soothe: ['行，那你先查，我等你结果。', '好，你尽快，我这边会员还在问。'],
-  refund: ['别绕弯子，能不能退就直说。', '预期完全没达到，我为什么要继续付？'],
-  ux_bad: ['我就是找不到入口，你们设计给谁用的？', '有没有更简单的操作方式？'],
-  resolved: ['如果真能处理好，我可以再观察两天。', '行，那你处理完务必跟我说一声。'],
 };
 
 function pick(arr, salt = 0) {
@@ -119,7 +82,7 @@ export function shouldEndSession(session, track) {
 
 export function buildCustomerReply({
   track, persona, evalResult, session, turnNo,
-  traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [],
+  traineeText = '', priorTraineeTexts = [], priorCustomerTexts = [], cumulativeStrengths = 0,
 }) {
   const incident = session?.incident_snapshot || session?.meta?.incident || null;
   if (incident?.locked_facts || incident?.card_key) {
@@ -133,19 +96,21 @@ export function buildCustomerReply({
   const tags = new Set((evalResult.coachTags || []).map((t) => t.code));
   const triggers = evalResult.triggers || [];
   const salt = turnNo + Number(session.close_readiness || 0);
+  const personaKey = persona?.persona_key || '';
 
   if (track === 'cs') {
     if (tags.has('no_soothe') || tags.has('hard_deny')) return pick(CS_REPLIES.no_soothe, salt);
-    if (triggers.includes('refund') || /refund|lawyer/.test(persona?.persona_key || '')) {
-      return pick(CS_REPLIES.refund, salt);
-    }
-    if (triggers.includes('ux_bad')) return pick(CS_REPLIES.ux_bad, salt);
-    if (/rage|escalation/.test(persona?.persona_key || '') && (evalResult.violations || []).length) {
+    if (/rage|escalation/.test(personaKey) && (evalResult.violations || []).length) {
       return '我已经在录音了，你们继续这样我马上曝光。';
     }
-    if ((evalResult.strengths || []).length >= 2) return pick(CS_REPLIES.good_soothe, salt);
-    if (session.satisfaction >= 75) return pick(CS_REPLIES.resolved, salt);
-    return pick(CS_REPLIES.default, salt);
+    return buildCsDialogueReply({
+      personaKey,
+      evalResult,
+      traineeText,
+      priorTraineeTexts,
+      priorCustomerTexts,
+      cumulativeStrengths,
+    });
   }
 
   const traits = persona?.profile?.traits || [];
@@ -163,14 +128,12 @@ export function buildCustomerReply({
   if (tags.has('early_pitch') || tags.has('feature_dump')) return pick(SALES_REPLIES.early_pitch, salt);
   if (traits.includes('沉默') && turnNo % 2 === 0) return pick(SALES_REPLIES.silence, salt);
   if (diff >= 7 && turnNo >= 2 && salt % 3 === 0) return pick(SALES_REPLIES.interrupt, salt);
-  if ((evalResult.strengths || []).some((s) => s.principle_id === 'ask_first' || s.principle_id === 'no_argue')) {
-    if (turnNo >= 2) return pick(SALES_REPLIES.good_question, salt);
-  }
-  for (const key of ['too_expensive', 'has_system', 'think_again', 'no_time', 'ask_features', 'ai_useless']) {
-    if (triggers.includes(key)) return pick(SALES_REPLIES[key], salt);
-  }
-  if (traits.includes('极忙') && turnNo >= 4) return pick(SALES_REPLIES.no_time, salt);
-  return pick(SALES_REPLIES.default, salt);
+  return buildSalesDialogueReply({
+    evalResult,
+    traineeText,
+    priorTraineeTexts,
+    priorCustomerTexts,
+  });
 }
 
 /** 可选：用 LLM 让客户语气更贴人格；失败则返回 ruleReply */
