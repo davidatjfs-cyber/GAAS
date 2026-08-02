@@ -96,6 +96,32 @@ export function shouldEndSession(session, track) {
   return { end: false };
 }
 
+/** 满意收束：客户诉求已全部覆盖且满意度/成交信号达标 → 自然道谢收场（第二次 resolve 时触发） */
+export function shouldResolveSession({
+  track, session, turnPlan, priorCustomerIntents = [], turnNo = 1,
+}) {
+  if (turnNo < 2 || !turnPlan) return { end: false };
+  const intent = turnPlan.intent || '';
+  const priorResolves = priorCustomerIntents.filter((i) => i === 'resolve' || i === 'signal').length;
+  if (track === 'cs' && intent === 'resolve' && priorResolves >= 1) {
+    if (Number(session.satisfaction) >= 65) {
+      return { end: true, outcome: 'resolved', closingLine: '好，那就按你说的办，处理完了告诉我一声，辛苦了。' };
+    }
+    if (Number(session.satisfaction) >= 55) {
+      return { end: true, outcome: 'completed', closingLine: '行，那就先这样，处理完了跟我说一声。' };
+    }
+  }
+  if (track === 'sales' && intent === 'signal' && priorResolves >= 1) {
+    if (Number(session.close_readiness) >= 65) {
+      return { end: true, outcome: 'won', closingLine: '行，那就先按这个方案来，你出个具体计划我看看。' };
+    }
+    if (Number(session.close_readiness) >= 50) {
+      return { end: true, outcome: 'completed', closingLine: '行，方案先发我看看，回头再说。' };
+    }
+  }
+  return { end: false };
+}
+
 function plan(reply, intent, guidance = '') {
   return { reply, intent, guidance };
 }

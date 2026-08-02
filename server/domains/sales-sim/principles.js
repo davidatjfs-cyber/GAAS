@@ -21,6 +21,8 @@ export const CS_PRINCIPLES = [
   { id: 'ask_expectation', label: '探询期望', skill: 'diagnosis' },
   { id: 'dig_refund_root', label: '退款/升级先挖根因', skill: 'resolution' },
   { id: 'close_loop', label: '闭环交付', skill: 'resolution' },
+  { id: 'own_problem', label: '先揽责不推诿', skill: 'resolution' },
+  { id: 'no_overpromise', label: '承诺有边界', skill: 'resolution' },
 ];
 
 export const SALES_SKILLS = ['questioning', 'listening', 'value', 'closing'];
@@ -34,6 +36,10 @@ const APOLOGY_RE = /抱歉|对不起|不好意思/;
 const EMPATHY_RE = /理解|换我|也会着急|一起处理|跟您一起/;
 const HARD_REFUND_DENY_RE = /不能退|没法退|按规定不能|退不了/;
 const EXPECTATION_ASK_RE = /希望.{0,8}怎么|期望|当时想|方便告诉/;
+const BLAME_SHIFT_RE = /不是.{0,6}(我们|我)(控制|负责|管|的问题)|不归我们|不关我们|不归我|我们(也)?(控制不了|没办法|无能为力)|都是(别人|运营商|第三方|用户自己)|(运营商|第三方|用户自己).{0,10}(问题|造成的)/;
+const OVERPROMISE_RE = /保证.{0,6}(一定|绝对|马上|立刻|没问题)|100%|百分百|肯定没问题|肯定能|绝不会再|包你满意|绝对不/;
+const CALM_ACK_RE = /(^|[。！？，])\s*(好|行|可以|行吧|没问题|谢谢|明白|知道|辛苦|理解)[，。!！]?/;
+const EMOTION_WORDS_RE = /生气|着急|受够|气死|投诉|什么情况|怎么回事|太差|烦|气炸|失望|崩溃|火大|恶心/;
 
 export function detectCustomerTriggers(customerText = '', track = null) {
   if (track && isStoreTrack(track)) return detectStoreTriggers(customerText);
@@ -71,10 +77,44 @@ export function evaluateTraineeUtterance({ track, traineeText, customerText, tur
   if (track === 'sales') {
     evaluateSalesTurn({ text, triggers, turnNo, priorTraineeCount, violations, strengths, coachTags });
   } else {
-    evaluateCsTurn({ text, triggers, violations, strengths, coachTags });
+    evaluateCsTurn({ text, customer, triggers, violations, strengths, coachTags, turnNo });
   }
 
   return { violations, strengths, coachTags, triggers, hasQuestion: QUESTION_RE.test(text) };
+}
+
+/** 三态兜底：无论是否有违规，每回合都给出教练旁白（表扬/中性提示），保证即时反馈 */
+function pushFallbackCoach({ coachTags, strengths, triggers, track, text, turnNo, calmAck = false }) {
+  if (coachTags.length) return;
+  if (strengths.length) {
+    coachTags.push({
+      code: 'strength_note',
+      level: 'good',
+      message: `这一步做得好：${strengths[0].detail}`,
+    });
+    return;
+  }
+  let pool;
+  if (track === 'cs') {
+    if (triggers.includes('refund')) {
+      pool = ['退款异议：先挖未达预期原因，再一起想办法，别急着拒绝。', '客户提退款，先问哪里没达到预期，再给方案。'];
+    } else if (triggers.includes('ux_bad')) {
+      pool = ['功能不满：先问客户希望怎么操作，再给替代方案。', '客户嫌不好用，先探询期望操作，别辩解。'];
+    } else if ((triggers.includes('complaint') || triggers.includes('angry')) && !calmAck) {
+      pool = ['客户情绪还在：先回应感受（抱歉+理解），再给方案和时间。', '先安抚再处理：一句话共情，再确认事实和时限。'];
+    } else {
+      pool = ['这一步可以更好：先接住客户上一句，再给明确方案+时间+闭环。', '试着给客户一个可验证的下一步（时间/谁确认/怎么告知）。'];
+    }
+  } else if (QUESTION_RE.test(text)) {
+    pool = ['保持提问节奏，把客户回答里的关键点接住再推进。', '问得好，继续深挖一个具体点，再谈方案。'];
+  } else {
+    pool = ['先问一个问题，确认客户最关心什么，再继续。', '别急着讲，先请求提问资格或问一个具体问题。'];
+  }
+  coachTags.push({
+    code: 'next_hint',
+    level: 'info',
+    message: pool[Math.abs(turnNo || 0) % pool.length],
+  });
 }
 
 function evaluateSalesTurn({ text, triggers, turnNo, priorTraineeCount, violations, strengths, coachTags }) {
@@ -128,10 +168,13 @@ function evaluateSalesTurn({ text, triggers, turnNo, priorTraineeCount, violatio
   } else if (QUESTION_RE.test(text)) {
     strengths.push({ principle_id: 'ask_first', detail: '本轮包含提问' });
   }
+
+  pushFallbackCoach({ coachTags, strengths, triggers, track: 'sales', text, turnNo });
 }
 
-function evaluateCsTurn({ text, triggers, violations, strengths, coachTags }) {
-  if (triggers.includes('complaint') || triggers.includes('angry')) {
+function evaluateCsTurn({ text, customer, triggers, violations, strengths, coachTags, turnNo }) {
+  const calmAck = CALM_ACK_RE.test(customer || '') && !EMOTION_WORDS_RE.test(customer || '');
+  if ((triggers.includes('complaint') || triggers.includes('angry')) && !calmAck) {
     if (!APOLOGY_RE.test(text) && !EMPATHY_RE.test(text)) {
       violations.push({ principle_id: 'soothe_first', detail: '投诉/情绪场景缺少安抚' });
       coachTags.push({ code: 'no_soothe', level: 'error', message: '先安抚再处理，不要直接查问题' });
@@ -166,6 +209,20 @@ function evaluateCsTurn({ text, triggers, violations, strengths, coachTags }) {
   if (/处理好|处理完|跟您说明|稍后回访|解决后/.test(text)) {
     strengths.push({ principle_id: 'close_loop', detail: '提到闭环交付' });
   }
+  if (/监控|汇报|通知|确认|跟进|回访|说一声|发完|全部发送|全部发出|告知|结果/.test(text)) {
+    strengths.push({ principle_id: 'close_loop', detail: '提到验证/闭环交付' });
+  }
+
+  if (BLAME_SHIFT_RE.test(text)) {
+    violations.push({ principle_id: 'own_problem', detail: '向客户推诿责任，未先揽责' });
+    coachTags.push({ code: 'blame_shift', level: 'error', message: '先揽责不推诿：承认客户处境，再说明你方会做什么' });
+  }
+  if (OVERPROMISE_RE.test(text)) {
+    violations.push({ principle_id: 'no_overpromise', detail: '过度承诺，未给可核验的边界' });
+    coachTags.push({ code: 'overpromise', level: 'warn', message: '承诺要可兑现：给具体动作和时间，别用「保证/绝对」' });
+  }
+
+  pushFallbackCoach({ coachTags, strengths, triggers, track: 'cs', text, turnNo, calmAck });
 }
 
 export function scoreSkillsFromEvals(track, evals = []) {

@@ -3,8 +3,9 @@ import { ensurePlaybookSeed, listPlaybooks } from './playbooks.js';
 import { evaluateTraineeUtterance, detectCustomerTriggers } from './principles.js';
 import {
   applyStateDelta, buildCustomerTurn, maybeGenerateCustomerReply, maybePolishCustomerReply,
-  shouldEndSession, similarLine,
+  shouldEndSession, shouldResolveSession, similarLine,
 } from './customer-reply.js';
+import { maybeRefineEvaluationWithLLM, applyRefinedEvaluation } from './llm-eval.js';
 import { buildDebrief } from './debrief.js';
 import { applySessionToRank, getRankStatus } from './rank.js';
 import { recommendNextSession } from './curriculum.js';
@@ -224,13 +225,24 @@ export async function submitTurn(pool, {
   const priorTraineeCount = turns.filter((t) => t.role === 'trainee').length;
   const turnNo = priorTraineeCount + 1;
 
-  const evalResult = evaluateTraineeUtterance({
+  const priorTraineeTexts = turns.filter((t) => t.role === 'trainee').map((t) => t.content);
+  const priorCustomerTexts = turns.filter((t) => t.role === 'customer').map((t) => t.content);
+  const ruleEval = evaluateTraineeUtterance({
     track: session.track,
     traineeText,
     customerText: lastCustomer?.content || '',
     turnNo,
     priorTraineeCount,
   });
+  // LLM 复核单句判定（上下文纠偏 + 补漏 + 教练旁白）；失败回退规则判定
+  const refined = await maybeRefineEvaluationWithLLM(_callLLM, {
+    track: session.track,
+    traineeText,
+    customerText: lastCustomer?.content || '',
+    evalResult: ruleEval,
+    turnNo,
+  });
+  const evalResult = refined?.ok ? applyRefinedEvaluation(ruleEval, refined) : ruleEval;
   evalResult.turn_no = turnNo;
 
   const state = applyStateDelta(session, { evalResult, track: session.track });
@@ -281,8 +293,10 @@ export async function submitTurn(pool, {
     const incidentSnap = session.incident_snapshot
       || (typeof session.meta === 'object' ? session.meta?.incident : null)
       || {};
-    const priorTraineeTexts = turns.filter((t) => t.role === 'trainee').map((t) => t.content);
-    const priorCustomerTexts = turns.filter((t) => t.role === 'customer').map((t) => t.content);
+    const priorCustomerIntents = turns
+      .filter((t) => t.role === 'customer')
+      .map((t) => t.state_delta?.customer_intent)
+      .filter(Boolean);
     // 跨轮累计 L1 优点（按原则去重）：学员整体表现稳定 → 客户软化
     const seenPrinciples = new Set();
     for (const t of turns) {
@@ -307,7 +321,20 @@ export async function submitTurn(pool, {
     const ruleReply = turnPlan.reply;
     const history = [...turns, { role: 'trainee', content: traineeText }];
     let customerIntent = turnPlan.intent || null;
-    if (incidentSnap?.card_key || incidentSnap?.locked_facts) {
+    // 满意收束：诉求全部覆盖 + 满意度达标 → 客户自然道谢收场（第二次 resolve 触发）
+    const successEnd = shouldResolveSession({
+      track: session.track,
+      session: { ...session, ...state },
+      turnPlan,
+      priorCustomerIntents,
+      turnNo,
+    });
+    if (successEnd.end) {
+      customerText = successEnd.closingLine;
+      finished = await finishSession(pool, {
+        sessionId, username, outcome: successEnd.outcome, force: true,
+      });
+    } else if (incidentSnap?.card_key || incidentSnap?.locked_facts) {
       // 事故卡路径保留原有规则+润色
       customerText = await maybePolishCustomerReply(_callLLM, {
         persona: persona || { title: incidentSnap.title, profile: incidentSnap },
@@ -319,10 +346,6 @@ export async function submitTurn(pool, {
       });
     } else {
       // 人格路径：LLM 按意图+状态生成整句
-      const priorCustomerIntents = turns
-        .filter((t) => t.role === 'customer')
-        .map((t) => t.state_delta?.customer_intent)
-        .filter(Boolean);
       const generated = await maybeGenerateCustomerReply(_callLLM, {
         persona,
         track: session.track,
