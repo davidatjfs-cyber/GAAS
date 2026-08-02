@@ -19,6 +19,11 @@ test('classifyAttributionAudience + friendlyAttributionTitle', () => {
   assert.equal(classifyAttributionAudience({ campaign_type: '自动营销', target_audience: '规则圈选', rule_key: 'auto_x', title: '' }), '自动营销客户');
   assert.equal(friendlyAttributionTitle('dormant'), '沉睡客户召回');
   assert.equal(friendlyAttributionTitle('unknown_title'), 'unknown_title');
+  assert.equal(friendlyAttributionTitle('newcomer_8d'), '新客回头·8天');
+  assert.equal(friendlyAttributionTitle('newcomer_4d'), '新客回头·4天');
+  assert.equal(friendlyAttributionTitle('prospect_recall'), '到店未买单潜客召回');
+  assert.equal(friendlyAttributionTitle('vip_winback'), 'VIP专属召回·61-365天');
+  assert.equal(friendlyAttributionTitle('hc_weekday_lunch'), '洪潮平日午市客唤醒');
 });
 
 test('attributionCostExpr only charges sms channel', () => {
@@ -48,7 +53,7 @@ test('assembleAttributionReport maps query rows into report shape', () => {
     { rows: [{ campaign_type: '自动营销', target_audience: '沉睡召回', rule_key: 'dormant', title: 'dormant', returned_customers: 2, attributed_orders: 2, attributed_revenue: 800 }] },
     { rows: [{ day: '2026-07-20', touched_customers: 4, returned_customers: 2, attributed_orders: 2, attributed_revenue: 800 }] },
     { rows: [{ phone: '13812345678', store_name: '马己仙', store_id: '51866138', last_touch_date: '2026-07-18', last_order_date: '2026-07-20', attributed_orders: 1, attributed_revenue: 600 }] },
-    { rows: [{ phone: '13812345678', biz_date: '2026-07-20', store_id: '51866138', store_name: '马己仙', table_no: 'A1', diners: 2, order_no: 'O1', revenue: 600, pre_discount_revenue: 650, discount_amount: 50 }] },
+    { rows: [{ phone: '13812345678', biz_date: '2026-07-20', order_time: '2026-07-20 12:58', checkout_time: '13:03', store_id: '51866138', store_name: '马己仙', table_no: 'A1', diners: 2, order_no: 'O1', revenue: 600, pre_discount_revenue: 650, discount_amount: 50 }] },
     { rows: [{ campaign_count: 1, suggested_customers: 20, manual_revenue: 0, manual_cost: 0 }] },
   ];
 
@@ -67,4 +72,6 @@ test('assembleAttributionReport maps query rows into report shape', () => {
   assert.equal(result.report.by_campaign[0].title, '沉睡客户召回');
   assert.equal(result.report.top_customers[0].phone, '138****5678');
   assert.equal(result.report.order_records[0].order_no, 'O1');
+  assert.equal(result.report.order_records[0].order_time, '2026-07-20 12:58');
+  assert.equal(result.report.order_records[0].checkout_time, '13:03');
 });

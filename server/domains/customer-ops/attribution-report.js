@@ -43,6 +43,35 @@ export function friendlyAttributionTitle(value) {
     mj_dinner_weekend: '周末晚市客户邀约',
     dormant_90_180: '沉睡90-180天客户召回',
     stored_value: '储值客户维护',
+    newcomer_4d: '新客回头·4天',
+    newcomer_8d: '新客回头·8天',
+    newcomer_recall: '新客二次召回·21-60天',
+    newcomer_recall_21_60: '新客二次召回·21-60天',
+    regular_cooling: '常客降温唤醒·21-60天',
+    regular_cooling_21_60: '常客降温唤醒·21-60天',
+    vip_winback: 'VIP专属召回·61-365天',
+    vip_winback_61_365: 'VIP专属召回·61-365天',
+    dormant_60_90: '沉睡召回·60-90天',
+    lost_long: '长期流失召回·181-365天',
+    lost_over365: '长期流失超1年召回',
+    hc_weekday_lunch: '洪潮平日午市客唤醒',
+    mj_dinner_weekend_gift: '马己仙晚市赠菜券(A/B免费菜组)',
+    prospect_recall: '到店未买单潜客召回',
+    prospect_light_touch: '潜在新客轻触达',
+    dormant_vip_winback: '沉睡VIP老客大钩子召回',
+    dormant_normal_winback: '沉睡普通老客召回券',
+    new_customer_welcome: '新客72小时黄金窗口问候',
+    active_vip_privilege: '活跃VIP专属感运营',
+    at_risk_winback: '临界客温和提醒',
+    loyal_birthday_month: '忠诚客户生日月礼遇',
+    lost_lowfreq_lastcall: '流失低频客一次性小券',
+    seven_days_no_visit: '7天未到店关怀',
+    bad_review_compensation: '差评补偿关怀',
+    new_dish_launch_notify: '新品上线通知',
+    lost_90_winback: '流失客(3-6月)召回券',
+    lost_180_winback: '流失客(6-12月)召回券',
+    lost_365_winback: '流失客(1年+)唤醒大券',
+    stored_value_remind: '储值余额提醒',
   };
   return map[s] || s || '自动营销触达';
 }
@@ -209,6 +238,8 @@ export function assembleAttributionReport({
       order_records: orderRecords.rows.map((r) => ({
         phone: maskAttributionPhone(r.phone),
         date: r.biz_date ? String(r.biz_date).slice(0, 10) : '',
+        order_time: r.order_time ? String(r.order_time).slice(0, 16) : '',
+        checkout_time: r.checkout_time ? String(r.checkout_time).slice(0, 5) : '',
         store_id: r.store_id || '',
         store_name: r.store_name || r.store_id || '',
         table_no: r.table_no || '',
@@ -265,7 +296,7 @@ function buildAttributionSql(tenantId, dateFrom, dateTo, storeFilter, storeId) {
       dl.created_at AS touched_at,
       ${attributionCostExpr('dl.channel')}::numeric AS touch_cost
     FROM growth_delivery_logs dl
-    LEFT JOIN growth_touch_rules tr ON tr.rule_key = dl.rule_key
+    LEFT JOIN growth_touch_rules tr ON tr.rule_key = dl.rule_key AND tr.tenant_id = dl.tenant_id
     CROSS JOIN LATERAL (
       SELECT regexp_replace(COALESCE(dl.payload->>'phone', ''), '[^0-9]', '', 'g') AS phone
     ) clean_phone
@@ -276,35 +307,63 @@ function buildAttributionSql(tenantId, dateFrom, dateTo, storeFilter, storeId) {
       AND ($5::text = '' OR dl.store_id = $5 OR dl.store_id = ANY($4::text[]))
       AND clean_phone.phone <> ''
   `;
+  // 归因关联：把手机号清洗一次后拆成「手机号」+「会员ID」两条 hash join 再合并。
+  // 旧写法把 regexp_replace 写在 join 条件里且带 OR，PostgreSQL 只能走嵌套循环
+  // （实测 44M 次逐行正则，单查询 40s+ 导致报表 504）。拆分后 7 月全部门店 142ms。
   const attributedSql = `
-    WITH touches AS (${touchesSql})
-    SELECT DISTINCT ON (po.order_no)
-      t.campaign_id,
-      t.title,
-      t.channel,
-      t.campaign_type,
-      t.target_audience,
-      t.rule_key,
-      COALESCE(NULLIF(t.store_id, ''), po.store_id, '') AS store_id,
-      po.store_name,
-      t.phone,
-      t.customer_id,
-      t.touched_at,
-      po.order_no,
-      po.biz_date,
-      po.table_no,
-      po.diners,
-      COALESCE(po.amount_after_discount, 0)::numeric AS revenue,
-      COALESCE(po.amount_before_discount, 0)::numeric AS pre_discount_revenue,
-      ABS(COALESCE(po.total_discount, 0)::numeric) AS discount_amount
-    FROM touches t
-    JOIN pos_orders po
-      ON (regexp_replace(COALESCE(po.phone, ''), '[^0-9]', '', 'g') = t.phone OR (t.customer_id IS NOT NULL AND po.customer_id = t.customer_id))
-     AND po.biz_date >= $2::date
-     AND po.biz_date <= $3::date
-     AND ($5::text = '' OR po.store_id = ANY($4::text[]))
-    WHERE po.order_no IS NOT NULL AND po.order_no <> ''
-    ORDER BY po.order_no, t.touched_at DESC
+    WITH touches AS (${touchesSql}),
+    orders AS MATERIALIZED (
+      SELECT po.order_no, po.store_id, po.store_name, po.biz_date, po.table_no, po.diners,
+             po.amount_after_discount, po.amount_before_discount, po.total_discount,
+             po.customer_id, po.order_time, po.checkout_time,
+             regexp_replace(COALESCE(po.phone, ''), '[^0-9]', '', 'g') AS clean_phone
+      FROM pos_orders po
+      WHERE po.biz_date >= $2::date
+        AND po.biz_date <= $3::date
+        AND ($5::text = '' OR po.store_id = ANY($4::text[]))
+        AND po.order_no IS NOT NULL AND po.order_no <> ''
+    )
+    SELECT DISTINCT ON (order_no)
+      campaign_id,
+      title,
+      channel,
+      campaign_type,
+      target_audience,
+      rule_key,
+      store_id,
+      store_name,
+      phone,
+      customer_id,
+      touched_at,
+      order_no,
+      biz_date,
+      order_time,
+      checkout_time,
+      table_no,
+      diners,
+      revenue,
+      pre_discount_revenue,
+      discount_amount
+    FROM (
+      SELECT t.campaign_id, t.title, t.channel, t.campaign_type, t.target_audience, t.rule_key,
+             COALESCE(NULLIF(t.store_id, ''), po.store_id, '') AS store_id, po.store_name,
+             t.phone, t.customer_id, t.touched_at, po.order_no, po.biz_date, po.order_time, po.checkout_time,
+             po.table_no, po.diners,
+             COALESCE(po.amount_after_discount, 0)::numeric AS revenue,
+             COALESCE(po.amount_before_discount, 0)::numeric AS pre_discount_revenue,
+             ABS(COALESCE(po.total_discount, 0)::numeric) AS discount_amount
+      FROM touches t JOIN orders po ON po.clean_phone = t.phone
+      UNION ALL
+      SELECT t.campaign_id, t.title, t.channel, t.campaign_type, t.target_audience, t.rule_key,
+             COALESCE(NULLIF(t.store_id, ''), po.store_id, '') AS store_id, po.store_name,
+             t.phone, t.customer_id, t.touched_at, po.order_no, po.biz_date, po.order_time, po.checkout_time,
+             po.table_no, po.diners,
+             COALESCE(po.amount_after_discount, 0)::numeric AS revenue,
+             COALESCE(po.amount_before_discount, 0)::numeric AS pre_discount_revenue,
+             ABS(COALESCE(po.total_discount, 0)::numeric) AS discount_amount
+      FROM touches t JOIN orders po ON t.customer_id IS NOT NULL AND po.customer_id = t.customer_id
+    ) joined
+    ORDER BY order_no, touched_at DESC
   `;
   return { touchesSql, attributedSql, touchParams };
 }
@@ -366,10 +425,12 @@ async function runAttributionQueries(pool, { touchesSql, attributedSql, touchPar
       FROM attributed GROUP BY phone ORDER BY attributed_revenue DESC LIMIT 20`, params),
     pool.query(`
       WITH attributed AS (${attributedSql})
-      SELECT phone, biz_date, store_id, store_name, table_no, diners, order_no, revenue, pre_discount_revenue, discount_amount
+      SELECT phone, biz_date,
+             to_char(order_time AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI') AS order_time,
+             to_char(checkout_time AT TIME ZONE 'Asia/Shanghai', 'HH24:MI') AS checkout_time,
+             store_id, store_name, table_no, diners, order_no, revenue, pre_discount_revenue, discount_amount
       FROM attributed
-      ORDER BY biz_date DESC, revenue DESC
-      LIMIT 80`, params),
+      ORDER BY biz_date DESC, order_time DESC, revenue DESC`, params),
     pool.query(`
       SELECT COALESCE(SUM(c.target_count), 0)::int AS suggested_customers, COUNT(*)::int AS campaign_count,
              COALESCE(SUM(c.budget), 0)::numeric AS planned_budget, COALESCE(SUM(r.actual_send_count), 0)::int AS manual_send_count,
