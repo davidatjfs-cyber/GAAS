@@ -111,7 +111,7 @@ export function shouldResolveSession({
       return { end: true, outcome: 'completed', closingLine: '行，那就先这样，处理完了跟我说一声。' };
     }
   }
-  if (track === 'sales' && intent === 'signal' && priorResolves >= 1) {
+  if (track === 'sales' && (intent === 'signal' || intent === 'resolve') && priorResolves >= 1) {
     if (Number(session.close_readiness) >= 65) {
       return { end: true, outcome: 'won', closingLine: '行，那就先按这个方案来，你出个具体计划我看看。' };
     }
@@ -192,9 +192,11 @@ export function buildCustomerTurn({
   }
   return buildSalesDialogueTurn({
     evalResult,
+    personaKey,
     traineeText,
     priorTraineeTexts,
     priorCustomerTexts,
+    cumulativeStrengths,
   });
 }
 
@@ -235,7 +237,7 @@ export async function maybeGenerateCustomerReply(callLLM, {
   if (typeof callLLM !== 'function' || !ruleReply) return { reply: ruleReply, intent };
   try {
     const profile = persona?.profile || {};
-    const roleLine = track === 'sales' ? '顾客（老板/决策人）' : '顾客/客户';
+    const roleLine = track === 'sales' ? '顾客（餐饮老板/决策人）' : '顾客（餐饮老板/门店负责人）';
     const factsLine = Array.isArray(lockedFacts) && lockedFacts.length
       ? `锁定事实（不得编造/新增）：${lockedFacts.join('；')}`
       : '';
