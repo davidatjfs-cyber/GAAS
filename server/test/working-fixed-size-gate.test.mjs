@@ -316,8 +316,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 白名单遗漏 store_production_manager）。
  * 2026-08-01 第五十六次上调（71699→71711）：工作台待批可直接操作（店长/出品经理视图接入
  * pending-confirmations + 审批链列表接入 openApprovalDetailModal）。
+ * 2026-08-01 第五十七次上调（71711→71774）：门店经营明细/营业额/客流量/人效排名/门店
+ * 红绿灯/我的绩效加共享月份筛选下拉框。
  */
-const MAX_LINES = 71711;
+const MAX_LINES = 71774;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
