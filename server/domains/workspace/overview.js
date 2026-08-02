@@ -403,12 +403,29 @@ async function turnoverSummary(pool, tenantId, storeNames, getTurnoverRate) {
 // 查不到就退化到本月最新一条周度anomaly_rollups_v2的total_score（未关账"实时快照"）；
 // ③评级(execution/attitude/ability_rating)继续读employee_scores（GAAS自有概念，
 // agents-service-v2没有对应数据，关账前本来就是空，不算这次要修的问题）。
+// 2026-08-02：用户核实喻烽7月充值/包房/服务三类扣了121分，但月度分数显示81分——查证
+// agents-service-v2生产库发现同一个period(如week_2026-07-27__202607)有两条冲突的行：
+// 一条本月累计已扣19分/总分81(旧的、扣分还没算完的周度计算)，另一条updated_at更晚、
+// 本月累计已扣102分/总分-2(更完整)。这个函数是从agents-service-v2 admin-api-monthly-
+// helpers.js原样复刻过来的("下属绩效评级"改real-time数据源那次)，那边假设同一period
+// 不会有重复行，直接取数组最后一个元素——配合调用方`ORDER BY period ASC, updated_at
+// DESC`，同一period内多条反而是updated_at最旧的排在数组最后，被误选中。两边一起改成
+// 显式按period找最大值，同period内部按updated_at取最新，不依赖数组位置（agents-service-v2
+// 那边的admin-api-monthly-helpers.js已经同步修了这个函数，这里保持口径一致）。
 function getRealtimeMonthlyScoreFromWeeklyRows(weeklyRows) {
-  for (let i = (weeklyRows || []).length - 1; i >= 0; i -= 1) {
-    const score = Number(weeklyRows[i]?.total_score);
-    if (Number.isFinite(score)) return score;
+  const rows = weeklyRows || [];
+  if (!rows.length) return null;
+  let maxPeriod = null;
+  for (const r of rows) {
+    if (maxPeriod === null || String(r?.period) > String(maxPeriod)) maxPeriod = r?.period;
   }
-  return null;
+  let best = null;
+  for (const r of rows) {
+    if (r?.period !== maxPeriod) continue;
+    if (!best || new Date(r?.updated_at || 0) > new Date(best?.updated_at || 0)) best = r;
+  }
+  const score = Number(best?.total_score);
+  return Number.isFinite(score) ? score : null;
 }
 
 async function loadWeeklyRollupScore(pool, tenantId, username, period) {
