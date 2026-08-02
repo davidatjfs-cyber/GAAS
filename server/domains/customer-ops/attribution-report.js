@@ -6,6 +6,19 @@ function cleanText(value, max = 255) {
   return String(value == null ? '' : value).trim().slice(0, max);
 }
 
+// pg 的 DATE 列会解析成本地零点的 Date 对象，直接 String() 会得到 "Sun Jul 26 ..."。
+// 报表是给客人的证明资产，日期必须固定输出 YYYY-MM-DD。
+export function fmtReportDate(value) {
+  if (value == null || value === '') return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).slice(0, 10);
+}
+
 function cleanPhone(value) {
   return cleanText(value, 40).replace(/[^0-9]/g, '').slice(-11);
 }
@@ -220,7 +233,7 @@ export function assembleAttributionReport({
       by_campaign: campaignRows,
       by_store: byStore.rows.map(mapStoreRow),
       trend: trend.rows.map((r) => ({
-        date: r.day ? String(r.day).slice(0, 10) : '',
+        date: fmtReportDate(r.day),
         touched_customers: Number(r.touched_customers || 0),
         returned_customers: Number(r.returned_customers || 0),
         attributed_orders: Number(r.attributed_orders || 0),
@@ -230,14 +243,14 @@ export function assembleAttributionReport({
         phone: maskAttributionPhone(r.phone),
         store_id: r.store_id || '',
         store_name: r.store_name || r.store_id || '',
-        last_touch_date: r.last_touch_date ? String(r.last_touch_date).slice(0, 10) : '',
-        last_order_date: r.last_order_date ? String(r.last_order_date).slice(0, 10) : '',
+        last_touch_date: fmtReportDate(r.last_touch_date),
+        last_order_date: fmtReportDate(r.last_order_date),
         attributed_orders: Number(r.attributed_orders || 0),
         attributed_revenue: Number(r.attributed_revenue || 0),
       })),
       order_records: orderRecords.rows.map((r) => ({
         phone: maskAttributionPhone(r.phone),
-        date: r.biz_date ? String(r.biz_date).slice(0, 10) : '',
+        date: fmtReportDate(r.biz_date),
         order_time: r.order_time ? String(r.order_time).slice(0, 16) : '',
         checkout_time: r.checkout_time ? String(r.checkout_time).slice(0, 5) : '',
         store_id: r.store_id || '',
@@ -257,7 +270,7 @@ export function assembleAttributionReport({
         channel: '',
         couponId: '',
         relatedOrderId: r.order_no || '',
-        orderTime: r.biz_date ? String(r.biz_date).slice(0, 10) : '',
+        orderTime: fmtReportDate(r.biz_date),
         orderAmount: Number(r.revenue || 0),
         attributionType: Number(r.discount_amount || 0) > 0 ? 'coupon' : 'assisted',
         couponUsed: Number(r.discount_amount || 0) > 0,

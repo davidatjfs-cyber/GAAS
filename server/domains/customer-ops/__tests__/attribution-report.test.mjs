@@ -5,9 +5,17 @@ import {
   attributionCostExpr,
   buildAttributionRecommendations,
   classifyAttributionAudience,
+  fmtReportDate,
   friendlyAttributionTitle,
   maskAttributionPhone,
 } from '../attribution-report.js';
+
+test('fmtReportDate always outputs YYYY-MM-DD', () => {
+  assert.equal(fmtReportDate('2026-07-26'), '2026-07-26');
+  assert.equal(fmtReportDate(new Date(2026, 6, 26, 0, 0, 0)), '2026-07-26');
+  assert.equal(fmtReportDate(null), '');
+  assert.equal(fmtReportDate(''), '');
+});
 
 test('maskAttributionPhone masks valid mobile numbers', () => {
   assert.equal(maskAttributionPhone('13812345678'), '138****5678');
