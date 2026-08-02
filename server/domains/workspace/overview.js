@@ -376,59 +376,117 @@ async function turnoverSummary(pool, tenantId, storeNames, getTurnoverRate) {
   };
 }
 
-/** 下属人员绩效/能力/态度/执行力评级总览——直接读 employee_scores 本月记录，
- * 这张表已经有 execution_rating/attitude_rating/ability_rating（A/B/C/D）+ total_score，
- * 不是新算的规则。 */
-// 2026-08-01 修复：之前不分角色一律返回同样的行，店长/出品经理视角实测只看到2条
-// （因为 employee_scores 里凑巧只有喻烽/黎永荣这两个管理岗位的分数）——用户明确要求
-// 按查看者角色区分范围：店长/出品经理("店内视角")要看自己店里**所有**员工的评级；
-// 总部经理/管理员("总部视角")只要看各店的店长/出品经理，不要普通员工；普通员工不显示
-// 这块（roleScope=null 时调用方直接不查）。
+// 2026-08-02：用户核实发现工作台"下属绩效评级"的分数跟agents-service-v2自己的管理台
+// （https://nnyx.cc/agents-admin/#performance，"实时月内快照"）对不上，且换月份筛选
+// 数字不变——根因是之前整块直接读employee_scores这张GAAS自己批量算好落库的缓存表：
+// ①它的名单来自"哪些人在employee_scores里有行"，不是"当前真实在职员工"，历史批次
+// 可能把已经调走的门店/岗位也留在里面（如"喻烽"同时出现在洪潮和马己仙两条）；
+// ②批次没跑到当月/上月就查不到数据（这也是上一版加period fallback的原因，但那只是
+// 掩盖症状，退化显示的还是旧月份的分数，看着像"没跟着月份变"）；③它在真实周度扣分
+// 基础上又自己叠加了一层异常加减分/人效扣分，口径跟agents-admin的"实时月内快照"
+// （agents-service-v2 admin-api-performance-monthly.js: 未关账月=最新一条本月周度
+// anomaly_rollups_v2的total_score原样展示，不再叠加）不一致，导致同一个人两边分数不同
+// （王世波：GAAS算出-135，agents-admin显示-75）。
+// 改成：①名单直接查employees表（真实在职员工，不依赖批次是否跑过）；②分数直接查
+// agent_scores（GAAS/agents-service-v2共享表，agents-service-v2是唯一写入方，这里只读），
+// 完全复刻agents-admin同一套逻辑——先查score_model='new_model_monthly'的关账月最终分，
+// 查不到就退化到本月最新一条周度anomaly_rollups_v2的total_score（未关账"实时快照"）；
+// ③评级(execution/attitude/ability_rating)继续读employee_scores（GAAS自有概念，
+// agents-service-v2没有对应数据，关账前本来就是空，不算这次要修的问题）。
+function getRealtimeMonthlyScoreFromWeeklyRows(weeklyRows) {
+  for (let i = (weeklyRows || []).length - 1; i >= 0; i -= 1) {
+    const score = Number(weeklyRows[i]?.total_score);
+    if (Number.isFinite(score)) return score;
+  }
+  return null;
+}
+
+async function loadWeeklyRollupScore(pool, tenantId, username, period) {
+  const monthStart = `${period}-01`;
+  const monthEnd = monthEndYmdOf(period);
+  const monthKey = period.replace('-', '');
+  const r = await pool.query(
+    `SELECT period, total_score, updated_at
+       FROM agent_scores
+      WHERE lower(trim(username)) = lower(trim($1))
+        AND score_model = 'anomaly_rollups_v2'
+        AND COALESCE(is_invalidated, false) = false
+        AND period LIKE 'week_%'
+        AND tenant_id = $5
+        AND (
+          (POSITION('__' IN period) = 0
+            AND substring(period from 6 for 10)::date >= $2::date
+            AND substring(period from 6 for 10)::date <= $3::date)
+          OR
+          (POSITION('__' IN period) > 0 AND split_part(period, '__', 2) = $4)
+        )
+      ORDER BY period ASC, updated_at DESC`,
+    [username, monthStart, monthEnd, monthKey, tenantId]
+  );
+  return getRealtimeMonthlyScoreFromWeeklyRows(r.rows || []);
+}
+
+function monthEndYmdOf(period) {
+  const [y, m] = period.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${period}-${String(lastDay).padStart(2, '0')}`;
+}
+
+async function loadFinalizedMonthlyScore(pool, tenantId, username, store, role, period) {
+  const r = await pool.query(
+    `SELECT total_score FROM agent_scores
+      WHERE lower(trim(username)) = lower(trim($1))
+        AND lower(trim(store)) = lower(trim($2))
+        AND role = $3 AND period = $4
+        AND score_model = 'new_model_monthly'
+        AND COALESCE(is_invalidated, false) = false
+        AND tenant_id = $5
+      ORDER BY updated_at DESC LIMIT 1`,
+    [username, store, role, period, tenantId]
+  );
+  const v = r.rows?.[0]?.total_score;
+  return v != null ? Number(v) : null;
+}
+
 async function teamPerformanceSummary(pool, tenantId, storeFilter, period, roleScope) {
-  const params = [tenantId, period];
-  const filter = storeFilterClause(storeFilter, params.length + 1, 'es.store');
+  const params = [tenantId];
+  const filter = storeFilterClause(storeFilter, params.length + 1);
   if (filter.param) params.push(filter.param);
   let roleSql = '';
   if (Array.isArray(roleScope) && roleScope.length) {
     params.push(roleScope);
-    roleSql = ` AND es.role = ANY($${params.length}::text[])`;
+    roleSql = ` AND role = ANY($${params.length}::text[])`;
   }
-  // 2026-08-02：用户反馈admin/hq_manager的"下属绩效评级"整块消失——查证发现当前
-  // period(本月，如2026-08刚开始/上月毛利还没到账的2026-07)employee_scores压根还没算出
-  // 任何行，精确匹配period=$2查到0行，前端"team.length"判空直接把整个区块隐藏，不是
-  // 权限或数据源问题。改成查不到当月精确period时，退化到该门店范围内最近一个已有数据的
-  // period（同一份文件里revenue_targets"最近period"已经用过这个模式）。
-  const exact = await pool.query(
-    `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
-       FROM employee_scores es
-       LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
-      WHERE es.tenant_id = $1 AND es.period = $2${filter.sql}${roleSql}
-      ORDER BY es.total_score DESC NULLS LAST`,
+  const subjects = await pool.query(
+    `SELECT username, name, store, role, position
+       FROM employees
+      WHERE tenant_id = $1 AND status = 'active'${filter.sql}${roleSql}
+      ORDER BY store, role, name`,
     params
   );
-  if (exact.rows?.length) return exact.rows;
+  if (!subjects.rows?.length) return [];
 
-  const fallbackParams = [tenantId, period];
-  const fallbackFilter = storeFilterClause(storeFilter, fallbackParams.length + 1, 'es.store');
-  if (fallbackFilter.param) fallbackParams.push(fallbackFilter.param);
-  let fallbackRoleSql = '';
-  if (Array.isArray(roleScope) && roleScope.length) {
-    fallbackParams.push(roleScope);
-    fallbackRoleSql = ` AND es.role = ANY($${fallbackParams.length}::text[])`;
-  }
-  const fallback = await pool.query(
-    `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
-       FROM employee_scores es
-       LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
-      WHERE es.tenant_id = $1 AND es.period <= $2${fallbackFilter.sql}${fallbackRoleSql}
-        AND es.period = (
-          SELECT MAX(period) FROM employee_scores
-           WHERE tenant_id = $1 AND period <= $2${fallbackFilter.sql.replace(/\bes\.store\b/, 'store')}
-        )
-      ORDER BY es.total_score DESC NULLS LAST`,
-    fallbackParams
+  const ratingsR = await pool.query(
+    `SELECT username, execution_rating, attitude_rating, ability_rating
+       FROM employee_scores WHERE tenant_id = $1 AND period = $2`,
+    [tenantId, period]
   );
-  return fallback.rows || [];
+  const ratingsByUser = new Map(ratingsR.rows.map((r) => [String(r.username || '').toLowerCase(), r]));
+
+  const rows = await Promise.all(subjects.rows.map(async (s) => {
+    const finalized = await loadFinalizedMonthlyScore(pool, tenantId, s.username, s.store, s.role, period);
+    const totalScore = finalized != null ? finalized : await loadWeeklyRollupScore(pool, tenantId, s.username, period);
+    const rating = ratingsByUser.get(String(s.username || '').toLowerCase()) || {};
+    return {
+      username: s.username, name: s.name, store: s.store, role: s.role, position: s.position,
+      total_score: totalScore,
+      execution_rating: rating.execution_rating || null,
+      attitude_rating: rating.attitude_rating || null,
+      ability_rating: rating.ability_rating || null,
+    };
+  }));
+  rows.sort((a, b) => (b.total_score ?? -Infinity) - (a.total_score ?? -Infinity));
+  return rows;
 }
 
 /**
