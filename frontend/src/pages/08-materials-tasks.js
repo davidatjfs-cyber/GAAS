@@ -199,7 +199,34 @@
             showNotification(rec ? '已加载目标' : '未找到已保存目标，请添加目标项', rec ? 'success' : 'info');
         }
 
-        function saveMonthlyTargets() {
+        // 2026-08-02：用户反馈"目标管理"里录的洪潮8月实收营业额90万，工作台"营业日目标"
+        // 卡片依然显示旧值——查证发现"目标管理"存的是monthlyTargets（前端本地状态，本函数
+        // 上面的mtUpsert），工作台"营业日目标"读的是revenue_targets表（后端另一张表），
+        // 两者完全独立、互不知道对方。用户确认以"目标管理"为准：这里把"实收营业额"这一项
+        // 同步写入revenue_targets，工作台各处（营业日目标/营业额排名等）就能自动读到最新值，
+        // 不用逐个页面改读取逻辑。其它目标项(毛利/充值等)不在这次范围内，不动。
+        async function mtSyncRevenueTarget(ym, store, targetRevenue) {
+            if (targetRevenue == null) return;
+            const authToken = String(
+                localStorage.getItem('HRMS_API_TOKEN') ||
+                localStorage.getItem('hrms_token') ||
+                ''
+            ).trim();
+            if (!authToken) return;
+            const { brandName } = (typeof getStoreBrandByName === 'function') ? getStoreBrandByName(store) : { brandName: '' };
+            if (!brandName) return;
+            try {
+                await fetch('/api/scoring/revenue-targets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                    body: JSON.stringify({ store, brand: brandName, period: ym, target_revenue: targetRevenue })
+                });
+            } catch (e) {
+                console.error('sync revenue_targets failed:', e);
+            }
+        }
+
+        async function saveMonthlyTargets() {
             if (!isAdminUser()) return;
             const ym = String(document.getElementById('mt-ym')?.value || '').trim();
             const store = String(document.getElementById('mt-store')?.value || '').trim();
@@ -225,6 +252,8 @@
             try {
                 hrmsFlushStateSave();
             } catch (e) {}
+
+            await mtSyncRevenueTarget(ym, store, targets.actual);
 
             showNotification('目标已保存', 'success');
         }

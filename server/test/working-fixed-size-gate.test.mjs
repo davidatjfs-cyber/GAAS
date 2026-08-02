@@ -321,8 +321,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-01 第五十八次上调（71774→71880）：7项UI/数据修复——待批可点性、月份筛选
  * 弹层化、差评门店选择独占一行、毛利目标真实数据源、下属绩效角色范围、就餐人数分布
  * 网格布局。
+ * 2026-08-02 第五十九次上调（71880→71909）："目标管理"保存实收营业额时同步写入
+ * revenue_targets表，解决"目标管理"跟工作台"营业日目标"卡片各读各的表、改了不生效的问题。
+ * 2026-08-02 第六十次上调（71909→71937）：admin/hq_manager工作台补"当月目标追踪"模块
+ * （加门店下拉选择器，跟店长/出品经理的单店目标追踪复用同一套渲染）。
  */
-const MAX_LINES = 71880;
+const MAX_LINES = 71937;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

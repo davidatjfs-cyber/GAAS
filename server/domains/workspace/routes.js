@@ -22,12 +22,23 @@ const WS_STORE_LEVEL_ROLES = ['store_manager', 'store_production_manager', 'fron
 
 function resolveOverviewStoreFilter(req) {
   const role = String(req.user?.role || '').trim();
-  if (role === 'admin') return [];
+  if (role === 'admin') {
+    // 2026-08-02：admin/hq_manager工作台新增"门店目标追踪"模块（跟店长/出品经理一样），
+    // 但那个模块的营业日目标/毛利目标是单店口径，admin默认不限门店(storeFilter=[])聚合
+    // 出来的是全公司汇总，不能直接拿来当"某家店的目标追踪"用。只在前端显式传了?store=
+    // 时才收窄到那一家店，不传时保持原有全公司聚合行为不变。
+    const qStore = String(req.query?.store || '').trim();
+    return qStore ? [qStore] : [];
+  }
   if (WS_STORE_LEVEL_ROLES.includes(role)) {
     const own = String(req.user?.current_store || req.user?.store || '').trim();
     return own ? [own] : [];
   }
   const allowed = Array.isArray(req.user?.allowed_stores) ? req.user.allowed_stores.filter(Boolean) : [];
+  // hq_manager同款?store=收窄，但只允许收窄到自己allowed_stores范围内的门店，不能越权查看
+  // 范围外的门店（跟admin不同，admin本来就不限门店，hq_manager是有范围的）。
+  const qStore = String(req.query?.store || '').trim();
+  if (qStore && allowed.includes(qStore)) return [qStore];
   return allowed;
 }
 

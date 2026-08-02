@@ -1981,12 +1981,20 @@ async function wsRenderBossOrHq(root, persona) {
     // 的wsRenderStore()，管理员/总部营运看到的是wsRenderBossOrHq()这条完全独立的渲染
     // 路径，两边各自维护自己的区块列表，加一处不会自动出现在另一处，这里补上同一个模块。
     html += wsSection('我的绩效', '<div id="ws-my-performance"><div class="ws-loading">加载中...</div></div>');
+    // 2026-08-02：用户要求admin/hq_manager工作台也要有"当月目标追踪"（跟店长/出品经理的
+    // 一样）——但那个模块的营业日目标/毛利目标是单店口径，admin/hq_manager默认不限门店，
+    // 没有"当前这家店"的概念，所以补一个门店下拉选择器，选哪家店就单独拉那家店的overview
+    // (?store=X，见routes.js resolveOverviewStoreFilter)再渲染同一套wsRenderTargetTracking。
+    if (allStores.length) {
+        html += wsSection('当月目标追踪', wsRenderTargetTrackingStorePicker(allStores) + '<div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div>');
+    }
     html += '<div class="ws-section">' + wsRenderQuickActions() + '</div>';
     root.innerHTML = html;
     wsBindTodoWidgetEvents(root, tasksList, pendingApprovals);
     wsBindPendingConfirmationsEvents(root);
     wsBindOperationalStoreSelector(root);
     wsBindMonthFilterControl(root, { persona });
+    if (allStores.length) wsBindTargetTrackingStorePicker(root, allStores[0]);
     wsBindSixToolsEvents(root);
     wsBindCustomDirectorEvents(root);
     wsBindAgentCommandCenterEvents(root);
@@ -2094,6 +2102,26 @@ async function wsRenderTargetTracking(ov, store) {
         html += '<div class="ws-empty">本店在"目标管理"/"任务和绩效"目标设置里暂未配置其他目标（如大众点评/企微）</div>';
     }
     return html;
+}
+
+function wsRenderTargetTrackingStorePicker(allStores) {
+    return '<select id="ws-target-store-select" class="ws-month-picker-btn" style="width:100%; margin-bottom:10px;">' +
+        allStores.map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('') +
+        '</select>';
+}
+
+function wsBindTargetTrackingStorePicker(root, defaultStore) {
+    const sel = root.querySelector('#ws-target-store-select');
+    const el = root.querySelector('#ws-target-tracking');
+    if (!sel || !el) return;
+    const load = (store) => {
+        el.innerHTML = '<div class="ws-loading">加载中...</div>';
+        wsFetchJson('/api/workspace/overview?store=' + encodeURIComponent(store)).then((scopedOv) => {
+            wsRenderTargetTracking(scopedOv, store).then((h) => { el.innerHTML = h; });
+        });
+    };
+    sel.addEventListener('change', () => load(sel.value));
+    load(defaultStore);
 }
 
 function wsRenderEmployeePerformanceList(team) {
