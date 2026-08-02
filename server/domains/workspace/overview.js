@@ -393,7 +393,12 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period, roleS
     params.push(roleScope);
     roleSql = ` AND es.role = ANY($${params.length}::text[])`;
   }
-  const r = await pool.query(
+  // 2026-08-02：用户反馈admin/hq_manager的"下属绩效评级"整块消失——查证发现当前
+  // period(本月，如2026-08刚开始/上月毛利还没到账的2026-07)employee_scores压根还没算出
+  // 任何行，精确匹配period=$2查到0行，前端"team.length"判空直接把整个区块隐藏，不是
+  // 权限或数据源问题。改成查不到当月精确period时，退化到该门店范围内最近一个已有数据的
+  // period（同一份文件里revenue_targets"最近period"已经用过这个模式）。
+  const exact = await pool.query(
     `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
        FROM employee_scores es
        LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
@@ -401,7 +406,29 @@ async function teamPerformanceSummary(pool, tenantId, storeFilter, period, roleS
       ORDER BY es.total_score DESC NULLS LAST`,
     params
   );
-  return r.rows || [];
+  if (exact.rows?.length) return exact.rows;
+
+  const fallbackParams = [tenantId, period];
+  const fallbackFilter = storeFilterClause(storeFilter, fallbackParams.length + 1, 'es.store');
+  if (fallbackFilter.param) fallbackParams.push(fallbackFilter.param);
+  let fallbackRoleSql = '';
+  if (Array.isArray(roleScope) && roleScope.length) {
+    fallbackParams.push(roleScope);
+    fallbackRoleSql = ` AND es.role = ANY($${fallbackParams.length}::text[])`;
+  }
+  const fallback = await pool.query(
+    `SELECT es.username, es.name, es.store, es.role, es.total_score, es.execution_rating, es.attitude_rating, es.ability_rating, e.position
+       FROM employee_scores es
+       LEFT JOIN employees e ON e.username = es.username AND e.tenant_id = es.tenant_id
+      WHERE es.tenant_id = $1 AND es.period <= $2${fallbackFilter.sql}${fallbackRoleSql}
+        AND es.period = (
+          SELECT MAX(period) FROM employee_scores
+           WHERE tenant_id = $1 AND period <= $2${fallbackFilter.sql.replace(/\bes\.store\b/, 'store')}
+        )
+      ORDER BY es.total_score DESC NULLS LAST`,
+    fallbackParams
+  );
+  return fallback.rows || [];
 }
 
 /**
