@@ -9,14 +9,17 @@
  * 的唯一写入方与 schema 权威在 GAAS；RLS 的 ENABLE/FORCE 由 demo 专用收尾步骤显式执行。
  */
 
-/** 全局平台表：不套租户隔离，也不做 RLS 收尾。 */
+/**
+ * 全局平台表：不套租户隔离，也不做 RLS 收尾。
+ *
+ * 2026-08-02 定版：analysis_rules / analysis_sop / cn_holiday_calendar 从清单移出——
+ * 三者均有 tenant_id 列且 demo 已按租户策略开启 RLS（只读核实 2026-08-01），
+ * 属租户级数据，应纳入租户隔离收尾；清单只保留真正的全局平台表。
+ */
 export const TENANT_RLS_EXCLUDED_TABLES = Object.freeze([
   'tenants',
   'licenses',
   'agent_v2_configs',
-  'analysis_rules',
-  'analysis_sop',
-  'cn_holiday_calendar',
   'hrms_state',
 ]);
 

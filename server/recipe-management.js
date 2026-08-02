@@ -12,12 +12,12 @@
  *           员工端无任何配方访问途径
  */
 
-import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import { pool as getPool, resolveTenantIdDefault } from './utils/database.js';
 import XLSX from 'xlsx';
+import { parseXlsxSafely } from './domains/uploads/xlsx-safe-parse.js';
 import { childLogger } from './utils/logger.js';
 
 const log = childLogger({ domain: 'recipe' });
@@ -356,13 +356,14 @@ export function generateRecipeTemplate() {
 }
 
 // ─── Excel 配方导入 ────────────────────────────────────────
-export async function importRecipeFromExcel(buffer, username, store) {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
+export async function importRecipeFromExcel(filePath, username, store) {
+  // 2026-08-02：xlsx 解析改走 worker 隔离（parseXlsxSafely：硬超时 + 大小预检 + 结果上限），
+  // 与 customer-ops / inventory-forecast 上传入口一致，不再在主线程直接 XLSX.read 用户文件。
+  const { sheets } = await parseXlsxSafely(filePath, { sheetToJsonOpts: { header: 1, defval: '' } });
 
   // 配方信息
-  const infoSheet = wb.Sheets['配方信息'];
-  if (!infoSheet) throw new Error('找不到工作表「配方信息」');
-  const infoRows = XLSX.utils.sheet_to_json(infoSheet, { header: 1 });
+  const infoRows = sheets['配方信息'] || [];
+  if (!infoRows.length) throw new Error('找不到工作表「配方信息」');
   const infoMap = {};
   infoRows.slice(1).forEach(row => {
     const key = String(row[0] || '').trim();
@@ -373,21 +374,17 @@ export async function importRecipeFromExcel(buffer, username, store) {
   if (!dishName) throw new Error('「配方信息」中「菜品名称」不能为空');
 
   // 半成品列表
-  const compSheet = wb.Sheets['半成品列表'];
-  if (!compSheet) throw new Error('找不到工作表「半成品列表」');
-  const compRows = XLSX.utils.sheet_to_json(compSheet, { header: 1 }).slice(1);
+  const compRows = (sheets['半成品列表'] || []).slice(1);
   const compDefs = compRows
     .filter(r => r[0] && !String(r[0]).startsWith('示例'))
     .map(r => ({ name: String(r[0]).trim(), notes: String(r[1] || '').trim() }));
   if (!compDefs.length) throw new Error('「半成品列表」不能为空（请删除「示例」行，填入真实数据）');
 
   // 原料配比
-  const ingSheet = wb.Sheets['原料配比'];
-  const ingRows = ingSheet ? XLSX.utils.sheet_to_json(ingSheet, { header: 1 }).slice(1) : [];
+  const ingRows = (sheets['原料配比'] || []).slice(1);
 
   // 工艺步骤
-  const stepSheet = wb.Sheets['工艺步骤'];
-  const stepRows = stepSheet ? XLSX.utils.sheet_to_json(stepSheet, { header: 1 }).slice(1) : [];
+  const stepRows = (sheets['工艺步骤'] || []).slice(1);
 
   // 组装 components
   const components = compDefs.map(comp => {
@@ -559,8 +556,7 @@ function registerRecipeCrudRoutes(app, authMiddleware, requireRecipeAdmin, deps 
       if (!RECIPE_ADMIN_ROLES.has(req.user?.role)) return res.status(403).json({ error: 'forbidden' });
       try {
         if (!req.file?.path) return res.status(400).json({ error: 'missing_file' });
-        const buffer = fs.readFileSync(req.file.path);
-        const result = await importRecipeFromExcel(buffer, req.user.username, req.user?.store || '*');
+        const result = await importRecipeFromExcel(req.file.path, req.user.username, req.user?.store || '*');
         if (!result.success) return res.json({ success: false, error: result.error });
         const row = await import('./utils/database.js').then((m) => m.pool().query('SELECT dish_name FROM recipes WHERE id=$1', [result.id]));
         return res.json({ success: true, id: result.id, dishName: row.rows[0]?.dish_name || '' });
