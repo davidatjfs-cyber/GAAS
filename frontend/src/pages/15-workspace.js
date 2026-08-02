@@ -95,13 +95,43 @@ function wsInjectStyles() {
         '.ws-stat-row__l{color:var(--ws-ink2);flex:none;}' +
         '.ws-stat-row__v{font-weight:600;text-align:right;font-family:"Songti SC","STSong",serif;}' +
         '.ws-stat-row__s{display:block;font-size:10.5px;color:var(--ws-ink2);font-weight:500;font-family:inherit;margin-top:2px;}' +
+        // 2026-08-01：用户反馈"就餐人数分布"塞进单行label-value的右对齐值列里，5个分类挤在
+        // 一起手机上换行很乱——改成label独占一行，下面跟一个5列小网格，每格自己的类别+数字，
+        // 不再是一长串用" · "分隔的文本。
+        '.ws-party-size{padding:9px 0;border-bottom:1px solid var(--ws-line);}' +
+        '.ws-party-size__l{color:var(--ws-ink2);font-size:12.5px;margin-bottom:8px;}' +
+        '.ws-party-size__grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center;}' +
+        '.ws-party-size__cell{background:var(--ws-line);border-radius:6px;padding:6px 2px;}' +
+        '.ws-party-size__cell-l{font-size:10px;color:var(--ws-ink2);}' +
+        '.ws-party-size__cell-v{font-size:13px;font-weight:600;font-family:"Songti SC","STSong",serif;margin-top:2px;}' +
         '.ws-rank-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}' +
         '.ws-rank-col{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px;}' +
         '.ws-rank-col__title{font-size:11.5px;font-weight:600;margin-bottom:6px;}' +
         '.ws-rank-row{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 0;}' +
+        // 2026-08-01：用户反馈"待批"tab里的行太小、不好点——单独给这一类可点击行一个更大
+        // 的触控样式，不复用.ws-rank-row（那个全局共用在排名/绩效列表里，改大会影响那些
+        // 本来就该紧凑的地方）。
+        '.ws-approval-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 12px;background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;margin-bottom:8px;font-size:14px;}' +
+        '.ws-approval-row:active{background:var(--ws-line);}' +
+        '.ws-approval-row__store{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+        '.ws-month-picker-btn{font-family:inherit;}' +
+        '.ws-month-sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:flex-end;}' +
+        '.ws-month-sheet{width:100%;max-height:70vh;background:var(--ws-bg,#1a1418);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;flex-direction:column;}' +
+        '.ws-month-sheet__title{font-size:14px;font-weight:600;text-align:center;padding-bottom:10px;color:var(--ws-ink);}' +
+        '.ws-month-sheet__list{overflow-y:auto;scroll-snap-type:y proximity;flex:1;}' +
+        '.ws-month-sheet-row{scroll-snap-align:center;padding:14px 10px;text-align:center;font-size:16px;color:var(--ws-ink);border-bottom:1px solid var(--ws-line);position:relative;}' +
+        '.ws-month-sheet-row:active{background:var(--ws-line);}' +
+        '.ws-month-sheet-row.is-selected{color:var(--ws-accent);font-weight:700;}' +
+        '.ws-month-sheet-check{margin-left:6px;}' +
+        '.ws-month-sheet__cancel{margin-top:10px;width:100%;}' +
         '.ws-rank-row__n{color:var(--ws-ink2);width:14px;}' +
         '.ws-rank-row__store{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
         '.ws-br-filters{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px;}' +
+        // 2026-08-01：用户反馈差评展示的门店选择框跟日期chip挤在同一行，手机上门店名被
+        // 压缩看不全（如"马己仙上海音乐..."截断）——门店选择单独占一整行，不再跟chip共用
+        // flex行抢空间。
+        '.ws-br-store-row{margin-bottom:8px;}' +
+        '.ws-br-store-row .ws-input{width:100%;}' +
         '.ws-br-chip{flex:none;border:1px solid var(--ws-line);background:transparent;color:var(--ws-ink2);border-radius:999px;padding:6px 12px;font-size:11.5px;font-family:inherit;cursor:pointer;white-space:nowrap;}' +
         '.ws-br-chip.active{background:var(--ws-accent-soft);color:var(--ws-ink);border-color:var(--ws-accent);}' +
         '.ws-br-feed{max-height:420px;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:8px;scroll-snap-type:y proximity;}' +
@@ -538,6 +568,15 @@ function wsStatRow(label, value, sub) {
 // 2026-07-30：用户要求门店经营明细里补上"门店人效值"、把顶层"本月离职率"挪进来按店展示——
 // 后端operationalMetrics()已经把efficiency/turnoverRate直接merge进每条门店记录，这里直接
 // 取用，不用再单独请求一次。
+function wsRenderPartySizeGrid(p) {
+    const cells = [
+        ['1人', p.p1], ['2人', p.p2], ['3-4人', p.p3to4], ['5-6人', p.p5to6], ['6人以上', p.p6plus],
+    ].map(([label, v]) => (
+        '<div class="ws-party-size__cell"><div class="ws-party-size__cell-l">' + wsEsc(label) + '</div>' +
+        '<div class="ws-party-size__cell-v">' + (v ?? '—') + '%</div></div>'
+    )).join('');
+    return '<div class="ws-party-size"><div class="ws-party-size__l">就餐人数分布</div><div class="ws-party-size__grid">' + cells + '</div></div>';
+}
 function wsRenderStoreOperationalBody(row) {
     const p = row.partySizeSharePct || {};
     return wsStatRow('客流量（本月累计）', row.traffic ?? '—', '上月' + wsFmtPct(row.trafficMom) + ' 去年' + wsFmtPct(row.trafficYoy)) +
@@ -545,7 +584,7 @@ function wsRenderStoreOperationalBody(row) {
         wsStatRow('桌均', '¥' + (row.avgSpendPerTable ?? '—')) +
         wsStatRow('门店人效值', row.efficiency ?? '—') +
         wsStatRow('堂食 / 外卖占比', (row.dineInSharePct ?? '—') + '% / ' + (row.deliverySharePct ?? '—') + '%') +
-        wsStatRow('就餐人数分布', '1人' + (p.p1 ?? '—') + '% · 2人' + (p.p2 ?? '—') + '% · 3-4人' + (p.p3to4 ?? '—') + '% · 5-6人' + (p.p5to6 ?? '—') + '% · 6人以上' + (p.p6plus ?? '—') + '%') +
+        wsRenderPartySizeGrid(p) +
         wsStatRow('本月离职率', (row.turnoverRate ?? '—') + '%', row.turnoverRate != null ? '离职' + row.turnoverDepartures + '人 · 在职' + row.turnoverTotalEmployees + '人' : '');
 }
 
@@ -591,22 +630,66 @@ function wsMonthFilterOptions() {
     }
     return opts;
 }
+// 2026-08-01：用户反馈原来的<select>下拉框太丑，要求改成手机上常见的"滚动选择"弹层——
+// 原生<select>在不同系统上样式不可控（截图里那种转轮是iOS系统原生日期选择器，网页里没有
+// 对应的可直接复用的原生控件），改成自己实现一个从底部弹出的可滚动列表，点哪行就选哪行、
+// 立刻关闭+刷新，比原生select好点也好看，不强行模仿转轮的物理滚动效果（那个跨浏览器一致性
+// 成本很高，且核心诉求"能滚动选月份、不难看"这个用这个方案已经满足）。
+let _wsMonthPickerValue = wsMonthFilterOptions()[0];
+function wsMonthLabel(ym, isCurrent) {
+    return ym + (isCurrent ? '（本月）' : '');
+}
 function wsRenderMonthFilterControl() {
     const opts = wsMonthFilterOptions();
-    const options = opts.map((ym, i) => '<option value="' + ym + '"' + (i === 0 ? ' selected' : '') + '>' + ym + (i === 0 ? '（本月）' : '') + '</option>').join('');
+    _wsMonthPickerValue = opts[0];
     return (
         '<div class="ws-section" style="display:flex;align-items:center;gap:8px;">' +
         '<span style="font-size:13px;color:var(--ws-ink2);">查询月份</span>' +
-        '<select class="ws-input" id="ws-month-filter" style="width:auto;">' + options + '</select>' +
+        '<button type="button" class="ws-input ws-month-picker-btn" id="ws-month-filter-btn" style="width:auto;text-align:left;">' + wsMonthLabel(opts[0], true) + ' ▾</button>' +
         '<span class="ws-loading" id="ws-month-filter-loading" style="display:none;font-size:12px;">加载中...</span>' +
         '</div>'
     );
 }
+function wsOpenMonthPickerSheet(onPick) {
+    const opts = wsMonthFilterOptions();
+    let sheet = document.getElementById('ws-month-picker-sheet');
+    if (sheet) sheet.remove();
+    sheet = document.createElement('div');
+    sheet.id = 'ws-month-picker-sheet';
+    sheet.className = 'ws-month-sheet-backdrop';
+    const rows = opts.map((ym, i) => (
+        '<div class="ws-month-sheet-row' + (ym === _wsMonthPickerValue ? ' is-selected' : '') + '" data-ym="' + ym + '">' +
+        wsMonthLabel(ym, i === 0) + (ym === _wsMonthPickerValue ? ' <span class="ws-month-sheet-check">✓</span>' : '') +
+        '</div>'
+    )).join('');
+    sheet.innerHTML =
+        '<div class="ws-month-sheet">' +
+        '<div class="ws-month-sheet__title">选择查询月份</div>' +
+        '<div class="ws-month-sheet__list">' + rows + '</div>' +
+        '<button type="button" class="ws-btn ws-month-sheet__cancel">取消</button>' +
+        '</div>';
+    document.body.appendChild(sheet);
+    const selectedRow = sheet.querySelector('.ws-month-sheet-row.is-selected');
+    if (selectedRow) selectedRow.scrollIntoView({ block: 'center' });
+    sheet.addEventListener('click', (e) => {
+        if (e.target === sheet || e.target.classList.contains('ws-month-sheet__cancel')) {
+            sheet.remove();
+            return;
+        }
+        const row = e.target.closest('.ws-month-sheet-row');
+        if (row) {
+            sheet.remove();
+            onPick(row.getAttribute('data-ym'));
+        }
+    });
+}
 function wsBindMonthFilterControl(root, { persona } = {}) {
-    const sel = root.querySelector('#ws-month-filter');
-    if (!sel) return;
-    sel.addEventListener('change', async () => {
-        const month = sel.value;
+    const btn = root.querySelector('#ws-month-filter-btn');
+    if (!btn) return;
+    const applyMonth = async (month) => {
+        _wsMonthPickerValue = month;
+        const isCurrent = month === wsMonthFilterOptions()[0];
+        btn.textContent = wsMonthLabel(month, isCurrent) + ' ▾';
         const loading = root.querySelector('#ws-month-filter-loading');
         if (loading) loading.style.display = '';
         try {
@@ -615,9 +698,11 @@ function wsBindMonthFilterControl(root, { persona } = {}) {
                 wsFetchJson('/api/workspace/home?month=' + encodeURIComponent(month)),
                 wsFetchJson('/api/agent-scores/me?month=' + encodeURIComponent(month)),
             ]);
+            // "今日经营总览"(#ws-overview-kpis-body)是永远今天的数据，月份筛选不碰它，
+            // 只更新"门店经营明细"(#ws-overview-body，含排名+下属绩效)。
             const ovBody = root.querySelector('#ws-overview-body');
             if (ovBody) {
-                ovBody.innerHTML = wsRenderOverview(ov, persona !== 'store');
+                ovBody.innerHTML = wsRenderOperationalAndRankings(ov, persona !== 'store');
                 wsBindOperationalStoreSelector(root);
             }
             const lightsBody = root.querySelector('#ws-store-lights-body');
@@ -629,7 +714,8 @@ function wsBindMonthFilterControl(root, { persona } = {}) {
         } finally {
             if (loading) loading.style.display = 'none';
         }
-    });
+    };
+    btn.addEventListener('click', () => wsOpenMonthPickerSheet(applyMonth));
 }
 
 // 2026-07-30：用户要求① 门店经营明细里加"门店人效值"、把"本月离职率"从顶层挪进去（每店
@@ -637,11 +723,13 @@ function wsBindMonthFilterControl(root, { persona } = {}) {
 // turnoverRate直接merge进每条门店记录里，这里直接渲染，不用单独再拼一份）；② 店长/出品
 // 经理视角取消营业额/客流量/人效排名，管理员/总部经理视角保留——用showRankings区分，
 // 由调用方(wsRenderStore传false，wsRenderBossOrHq传true)按角色决定，不是这里猜角色。
-function wsRenderOverview(ov, showRankings) {
+// 2026-08-01：用户明确要求"今日经营总览"不受月份筛选影响（选历史月份会混淆"昨日/本周/
+// 本月"这几个本来就是相对"今天"定义的指标），拆成两块：① wsRenderOverviewKpis 只有顶部
+// 营收KPI卡，永远显示真实今天的数据，跟月份筛选完全无关；② wsRenderOperationalAndRankings
+// 是门店经营明细+排名+下属绩效，这块才是月份筛选实际生效的范围，筛选框直接放在这块上方。
+function wsRenderOverviewKpis(ov) {
     if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
     const rev = ov.revenue || {};
-    const opRows = Array.isArray(ov.operational) ? ov.operational : [];
-    const rk = ov.rankings || {};
     let html = '<div class="ws-kpis">';
     html += wsRenderOverviewKpi('昨日营收', rev.yesterday || {}, '前天');
     html += wsRenderOverviewKpi('本周营收', rev.week || {}, '上周');
@@ -649,8 +737,13 @@ function wsRenderOverview(ov, showRankings) {
     html += '<div class="ws-kpi"><div class="ws-kpi__label">实收目标</div><div class="ws-kpi__value">¥' + wsFmtMoney(rev.target?.targetRevenue) + '</div>' +
         '<div class="ws-kpi__sub">理论 ' + (rev.target?.theoreticalAchievementRate ?? '—') + '% · 实际 ' + (rev.target?.actualAchievementRate ?? '—') + '%</div></div>';
     html += '</div>';
-
-    html += wsRenderOperationalSection(opRows);
+    return html;
+}
+function wsRenderOperationalAndRankings(ov, showRankings) {
+    if (!ov || ov.ok === false) return '<div class="ws-empty">经营数据加载失败</div>';
+    const opRows = Array.isArray(ov.operational) ? ov.operational : [];
+    const rk = ov.rankings || {};
+    let html = wsRenderOperationalSection(opRows);
 
     if (showRankings) {
         html += '<div class="ws-rank-grid">' +
@@ -660,10 +753,15 @@ function wsRenderOverview(ov, showRankings) {
             '</div>';
     }
 
-    if (Array.isArray(ov.team) && ov.team.length) {
-        const teamRows = ov.team.slice(0, 10).map((t) => (
+    // 2026-08-01 修复：① 店内视角(showRankings=false)已经有专门的"员工绩效"区块
+    // (wsRenderEmployeePerformanceList，同样读overview.team)展示全店员工，这里不再重复
+    // 渲染一遍，只在总部视角(admin/hq_manager，showRankings=true，team现在只含各店店长/
+    // 出品经理，见后端teamRoleScope)显示；② 之前不分角色统一只显示≤10条，改成不截断；
+    // ③ 之前只显示执/态/能三个字母评级，用户要求同时显示综合分数。
+    if (showRankings && Array.isArray(ov.team) && ov.team.length) {
+        const teamRows = ov.team.map((t) => (
             '<div class="ws-rank-row"><span class="ws-rank-row__store">' + wsEsc(t.name || t.username) + '（' + wsEsc(t.store || '') + '）</span>' +
-            '<span class="ws-rank-row__val">执' + wsEsc(t.execution_rating || '-') + ' 态' + wsEsc(t.attitude_rating || '-') + ' 能' + wsEsc(t.ability_rating || '-') + '</span></div>'
+            '<span class="ws-rank-row__val">' + (t.total_score != null ? wsEsc(t.total_score) + '分 · ' : '') + '执' + wsEsc(t.execution_rating || '-') + ' 态' + wsEsc(t.attitude_rating || '-') + ' 能' + wsEsc(t.ability_rating || '-') + '</span></div>'
         )).join('');
         html += '<div class="ws-rank-col" style="margin-top:10px;"><div class="ws-rank-col__title">下属绩效评级（本月）</div>' + teamRows + '</div>';
     }
@@ -1002,11 +1100,11 @@ function wsRenderBadReviewSection(allStores) {
         ? '<option value="' + wsEsc(stores[0]) + '" selected>' + wsEsc(stores[0]) + '</option>'
         : '<option value="">全部门店</option>' + stores.map((s) => '<option value="' + wsEsc(s) + '">' + wsEsc(s) + '</option>').join('');
     return (
+        '<div class="ws-br-store-row"><select class="ws-input" id="ws-br-store"' + (isSingleStore ? ' disabled' : '') + '>' + storeOptions + '</select></div>' +
         '<div class="ws-br-filters">' +
         '<button type="button" class="ws-br-chip" data-days="7">近7天</button>' +
         '<button type="button" class="ws-br-chip active" data-days="30">近30天</button>' +
         '<button type="button" class="ws-br-chip" data-days="0">全部</button>' +
-        '<select class="ws-input" id="ws-br-store" style="flex:none;"' + (isSingleStore ? ' disabled' : '') + '>' + storeOptions + '</select>' +
         '</div>' +
         '<div class="ws-br-filters" style="margin-top:4px;">' +
         '<button type="button" class="ws-br-chip ws-br-source-chip active" data-source="">全部来源</button>' +
@@ -1684,7 +1782,7 @@ function wsBindTodoWidgetEvents(root, tasksList, pendingApprovals) {
             // 很不方便——复用全局已有的 openApprovalDetailModal(见01-boot.js的data-click委托)，
             // 点这一行直接弹出完整审批详情(含接受/拒绝按钮)，不用离开工作台。
             pane.innerHTML = pendingApprovals.length
-                ? pendingApprovals.map((a) => '<div class="ws-rank-row" data-click="openApprovalDetailModal" data-arg="' + wsEsc(String(a.id || '')) + '" style="cursor:pointer;"><span class="ws-rank-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
+                ? pendingApprovals.map((a) => '<div class="ws-approval-row" data-click="openApprovalDetailModal" data-arg="' + wsEsc(String(a.id || '')) + '"><span class="ws-approval-row__store">' + wsEsc(a.type_label || a.type || '') + ' · ' + wsEsc(a.applicant_name || a.applicant_username || '') + '</span><span class="ws-tag">待审批</span></div>').join('')
                 : '<div class="ws-empty">暂无待批事项</div>';
             return;
         }
@@ -1865,11 +1963,12 @@ async function wsRenderBossOrHq(root, persona) {
     html += '<div class="ws-sub">' + wsEsc(currentUser?.name || '') + (roleLabel ? '（' + wsEsc(roleLabel) + '）' : '') + ' · 未读消息 ' + (home?.unreadCount || 0) + ' 条' + (overview?.scoped ? ' · 仅显示你负责范围内的门店' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     html += wsRenderPendingConfirmations(pendingConfirmations);
+    html += wsSection('今日经营总览', '<div id="ws-overview-kpis-body">' + wsRenderOverviewKpis(overview) + '</div>');
     // 2026-08-01：用户要求门店经营明细/营业额排名/客流量排名/人效排名/门店红绿灯/我的绩效
-    // 都能查以往月份——这6个模块共用同一个月份下拉框（而不是每个模块各自一个选择器），
-    // 切一次月份，这几块一起联动刷新，符合用户"这几个模块增加日期筛选"的原话语境。
-    html += wsRenderMonthFilterControl();
-    html += wsSection('今日经营总览', '<div id="ws-overview-body">' + wsRenderOverview(overview, true) + '</div>');
+    // 都能查以往月份——这6个模块共用同一个月份下拉框，放在"门店经营明细"这里（不是"今日
+    // 经营总览"——那块的"昨日/本周/本月"是相对"今天"定义的，选历史月份会混淆数据，用户
+    // 明确要求月份筛选不要影响那块，只影响这6个真正按月统计的模块）。
+    html += wsSection('门店经营明细', wsRenderMonthFilterControl() + '<div id="ws-overview-body">' + wsRenderOperationalAndRankings(overview, true) + '</div>');
     html += wsSection('差评展示', wsRenderBadReviewSection(allStores));
     // 2026-07-30：门店营销活动建议之前只有每条建议内部自己折叠，整个区块本身不折叠——
     // 跟其它区块统一改用wsSection()包一层，区块级别也可以整体收起，不是只有卡片能收起。
@@ -1970,10 +2069,17 @@ async function wsRenderTargetTracking(ov, store) {
     const theo = t.theoreticalAchievementRate;
     const actual = t.actualAchievementRate;
     const status = (theo != null && actual != null) ? (actual >= theo ? '<span class="ws-up">超越目标</span>' : '<span class="ws-down">落后目标</span>') : '—';
+    // 2026-08-01 修复：① 之前叫"本月日均"是误导——这是飞书毛利记录表每月更新一次的
+    // 单一月度实收值，不是daily_reports算出来的日均，改名"实收毛利目标"；② 目标值改成
+    // 品牌固定值(马己仙65%/洪潮68%，见后端WS_BRAND_MARGIN_TARGET)，不再显示"—"空值；
+    // ③ 补上达成率和数据对应的月份（m.period，因为显示的是"最近一次已录入"的月份，不一定
+    // 是当前自然月——录入通常在次月10号前完成，当月中旬前查当月数据本来就还不存在）。
     const m = ov?.margin || {};
+    const marginRate = (m.actualMargin != null && m.targetMargin) ? Math.round((m.actualMargin / m.targetMargin) * 100) : null;
     let html = '<div class="ws-stat-list">' +
         wsStatRow('营业日目标', '¥' + wsFmtMoney(t.targetRevenue), '理论达成 ' + (theo ?? '—') + '% · 实际达成 ' + (actual ?? '—') + '% · ' + status) +
-        wsStatRow('毛利目标（本月日均）', (m.targetMargin != null ? m.targetMargin + '%' : '—'), '实际 ' + (m.actualMargin != null ? m.actualMargin + '%' : '—')) +
+        wsStatRow('实收毛利目标' + (m.period ? '（' + wsEsc(m.period) + '）' : ''), (m.targetMargin != null ? m.targetMargin + '%' : '—'),
+            (m.actualMargin != null ? '实际 ' + m.actualMargin + '%' + (marginRate != null ? ' · 达成 ' + marginRate + '%' : '') : '暂无飞书毛利表数据')) +
         '</div>';
     const monthlyFieldsHtml = await wsRenderMonthlyTargetFields(store);
     const kpiData = store ? await wsFetchJson('/api/tenant-settings/kpi-targets?store=' + encodeURIComponent(store)) : null;
@@ -2133,11 +2239,11 @@ async function wsRenderStore(root) {
     let html = '<div class="ws-header"><h2>今日工作台</h2><div class="ws-sub">' + wsEsc(currentUser?.name || '') + (storeRoleLabel ? '（' + wsEsc(storeRoleLabel) + '）' : '') + '</div></div>';
     html += wsRenderTodoWidget(tasksList.length, pendingApprovals.length, home?.unreadCount || 0, recentlyResolvedCount);
     html += wsRenderPendingConfirmations(pendingConfirmations);
-    html += wsRenderMonthFilterControl();
     // 2026-07-30：用户要求整页各区块都能像"8大AI督导指挥中心"一样折叠——用同一套已有的
     // <details class="ws-detail-collapse">+<summary class="ws-section__title ws-detail-summary">
     // 模式（复用现成CSS，不新增样式），默认展开(open)，用户可以自行收起不关心的区块。
-    html += wsSection('今日经营总览', '<div id="ws-overview-body">' + wsRenderOverview(overview, false) + '</div>');
+    html += wsSection('今日经营总览', '<div id="ws-overview-kpis-body">' + wsRenderOverviewKpis(overview) + '</div>');
+    html += wsSection('门店经营明细', wsRenderMonthFilterControl() + '<div id="ws-overview-body">' + wsRenderOperationalAndRankings(overview, false) + '</div>');
     html += wsSection('差评展示', wsRenderBadReviewSection(store ? [store] : []));
     html += wsSection('当月目标追踪', '<div id="ws-target-tracking"><div class="ws-loading">加载中...</div></div>');
     html += wsSection('智能备货', wsRenderSmartRestock());

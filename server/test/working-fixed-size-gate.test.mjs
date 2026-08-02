@@ -318,8 +318,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * pending-confirmations + 审批链列表接入 openApprovalDetailModal）。
  * 2026-08-01 第五十七次上调（71711→71774）：门店经营明细/营业额/客流量/人效排名/门店
  * 红绿灯/我的绩效加共享月份筛选下拉框。
+ * 2026-08-01 第五十八次上调（71774→71880）：7项UI/数据修复——待批可点性、月份筛选
+ * 弹层化、差评门店选择独占一行、毛利目标真实数据源、下属绩效角色范围、就餐人数分布
+ * 网格布局。
  */
-const MAX_LINES = 71774;
+const MAX_LINES = 71880;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
