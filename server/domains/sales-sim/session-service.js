@@ -409,6 +409,38 @@ function buildEvalsWithTriggers(turns, track) {
   return { traineeTurns, evals };
 }
 
+/** 销售业务场景 ack 意图 → 业务能力优点（方案价值/落地实施），写入复盘与报表 */
+const SALES_BUSINESS_ACK_STRENGTHS = {
+  ack_roi_calc: { principle_id: 'solution_value', detail: '给出可核验的回本测算' },
+  ack_assumption: { principle_id: 'solution_value', detail: '说明测算假设与依据' },
+  ack_boundary: { principle_id: 'solution_value', detail: '说清承诺边界' },
+  ack_next_step: { principle_id: 'solution_value', detail: '给出下一步方案' },
+  ack_diff: { principle_id: 'solution_value', detail: '讲清与竞品的差异' },
+  ack_evidence: { principle_id: 'solution_value', detail: '给出案例/数据支撑' },
+  ack_migration: { principle_id: 'solution_value', detail: '说明迁移对接方案' },
+  ack_fair_compare: { principle_id: 'solution_value', detail: '保持客观对比' },
+  ack_week1: { principle_id: 'implementation', detail: '讲清第一周落地动作' },
+  ack_month1: { principle_id: 'implementation', detail: '讲清首月节奏与复盘' },
+  ack_who: { principle_id: 'implementation', detail: '明确责任分工' },
+  ack_measure: { principle_id: 'implementation', detail: '给出衡量指标' },
+};
+
+/** 用客户回合的 customer_intent 回填业务能力优点（仅销售轨业务剧本） */
+export function enrichEvalsWithBusinessAcks(turns, evals, track) {
+  if (track !== 'sales') return evals;
+  for (const cust of turns.filter((t) => t.role === 'customer')) {
+    const meta = SALES_BUSINESS_ACK_STRENGTHS[cust.state_delta?.customer_intent];
+    if (!meta) continue;
+    const ev = evals.find((e) => e.turn_no === cust.turn_no);
+    if (!ev) continue;
+    const strengths = ev.strengths || (ev.strengths = []);
+    if (!strengths.some((s) => s.principle_id === meta.principle_id)) {
+      strengths.push({ ...meta });
+    }
+  }
+  return evals;
+}
+
 async function runFactGateForEvals(traineeTurns, evals) {
   try {
     const traineeTexts = traineeTurns.map((t) => t.content);
@@ -597,6 +629,7 @@ export async function finishSession(pool, {
 
   const turns = await loadTurns(pool, sessionId);
   const { traineeTurns, evals } = buildEvalsWithTriggers(turns, session.track);
+  enrichEvalsWithBusinessAcks(turns, evals, session.track);
   const factGate = await runFactGateForEvals(traineeTurns, evals);
 
   const durationSec = Math.max(30, Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000));

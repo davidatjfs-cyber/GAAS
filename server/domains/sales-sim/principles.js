@@ -13,6 +13,8 @@ export const SALES_PRINCIPLES = [
   { id: 'stay_on_pain', label: '一直围绕客户痛点', skill: 'listening' },
   { id: 'ask_first', label: '永远先提问', skill: 'questioning' },
   { id: 'no_argue', label: '不和客户争论', skill: 'listening' },
+  { id: 'solution_value', label: '方案价值与边界', skill: 'solution_value' },
+  { id: 'implementation', label: '落地实施清晰', skill: 'implementation' },
 ];
 
 export const CS_PRINCIPLES = [
@@ -25,7 +27,7 @@ export const CS_PRINCIPLES = [
   { id: 'no_overpromise', label: '承诺有边界', skill: 'resolution' },
 ];
 
-export const SALES_SKILLS = ['questioning', 'listening', 'value', 'closing'];
+export const SALES_SKILLS = ['questioning', 'listening', 'value', 'closing', 'solution_value', 'implementation'];
 export const CS_SKILLS = ['empathy', 'diagnosis', 'resolution', 'retention'];
 
 /** 咨询答疑轨：老板问产品用法/对接/口径等非投诉场景，考核业务能力而非安抚话术 */
