@@ -57,11 +57,26 @@ setTimeoutFn(runCachePurge, 15 * 1000);
 setIntervalFn(async () => {
   await runWithBootstrapTenantContext(async () => {
     try {
+      // 2026-08-03 修复："定时任务心跳异常"告警刷屏且task_name越报越长/越报越乱
+      // （如"heartbeat_alert_heartbeat_alert_freshness_alert_default:11:6"）——查证根因：
+      // 这条SQL之前不带WHERE，扫描scheduler_heartbeat全表，把本session之前为"数据新鲜度
+      // 告警"/"POS销售检查"去重加的持久化标记(freshness_alert_${tenantId}、
+      // pos_sales_check_fired_${tenantId}，见scheduler-freshness.js/monitor-pos-sales.js)
+      // 也当成"该定期心跳的任务"来判断——这些标记只在告警真正触发时才写一次，不是周期性
+      // 任务，不在HEARTBEAT_ALERT_THRESHOLDS_MIN白名单里，一律落到default:180分钟阈值，
+      // 写入后180分钟必然被判定"停摆"。更糟的是：本函数自己的去重key
+      // (`heartbeat_alert_${dedupeKey}`)也写回了同一张表，下一轮扫描又把这个key本身当成
+      // "停摆任务"之一，dedupeKey又是由"当前所有停摆任务名"拼出来的，于是名字一轮比一轮长、
+      // 一轮比一轮乱，形成自我循环放大。改成只查HEARTBEAT_ALERT_THRESHOLDS_MIN白名单里
+      // 登记过的真实周期性任务，其它任何一次性去重标记/本函数自身的dedupe key都不会再被
+      // 当作"心跳任务"来判断是否停摆。
+      const knownTaskNames = Object.keys(HEARTBEAT_ALERT_THRESHOLDS_MIN).filter((k) => k !== 'default');
       const r = await pool.query(`
         SELECT task_name,
                EXTRACT(EPOCH FROM (NOW() - last_beat)) / 60 AS minutes_ago
         FROM scheduler_heartbeat
-      `);
+        WHERE task_name = ANY($1::text[])
+      `, [knownTaskNames]);
       const staleRows = filterStaleHeartbeats(r.rows || [], HEARTBEAT_ALERT_THRESHOLDS_MIN);
       if (staleRows.length > 0) {
         const dead = formatStaleHeartbeatDeadLabel(staleRows);
