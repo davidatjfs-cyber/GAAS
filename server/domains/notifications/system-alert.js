@@ -16,7 +16,9 @@ export function createSendAdminSystemAlert({
   pool,
   makeNotif,
   appendNotifications,
-  insertHrmsUserNotifications,
+  // appendNotifications 内部就是 insertHrmsUserNotifications（见 append.js），这里保留
+  // 入参只为兼容既有调用方传参，本函数不再直接使用它——2026-08-03 双重插入修复。
+  insertHrmsUserNotifications: _insertHrmsUserNotifications,
   uniqUsernames,
   systemAlertTitle: titleFromMsg,
   lookupFeishuUserByUsername,
@@ -76,9 +78,16 @@ export function createSendAdminSystemAlert({
           ...meta,
         },
       }));
+      // 2026-08-03 修复用户反复反馈的"弹窗点了又来"根因：这里之前连续调用了
+      // appendNotifications(notifs) 和 insertHrmsUserNotifications(notifs) 两个函数——
+      // 但 appendNotifications 的实现(见 append.js)就是直接转调 insertHrmsUserNotifications，
+      // 两者根本是同一件事，等于把同一批通知原样插了两遍。生产实测：同一条"定时任务心跳异常"
+      // 在 hrms_user_notifications 里存在两条 created_at/message/meta 完全相同的记录
+      // (id 11849711 / 11849716)，用户点"我已阅读并知晓"只把其中一条置为已读，另一条仍是
+      // 未读，下次打开又被强制弹窗队列捞出来弹一次——这就是"天天点、天天又冒出来"的真相，
+      // 跟告警本身触发频率无关。这里只保留一次插入。
       try {
         await appendNotifications(notifs);
-        await insertHrmsUserNotifications(notifs);
       } catch (e) {
         log.error({ msg: 'system_alert_persist_failed', err: e?.message || String(e) });
       }

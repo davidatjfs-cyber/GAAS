@@ -76,7 +76,9 @@ test('appendNotifications([]) no-op (insert not called)', async () => {
   assert.equal(calls.query.length, 0);
 });
 
-test('appendNotifications with one notif calls pool.query dedup-check then INSERT', async () => {
+// 2026-08-03：原来这里断言"先发一条 SELECT 查重、再发一条 INSERT"共2条语句——那正是导致
+// 并发下重复插入的两步写法（TOCTOU）。现在合并成单条原子 INSERT ... WHERE NOT EXISTS。
+test('appendNotifications with one notif inserts via single atomic dedup-INSERT', async () => {
   const { helpers, calls } = buildHelpers();
   await helpers.appendNotifications([
     {
@@ -86,9 +88,10 @@ test('appendNotifications with one notif calls pool.query dedup-check then INSER
       type: 'system_notice',
     },
   ]);
-  assert.equal(calls.query.length, 2);
-  assert.match(String(calls.query[0][0]), /SELECT 1 FROM hrms_user_notifications/);
-  assert.match(String(calls.query[1][0]), /INSERT INTO hrms_user_notifications/);
+  assert.equal(calls.query.length, 1, '判重和插入必须合成一条语句，不能退回两步写法');
+  const sql = String(calls.query[0][0]);
+  assert.match(sql, /INSERT INTO hrms_user_notifications/);
+  assert.match(sql, /WHERE NOT EXISTS/);
   assert.equal(calls.merge.length, 0);
 });
 
@@ -99,13 +102,21 @@ test('appendNotifications with one notif calls pool.query dedup-check then INSER
 // schedule_notice等类型存在"隔十几分钟到几十分钟重新触发一次"的慢速重复bug，旧的一超过10
 // 分钟就不再算重复，堆积到6万+条。改成不限时间，只要同用户+同类型+同文案还有未读通知存在
 // 就跳过插入。
-test('appendNotifications：同用户+同类型+同文案已有未读通知时跳过插入（不限时间窗口）', async () => {
-  const { helpers, calls } = buildHelpers({ poolQueryResult: { rows: [{}] } });
+// 2026-08-03：判重下沉进 SQL（INSERT ... WHERE NOT EXISTS）后，"跳过插入"由数据库判定，
+// 不再是 JS 里 SELECT 完 early-return，所以这里改成断言判重条件本身仍然完整保留在语句里
+// （同用户 + 同类型 + 同文案 + 未读/4小时内已读窗口），而不是数一共发了几条语句。
+test('appendNotifications：判重条件必须覆盖同用户+同类型+同文案+未读窗口', async () => {
+  const { helpers, calls } = buildHelpers();
   await helpers.appendNotifications([
     { targetUser: 'bob', title: 'Hi', message: 'body', type: 'system_notice' },
   ]);
-  assert.equal(calls.query.length, 1, '命中去重后不应该再执行INSERT');
-  assert.match(String(calls.query[0][0]), /SELECT 1 FROM hrms_user_notifications/);
+  assert.equal(calls.query.length, 1);
+  const sql = String(calls.query[0][0]);
+  assert.match(sql, /WHERE NOT EXISTS/);
+  assert.match(sql, /lower\(target_username\) = lower\(\$1\)/);
+  assert.match(sql, /type = \$4/);
+  assert.match(sql, /message = \$3/);
+  assert.match(sql, /read_at IS NULL OR read_at > NOW\(\) - INTERVAL '4 hours'/);
 });
 
 test('notifyAdminsDualWriteFailure with mocked pool returning one open_id calls sendLarkMessage once', async () => {
@@ -127,7 +138,11 @@ test('sendAdminSystemAlert(\"\") returns empty recipients', async () => {
   assert.equal(calls.lark.length, 0);
 });
 
-test('insertHrmsUserNotifications with one notif calls pool.query', async () => {
+// 2026-08-03：判重+插入合并成单条原子 SQL（INSERT ... SELECT ... WHERE NOT EXISTS）。
+// 原来是"先 SELECT 查重、再 INSERT"两条语句，中间的 TOCTOU 竞态会让并发调用各插一条
+// 重复通知——这是用户长期反馈"弹窗点了又来"的其中一环。锁定：必须是一条 SQL，且判重
+// 条件内联在同一条语句里，不能退回两步写法。
+test('insertHrmsUserNotifications 判重与插入必须在同一条原子SQL里完成', async () => {
   const { helpers, calls } = buildHelpers();
   await helpers.insertHrmsUserNotifications([
     {
@@ -139,8 +154,10 @@ test('insertHrmsUserNotifications with one notif calls pool.query', async () => 
       createdAt: '2026-07-24T12:00:00+08:00',
     },
   ]);
-  assert.equal(calls.query.length, 2);
-  assert.match(String(calls.query[1][0]), /INSERT INTO hrms_user_notifications/);
-  assert.equal(calls.query[1][1][0], 'alice');
-  assert.equal(calls.query[1][1][6], 'default');
+  assert.equal(calls.query.length, 1, '不能再是"先查重再插入"两条语句，否则并发下去重锁形同虚设');
+  const sql = String(calls.query[0][0]);
+  assert.match(sql, /INSERT INTO hrms_user_notifications/);
+  assert.match(sql, /WHERE NOT EXISTS/, '判重条件必须内联在同一条 INSERT 语句里');
+  assert.equal(calls.query[0][1][0], 'alice');
+  assert.equal(calls.query[0][1][6], 'default');
 });
