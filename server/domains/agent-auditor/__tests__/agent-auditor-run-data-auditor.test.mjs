@@ -235,14 +235,24 @@ function baseDeps(overrides = {}) {
 }
 
 test('runDataAuditor weekly: revenue + tableVisit + badReviews detection paths', async () => {
+  // 2026-08-03：这条测试原来硬编码2026-07-01~20这个固定日期区间，但runDataAuditor('weekly')
+  // 内部用真实系统时间算"上一个完整自然周"（resolveAuditorPeriod没有可注入的now参数），
+  // 日历一滚到8月，硬编码的7月区间就完全落在"上一周"窗口之外，导致每个月都会因为纯粹的
+  // 日期滚动而挂掉，跟被测代码本身对不对没关系。改成用被测的同一个getPreviousWeekRange()
+  // 现算"上一周"是哪几天，报表数据永远落在正确窗口内，测试不再随日历滚动而失效。
+  const { weekStart, weekEnd } = getPreviousWeekRange(new Date());
   const reports = [];
-  for (let d = 1; d <= 20; d++) {
+  const cursor = new Date(weekStart + 'T00:00:00Z');
+  const endDate = new Date(weekEnd + 'T00:00:00Z');
+  while (cursor <= endDate) {
     reports.push({
       store: '洪潮久光店',
-      date: `2026-07-${String(d).padStart(2, '0')}`,
+      date: toDateOnly(cursor.toISOString()),
       data: { actual: 10, dine: { orders: 100 }, recharge: { amount: 1, count: 1 } },
     });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
+  const targetYm = weekStart.slice(0, 7);
   const run = createRunDataAuditor(
     baseDeps({
       getSharedState: async () => ({
@@ -250,7 +260,7 @@ test('runDataAuditor weekly: revenue + tableVisit + badReviews detection paths',
         employees: [{ username: 'mgr1', store: '洪潮久光店', role: 'store_manager' }],
         settings: {
           monthlyTargets: [
-            { ym: '2026-07', store: '洪潮久光店', targets: { actual: 1_000_000 } },
+            { ym: targetYm, store: '洪潮久光店', targets: { actual: 1_000_000 } },
           ],
         },
       }),
