@@ -225,7 +225,7 @@ export async function ensurePersonaSeed(pool) {
          (persona_key, track, title, difficulty, profile, opening_line, audience, source_type)
        VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
        ON CONFLICT (persona_key) DO UPDATE SET
-         title=EXCLUDED.title, difficulty=EXCLUDED.difficulty,
+         track=EXCLUDED.track, title=EXCLUDED.title, difficulty=EXCLUDED.difficulty,
          profile=EXCLUDED.profile, opening_line=EXCLUDED.opening_line,
          audience=EXCLUDED.audience, source_type=EXCLUDED.source_type, active=TRUE`,
       [

@@ -115,7 +115,7 @@ function registerSimSessionRoutes({ app, pool, platformAdminRequired }) {
 
   app.post('/api/admin/sales-sim/sessions', platformAdminRequired, async (req, res) => {
     try {
-      const track = req.body?.track === 'cs' ? 'cs' : 'sales';
+      const track = ['sales', 'cs', 'consult'].includes(req.body?.track) ? req.body.track : 'sales';
       const result = await startSession(pool, {
         username: usernameOf(req),
         track,
