@@ -2,7 +2,7 @@
  * Talent Engine — Job Profile + Competency（含 version）
  */
 
-import { SALES_SKILLS, CS_SKILLS } from './principles.js';
+import { SALES_SKILLS, CS_SKILLS, CONSULT_SKILLS } from './principles.js';
 import { STORE_COMPETENCY_SEEDS } from './store-tracks.js';
 
 export const BUILTIN_PROFILES = [
@@ -23,6 +23,15 @@ export const BUILTIN_PROFILES = [
     position_matchers: ['客服'],
     default_coach_persona_key: 'encouraging',
     sort_order: 20,
+  },
+  {
+    profile_key: 'consult',
+    label: '咨询答疑',
+    description: '老板产品咨询/自助操作答疑陪练（非投诉场景）',
+    role_matchers: ['customer_service', 'implementation'],
+    position_matchers: ['客服'],
+    default_coach_persona_key: 'encouraging',
+    sort_order: 25,
   },
   {
     profile_key: 'foh_server',
@@ -85,6 +94,13 @@ const CS_COMP_META = {
   retention: { label: '关系维护', ability_key: 'retention', sort_order: 40 },
 };
 
+const CONSULT_COMP_META = {
+  communication: { label: '沟通能力', ability_key: 'communication', sort_order: 10 },
+  product_knowledge: { label: '产品知识', ability_key: 'product_knowledge', sort_order: 20 },
+  service_awareness: { label: '服务意识', ability_key: 'service_awareness', sort_order: 30 },
+  recommendation: { label: '推荐能力', ability_key: 'recommendation', sort_order: 40 },
+};
+
 export async function ensureProfileSeed(pool) {
   for (const p of BUILTIN_PROFILES) {
     await pool.query(
@@ -115,6 +131,7 @@ export async function ensureProfileSeed(pool) {
 export async function ensureCompetencySeed(pool) {
   await seedCompetenciesForProfile(pool, 'sales', SALES_SKILLS, SALES_COMP_META);
   await seedCompetenciesForProfile(pool, 'cs', CS_SKILLS, CS_COMP_META);
+  await seedCompetenciesForProfile(pool, 'consult', CONSULT_SKILLS, CONSULT_COMP_META);
   for (const [profileKey, rows] of Object.entries(STORE_COMPETENCY_SEEDS)) {
     const metaMap = Object.fromEntries(rows.map((r) => [r.key, r]));
     await seedCompetenciesForProfile(pool, profileKey, rows.map((r) => r.key), metaMap);

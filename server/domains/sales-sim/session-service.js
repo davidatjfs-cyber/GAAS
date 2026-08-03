@@ -26,7 +26,7 @@ import {
 import { buildIncidentCorrections } from './incident-dialogue.js';
 
 const ALLOWED_TRACKS = new Set([
-  'sales', 'cs', 'foh_server', 'cashier', 'store_manager', 'kitchen_staff', 'hq_ops',
+  'sales', 'cs', 'consult', 'foh_server', 'cashier', 'store_manager', 'kitchen_staff', 'hq_ops',
 ]);
 
 let _callLLM = null;

@@ -16,6 +16,13 @@ export const CS_RANKS = [
   { key: 'cs_mentor', label: '导师客服', minMinutes: 720, minAvg: 88, minDifficultyClear: 6, mentor: true },
 ];
 
+export const CONSULT_RANKS = [
+  { key: 'consult_rookie', label: '普通答疑', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
+  { key: 'consult_senior', label: '资深答疑', minMinutes: 120, minAvg: 75, minDifficultyClear: 2 },
+  { key: 'consult_expert', label: '金牌答疑', minMinutes: 360, minAvg: 82, minDifficultyClear: 3 },
+  { key: 'consult_mentor', label: '导师答疑', minMinutes: 720, minAvg: 88, minDifficultyClear: 4, mentor: true },
+];
+
 const STORE_RANK_TEMPLATES = {
   foh_server: [
     { key: 'foh_rookie', label: '实习服务员', minMinutes: 0, minAvg: 0, minDifficultyClear: 0 },
@@ -51,6 +58,7 @@ const STORE_RANK_TEMPLATES = {
 
 export function rankLadder(track) {
   if (track === 'cs') return CS_RANKS;
+  if (track === 'consult') return CONSULT_RANKS;
   if (STORE_RANK_TEMPLATES[track]) return STORE_RANK_TEMPLATES[track];
   return SALES_RANKS;
 }
