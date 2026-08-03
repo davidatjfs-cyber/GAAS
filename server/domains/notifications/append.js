@@ -39,17 +39,21 @@ export function createAppendHelpers({
       // 弹窗确认），用户体验上跟完全没去重一样——"点掉了又弹出来"。改成：已读的也纳入
       // 去重窗口，但只挡最近 COOLDOWN_HOURS 小时内acked过的（不是永久挡，跨天/长时间
       // 后同一句文案如果真的又发生，还是应该能提醒到）。
-      const dup = await pool.query(
-        `SELECT 1 FROM hrms_user_notifications
-          WHERE lower(target_username) = lower($1) AND type = $2 AND message = $3
-            AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
-          LIMIT 1`,
-        [target, type, message]
-      );
-      if (dup.rows.length) continue;
+      // 2026-08-03 修复：这道去重锁原来是"先 SELECT 查有没有重复、再 INSERT"两步分开执行，
+      // 中间存在经典的 TOCTOU 竞态——两个并发调用可能同时查到"没有重复"，然后各自插入一条，
+      // 去重锁形同虚设。今天定位"弹窗点了又来"时实测同一条告警存在两条完全相同的记录
+      // （同 created_at/message/meta），主因是 system-alert.js 把同一批通知连续插了两遍
+      // （已单独修复），但只要这里还是"查完再插"，任何并发路径都可能重现同样的重复。
+      // 改成单条 INSERT ... SELECT ... WHERE NOT EXISTS：判重和插入在同一条 SQL 语句里
+      // 原子完成，并发下最多只有一条能插进去。
       await pool.query(
         `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+         SELECT $1,$2,$3,$4,$5,$6,$7
+          WHERE NOT EXISTS (
+            SELECT 1 FROM hrms_user_notifications
+             WHERE lower(target_username) = lower($1) AND type = $4 AND message = $3
+               AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
+          )`,
         [
           target,
           String(n?.title || '').trim() || '通知',

@@ -215,19 +215,21 @@ test('appendNotifications / insertHrmsUserNotifications 边角', async () => {
     hrmsNowISO: () => 'iso',
   });
   // appendNotifications 现在就是 insertHrmsUserNotifications：没有 target 的记录被跳过，
-  // 不再落回 hrms_state blob。每条记录现在会先发一次去重SELECT再INSERT（无重复时）。
+  // 不再落回 hrms_state blob。
+  // 2026-08-03：判重从"先SELECT再INSERT"两条语句改成单条原子
+  // INSERT ... WHERE NOT EXISTS（两步写法在并发下会各插一条重复通知），每条记录只发一条SQL。
   await appendNotifications([{ id: 'n1' }, null]);
   assert.equal(q.length, 0);
 
   await appendNotifications([{ targetUsername: 'n1user', title: 'T', message: 'M' }]);
-  assert.equal(q.length, 2);
-  assert.equal(q[1][1][0], 'n1user');
+  assert.equal(q.length, 1);
+  assert.equal(q[0][1][0], 'n1user');
 
   await insertHrmsUserNotifications([
     { title: 't' }, // no target → skip
     { targetUsername: 'u2', message: 'm', data: { d: 1 } },
   ]);
-  assert.equal(q.length, 4);
-  assert.equal(q[3][1][0], 'u2');
-  assert.equal(q[3][1][6], 't1');
+  assert.equal(q.length, 2);
+  assert.equal(q[1][1][0], 'u2');
+  assert.equal(q[1][1][6], 't1');
 });

@@ -192,13 +192,20 @@ export async function ackMyNotification(pool, username, id) {
   if (!notifId) return { ok: false, status: 400, error: 'missing_id' };
   try {
     const found = await pool.query(
-      `SELECT id, meta FROM hrms_user_notifications
+      `SELECT id, meta, message FROM hrms_user_notifications
         WHERE id = $1 AND lower(target_username) = lower($2)
         LIMIT 1`,
       [notifId, u]
     );
     if (!found.rows?.length) return { ok: false, status: 404, error: 'not_found' };
     const assignmentId = String(found.rows[0]?.meta?.assignment_id || '').trim();
+    const message = String(found.rows[0]?.message || '');
+    // 2026-08-03：用户长期反馈"点了已读，下次打开同一条又弹出来"——根因是同一条通知在库里
+    // 存在多条一模一样的副本（system-alert.js 双重插入，已单独修复），而这里只把用户点中的
+    // 那一条 id 置为已读，孪生副本仍是未读，下次强制确认队列又把它捞出来弹一次。除了堵住
+    // 产生重复的源头，这里再加一道兜底：本人名下 message 完全相同的未读副本一并标记已读——
+    // 用户看到的"同一条通知"就该一次点掉，不该因为底层存了几份而被要求点几次；同时也能把
+    // 修复前已经积压在库里的历史重复副本，在用户点第一次时顺带清干净。
     let r;
     if (assignmentId) {
       r = await pool.query(
@@ -208,18 +215,21 @@ export async function ackMyNotification(pool, username, id) {
             AND (
               id = $2
               OR COALESCE(meta->>'assignment_id', '') = $3
+              OR message = $4
             )
             AND read_at IS NULL
           RETURNING id`,
-        [u, notifId, assignmentId]
+        [u, notifId, assignmentId, message]
       );
     } else {
       r = await pool.query(
         `UPDATE hrms_user_notifications
             SET read_at = COALESCE(read_at, NOW())
-          WHERE id = $1 AND lower(target_username) = lower($2) AND read_at IS NULL
+          WHERE lower(target_username) = lower($1)
+            AND (id = $2 OR message = $3)
+            AND read_at IS NULL
           RETURNING id`,
-        [notifId, u]
+        [u, notifId, message]
       );
     }
     return { ok: true, acked_ids: (r.rows || []).map((row) => String(row.id)), read_at: new Date().toISOString() };
