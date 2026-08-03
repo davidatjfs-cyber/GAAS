@@ -726,6 +726,11 @@ function wsBindMonthFilterControl(root, { persona, store } = {}) {
     };
     btn.addEventListener('click', () => wsOpenMonthPickerSheet(applyMonth));
 }
+function wsSyncMonthPickerToPeriod(root, data) {
+    const period = data?.period, btn = root.querySelector('#ws-month-filter-btn');
+    if (!period || period === _wsMonthPickerValue) return;
+    _wsMonthPickerValue = period; if (btn) btn.textContent = wsMonthLabel(period, period === wsMonthFilterOptions()[0]) + ' ▾';
+}
 
 // 2026-07-30：用户要求① 门店经营明细里加"门店人效值"、把"本月离职率"从顶层挪进去（每店
 // 各自展示，不再是跨全部门店的一个聚合数字，operationalMetrics现在已经把efficiency/
@@ -2011,7 +2016,7 @@ async function wsRenderBossOrHq(root, persona) {
     wsFetchJson('/api/agent-scores/me').then((data) => {
         const el = document.getElementById('ws-my-performance');
         if (el) el.innerHTML = wsRenderMyPerformance(data);
-    });
+        wsSyncMonthPickerToPeriod(root, data); });
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
@@ -2329,7 +2334,7 @@ async function wsRenderStore(root) {
     wsFetchJson('/api/agent-scores/me').then((data) => {
         const el = document.getElementById('ws-my-performance');
         if (el) el.innerHTML = wsRenderMyPerformance(data);
-    });
+        wsSyncMonthPickerToPeriod(root, data); });
 }
 
 // 等级字母(A/B/C/D)映射进度条百分比+配色——D/C/B/A 依次对应 --ws-down(粉)/--ws-warn(金)/
@@ -2353,13 +2358,8 @@ function wsRenderPerfRow(label, grade) {
 function wsRenderMyPerformance(data) {
     if (!data || data.error) return '<div class="ws-empty">暂无绩效数据</div>';
     const score = data.total_score;
-    return (
-        '<div class="ws-perf-head"><span class="ws-perf-head__title">绩效</span><span class="ws-perf-head__sub">上级评定</span></div>' +
-        '<div class="ws-perf-score"><span class="ws-perf-score__n">' + (score ?? '—') + '</span><span class="ws-perf-score__l">综合得分</span></div>' +
-        wsRenderPerfRow('执行力', data.execution_rating) +
-        wsRenderPerfRow('工作态度', data.attitude_rating) +
-        wsRenderPerfRow('工作能力', data.ability_rating)
-    );
+    const periodTag = data.period ? '（' + data.period + '）' : '';
+    return '<div class="ws-perf-head"><span class="ws-perf-head__title">绩效' + periodTag + '</span><span class="ws-perf-head__sub">上级评定</span></div>' + '<div class="ws-perf-score"><span class="ws-perf-score__n">' + (score ?? '—') + '</span><span class="ws-perf-score__l">综合得分</span></div>' + wsRenderPerfRow('执行力', data.execution_rating) + wsRenderPerfRow('工作态度', data.attitude_rating) + wsRenderPerfRow('工作能力', data.ability_rating);
 }
 
 // ── 员工工作台 ──
