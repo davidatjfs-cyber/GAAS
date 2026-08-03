@@ -4,7 +4,7 @@
 
 import { getRankStatus, rankLadder } from './rank.js';
 import { listPersonas } from './personas.js';
-import { SALES_SKILLS, CS_SKILLS } from './principles.js';
+import { SALES_SKILLS, CS_SKILLS, CONSULT_SKILLS } from './principles.js';
 import { localizeFocus, difficultyLabel } from './labels.js';
 import {
   getCoachMemory, resolveFocusFromMemory, recentPersonaSet,
@@ -34,6 +34,16 @@ const FOCUS_TO_PERSONA = {
     diagnosis: ['cs_multi_issue', 'cs_ux_loop'],
     resolution: ['cs_refund', 'cs_sms_fail'],
     retention: ['cs_refund_lawyer', 'cs_rage_escalation'],
+  },
+  consult: {
+    communication: ['cs_activity_setup', 'cs_growth_diagnosis'],
+    product_knowledge: ['cs_pos_data_connect', 'cs_report_billing'],
+    service_awareness: ['cs_marketing_sms', 'cs_pos_data_connect'],
+    recommendation: ['cs_growth_diagnosis', 'cs_marketing_sms'],
+    clear_steps: ['cs_activity_setup'],
+    accurate_info: ['cs_report_billing', 'cs_pos_data_connect'],
+    confirm_scope: ['cs_pos_data_connect', 'cs_report_billing'],
+    suggest_next: ['cs_growth_diagnosis', 'cs_marketing_sms'],
   },
   foh_server: {
     exception_handling: ['foh_rush_diner', 'foh_wrong_dish'],
@@ -89,7 +99,8 @@ function maxDifficultyForRank(track, rankKey) {
 export async function recommendNextSession(pool, username, track) {
   const rank = await getRankStatus(pool, username, track);
   const skills = rank.skills || {};
-  const keys = skillsForTrack(track) || (track === 'cs' ? CS_SKILLS : SALES_SKILLS);
+  const keys = skillsForTrack(track)
+    || (track === 'cs' ? CS_SKILLS : (track === 'consult' ? CONSULT_SKILLS : SALES_SKILLS));
   let weakest = keys[0];
   let weakestScore = 101;
   for (const k of keys) {

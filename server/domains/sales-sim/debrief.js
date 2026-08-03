@@ -1,4 +1,4 @@
-import { scoreSkillsFromEvals, SALES_SKILLS, CS_SKILLS } from './principles.js';
+import { scoreSkillsFromEvals, SALES_SKILLS, CS_SKILLS, CONSULT_SKILLS } from './principles.js';
 import { findPlaybooksForPrinciples, findPlaybooksForScenes } from './playbooks.js';
 import {
   skillLabel, principleLabel, sceneLabel, localizeSourceLabel,
@@ -21,7 +21,8 @@ export async function buildDebrief(pool, {
     ));
   }
 
-  const skillKeys = skillsForTrack(track) || (track === 'sales' ? SALES_SKILLS : CS_SKILLS);
+  const skillKeys = skillsForTrack(track)
+    || (track === 'sales' ? SALES_SKILLS : (track === 'consult' ? CONSULT_SKILLS : CS_SKILLS));
   const skillAvg = Math.round(skillKeys.reduce((a, k) => a + (skills[k] || 0), 0) / skillKeys.length);
 
   const allViolations = [];
@@ -60,7 +61,7 @@ export async function buildDebrief(pool, {
 
   const nextFocus = principleIds[0]
     || skillKeys.find((k) => (skills[k] || 100) < 75)
-    || (track === 'sales' ? 'ask_first' : (track === 'cs' ? 'soothe_first' : skillKeys[0]));
+    || (track === 'sales' ? 'ask_first' : (track === 'cs' ? 'soothe_first' : (track === 'consult' ? 'clear_steps' : skillKeys[0])));
   const skillsLabeled = Object.fromEntries(
     Object.entries(skills).map(([k, v]) => [skillLabel(k), scoreGrade(v)])
   );

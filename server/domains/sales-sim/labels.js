@@ -86,6 +86,7 @@ export const SCENE_LABELS = {
 export const TRACK_LABELS = {
   sales: '销售陪练',
   cs: '客服陪练',
+  consult: '咨询答疑陪练',
   foh_server: '服务员陪练',
   cashier: '收银陪练',
   store_manager: '店长陪练',

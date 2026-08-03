@@ -90,7 +90,7 @@ export function shouldEndSession(session, track) {
   if (track === 'sales' && session.emotion <= 15 && session.trust <= 20) {
     return { end: true, outcome: 'hangup', reason: '客户情绪与信任过低，准备结束沟通' };
   }
-  if (track === 'cs' && session.satisfaction <= 20) {
+  if ((track === 'cs' || track === 'consult') && session.satisfaction <= 20) {
     return { end: true, outcome: 'failed', reason: '客户满意度过低，会话失败' };
   }
   return { end: false };
@@ -103,7 +103,7 @@ export function shouldResolveSession({
   if (turnNo < 2 || !turnPlan) return { end: false };
   const intent = turnPlan.intent || '';
   const priorResolves = priorCustomerIntents.filter((i) => i === 'resolve' || i === 'signal').length;
-  if (track === 'cs' && intent === 'resolve' && priorResolves >= 1) {
+  if ((track === 'cs' || track === 'consult') && intent === 'resolve' && priorResolves >= 1) {
     if (Number(session.satisfaction) >= 65) {
       return { end: true, outcome: 'resolved', closingLine: '好，那就按你说的办，处理完了告诉我一声，辛苦了。' };
     }
@@ -148,7 +148,7 @@ export function buildCustomerTurn({
   const salt = turnNo + Number(session.close_readiness || 0);
   const personaKey = persona?.persona_key || '';
 
-  if (track === 'cs') {
+  if (track === 'cs' || track === 'consult') {
     if (tags.has('no_soothe') || tags.has('hard_deny')) {
       return plan(pick(CS_REPLIES.no_soothe, salt), 'no_soothe', '学员没有先安抚你的情绪，你表达不满，语气符合当前状态。');
     }

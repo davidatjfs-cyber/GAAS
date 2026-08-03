@@ -4,12 +4,15 @@
  * 输出非法或调用失败时，由调用方回退规则判定（本模块返回 ok:false）。
  */
 
-import { CS_PRINCIPLES, SALES_PRINCIPLES } from './principles.js';
+import { CS_PRINCIPLES, SALES_PRINCIPLES, CONSULT_PRINCIPLES } from './principles.js';
 
 const PRINCIPLES_BY_TRACK = {
   cs: CS_PRINCIPLES,
   sales: SALES_PRINCIPLES,
+  consult: CONSULT_PRINCIPLES,
 };
+
+const TRACK_ZH = { sales: '销售', cs: '客服', consult: '咨询答疑' };
 
 /** 客观硬违规：规则命中即保留，LLM 宽松也不放掉 */
 const HARD_VIOLATIONS = new Set(['dig_refund_root', 'own_problem', 'no_overpromise']);
@@ -28,6 +31,10 @@ const CODE_MESSAGES = {
   own_problem: { code: 'blame_shift', message: '先揽责不推诿：承认客户处境，再说明你方会做什么' },
   no_overpromise: { code: 'overpromise', message: '承诺要可兑现：给具体动作和时间，别用「保证/绝对」' },
   closing: { code: 'soft_no_missed', message: '「再考虑」常是拒绝信号，请确认顾虑' },
+  clear_steps: { code: 'vague_steps', message: '给出具体步骤，别只说「可以/没问题」' },
+  accurate_info: { code: 'overconfident', message: '不确定时先说会核实，别用「肯定/百分百」' },
+  confirm_scope: { code: 'no_scope_check', message: '先问清对方现状/口径，再回答' },
+  suggest_next: { code: 'no_next_step', message: '给出下一步建议，别只回答完就停' },
 };
 
 function extractJson(raw) {
@@ -70,7 +77,7 @@ export async function maybeRefineEvaluationWithLLM(callLLM, {
     const ruleS = (evalResult?.strengths || []).map((s) => `${s.principle_id}（${s.detail}）`).join('；') || '无';
     const prompt = [
       '你是岗位陪练的评估教练，用 L1 原则评估学员「这一句」（只判这一句，不翻旧账）。',
-      `轨道：${track === 'sales' ? '销售' : '客服'}`,
+      `轨道：${TRACK_ZH[track] || '客服'}`,
       `轮次：第 ${turnNo} 轮学员发言`,
       `原则（principle_id 只能从这些里选）：\n${principleLines}`,
       `客户上一句：${customerText || '（开场）'}`,

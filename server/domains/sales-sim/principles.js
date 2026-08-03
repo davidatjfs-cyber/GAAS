@@ -28,6 +28,18 @@ export const CS_PRINCIPLES = [
 export const SALES_SKILLS = ['questioning', 'listening', 'value', 'closing'];
 export const CS_SKILLS = ['empathy', 'diagnosis', 'resolution', 'retention'];
 
+/** 咨询答疑轨：老板问产品用法/对接/口径等非投诉场景，考核业务能力而非安抚话术 */
+export const CONSULT_PRINCIPLES = [
+  { id: 'clear_steps', label: '给出清晰可执行步骤', skill: 'communication' },
+  { id: 'accurate_info', label: '信息准确不臆造', skill: 'product_knowledge' },
+  { id: 'confirm_scope', label: '先确认对方具体情况', skill: 'service_awareness' },
+  { id: 'suggest_next', label: '给出合适的下一步建议', skill: 'recommendation' },
+];
+export const CONSULT_SKILLS = ['communication', 'product_knowledge', 'service_awareness', 'recommendation'];
+
+const TRACK_SKILLS = { sales: SALES_SKILLS, cs: CS_SKILLS, consult: CONSULT_SKILLS };
+const TRACK_PRINCIPLES = { sales: SALES_PRINCIPLES, cs: CS_PRINCIPLES, consult: CONSULT_PRINCIPLES };
+
 const FEATURE_DUMP_RE = /(?:有很多|几十个)?功能|经营诊断|会员营销|AI客服|我们系统|我们这套|模块包括|支持.{0,8}(?:功能|对接)/i;
 const QUESTION_RE = /[？?]|吗\s*$|么\s*$|呢\s*$|是否|能不能|可以先问|方便说|最想|最希望|最大.{0,6}(?:困扰|压力|问题|顾虑)/;
 const PRICE_PUSHBACK_RE = /不贵|其实便宜|性价比很高|打折|优惠给|便宜点就/;
@@ -41,6 +53,15 @@ const OVERPROMISE_RE = /保证.{0,6}(一定|绝对|马上|立刻|没问题)|100%
 const NEGATED_PROMISE_RE = /不(保证|会|可能)|没法|无法|不能|不会|没有/;
 const CALM_ACK_RE = /(^|[。！？，])\s*(好|行|可以|行吧|没问题|谢谢|明白|知道|辛苦|理解)[，。!！]?/;
 const EMOTION_WORDS_RE = /生气|着急|受够|气死|投诉|什么情况|怎么回事|太差|烦|气炸|失望|崩溃|火大|恶心/;
+const HOWTO_RE = /怎么(做|操作|弄|开始|用)|一步一步|从哪开始|教我/;
+const SCOPE_ASK_RE = /多久|同步|对接|范围|覆盖|哪些数据/;
+const BILLING_ASK_RE = /口径|对不上|流水|算不算|准不准|数据从哪/;
+const STEP_MARK_RE = /第[一二三四五1-9]步|先.{0,10}再.{0,10}(然后|接着)?|\d+[\.、]/;
+const VAGUE_ANSWER_RE = /^(会|可以|没问题|能|行)[的。！]?$/;
+const OVERCONFIDENT_RE = /肯定没问题|随便都行|不用管|绝对没事|百分百没问题/;
+const CONCRETE_FACT_RE = /\d+\s*(分钟|小时|天|次|元)|T\+\d|实时/;
+const SCOPE_CONFIRM_RE = /具体|哪家|现在用的是|目前用的|你们店|几家店|什么版本/;
+const NEXT_STEP_RE = /建议|下一步|可以先|需要你|麻烦你|接下来/;
 
 export function detectCustomerTriggers(customerText = '', track = null) {
   if (track && isStoreTrack(track)) return detectStoreTriggers(customerText);
@@ -56,6 +77,9 @@ export function detectCustomerTriggers(customerText = '', track = null) {
   if (/着急|生气|受够了|太差了|什么破/.test(t)) hits.push('angry');
   if (/不好用|难用|不会用|操作复杂/.test(t)) hits.push('ux_bad');
   if (/退款|退钱|不想用了|取消合作/.test(t)) hits.push('refund');
+  if (HOWTO_RE.test(t)) hits.push('howto');
+  if (SCOPE_ASK_RE.test(t)) hits.push('scope_question');
+  if (BILLING_ASK_RE.test(t)) hits.push('billing_question');
   // 门店触发器也可用于 cs 租户旧人格
   for (const h of detectStoreTriggers(t)) {
     if (!hits.includes(h)) hits.push(h);
@@ -77,6 +101,8 @@ export function evaluateTraineeUtterance({ track, traineeText, customerText, tur
 
   if (track === 'sales') {
     evaluateSalesTurn({ text, triggers, turnNo, priorTraineeCount, violations, strengths, coachTags });
+  } else if (track === 'consult') {
+    evaluateConsultTurn({ text, triggers, violations, strengths, coachTags, turnNo });
   } else {
     evaluateCsTurn({ text, customer, triggers, violations, strengths, coachTags, turnNo });
   }
@@ -106,6 +132,8 @@ function pushFallbackCoach({ coachTags, strengths, triggers, track, text, turnNo
     } else {
       pool = ['这一步可以更好：先接住客户上一句，再给明确方案+时间+闭环。', '试着给客户一个可验证的下一步（时间/谁确认/怎么告知）。'];
     }
+  } else if (track === 'consult') {
+    pool = ['给出具体步骤或数字，别只说「可以/没问题」。', '先确认对方具体情况，再给操作建议。'];
   } else if (QUESTION_RE.test(text)) {
     pool = ['保持提问节奏，把客户回答里的关键点接住再推进。', '问得好，继续深挖一个具体点，再谈方案。'];
   } else {
@@ -226,9 +254,42 @@ function evaluateCsTurn({ text, customer, triggers, violations, strengths, coach
   pushFallbackCoach({ coachTags, strengths, triggers, track: 'cs', text, turnNo, calmAck });
 }
 
+function evaluateConsultTurn({ text, triggers, violations, strengths, coachTags, turnNo }) {
+  if (triggers.includes('howto')) {
+    if (STEP_MARK_RE.test(text)) {
+      strengths.push({ principle_id: 'clear_steps', detail: '给出分步骤说明' });
+    } else if (VAGUE_ANSWER_RE.test(text.trim()) || text.trim().length < 15) {
+      violations.push({ principle_id: 'clear_steps', detail: '只给模糊回应，未给可执行步骤' });
+      coachTags.push({ code: 'vague_steps', level: 'error', message: '给出具体步骤，别只说「可以/没问题」' });
+    }
+  }
+
+  if (OVERCONFIDENT_RE.test(text)) {
+    violations.push({ principle_id: 'accurate_info', detail: '给出过于绝对的承诺，未留核实空间' });
+    coachTags.push({ code: 'overconfident', level: 'warn', message: '不确定时先说会核实，别用「肯定/百分百」' });
+  } else if (CONCRETE_FACT_RE.test(text)) {
+    strengths.push({ principle_id: 'accurate_info', detail: '给出具体数字/时效' });
+  }
+
+  if (triggers.includes('scope_question') || triggers.includes('billing_question')) {
+    if (SCOPE_CONFIRM_RE.test(text) || QUESTION_RE.test(text)) {
+      strengths.push({ principle_id: 'confirm_scope', detail: '先确认对方具体情况' });
+    } else if (turnNo <= 2) {
+      violations.push({ principle_id: 'confirm_scope', detail: '未确认具体情况就直接作答' });
+      coachTags.push({ code: 'no_scope_check', level: 'warn', message: '先问清对方现状/口径，再回答' });
+    }
+  }
+
+  if (NEXT_STEP_RE.test(text)) {
+    strengths.push({ principle_id: 'suggest_next', detail: '给出下一步建议' });
+  }
+
+  pushFallbackCoach({ coachTags, strengths, triggers, track: 'consult', text, turnNo });
+}
+
 export function scoreSkillsFromEvals(track, evals = []) {
   const storeKeys = skillsForTrack(track);
-  const keys = storeKeys || (track === 'sales' ? SALES_SKILLS : CS_SKILLS);
+  const keys = storeKeys || TRACK_SKILLS[track] || CS_SKILLS;
   const base = Object.fromEntries(keys.map((k) => [k, 70]));
   for (const ev of evals) {
     for (const s of ev.strengths || []) {
@@ -245,6 +306,6 @@ export function scoreSkillsFromEvals(track, evals = []) {
 
 function principleToSkill(track, principleId) {
   const storeList = principlesForTrack(track);
-  const list = storeList || (track === 'sales' ? SALES_PRINCIPLES : CS_PRINCIPLES);
+  const list = storeList || TRACK_PRINCIPLES[track] || CS_PRINCIPLES;
   return list.find((p) => p.id === principleId)?.skill || null;
 }
