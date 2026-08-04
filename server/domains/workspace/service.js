@@ -415,26 +415,26 @@ export async function respondToTask(pool, tenantId, { taskId, username, response
     // 2026-07-30：漏排除pending_review状态 + 前端提交按钮未disable，导致同一任务重复提交
     // 命中UPDATE后无条件INSERT，堆积出98条一模一样的"待确认"通知。这里补一道去重：同一
     // task_id若已有未读的task_response_submitted通知，跳过再次插入。
-    const dup = await pool.query(
-      `SELECT 1 FROM hrms_user_notifications
-        WHERE type = 'task_response_submitted' AND read_at IS NULL
-          AND COALESCE(meta->>'task_id', '') = $1 AND tenant_id = $2
-        LIMIT 1`,
-      [taskId, tenantId]
+    // 2026-08-04 修复：上面这版去重检查是"先 SELECT 查、再 INSERT"两步分开执行，跟
+    // append.js 8/3 号之前的老 bug 是同一个 TOCTOU 竞态。改成单条 INSERT...WHERE NOT
+    // EXISTS，判重和插入原子完成。
+    await pool.query(
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+       SELECT $1, $2, $3, 'task_response_submitted', $4::jsonb, $5
+        WHERE NOT EXISTS (
+          SELECT 1 FROM hrms_user_notifications
+           WHERE type = 'task_response_submitted' AND read_at IS NULL
+             AND COALESCE(meta->>'task_id', '') = $6 AND tenant_id = $5
+        )`,
+      [
+        dispatcher,
+        '任务已提交完成反馈，待确认',
+        `${username} 已提交「${task.title}」的完成反馈${text ? '：' + text : ''}${images.length ? '（含' + images.length + '个证据文件）' : ''}，请查看并确认。`,
+        JSON.stringify({ task_id: taskId, store: task.store }),
+        tenantId,
+        taskId,
+      ]
     );
-    if (!dup.rows.length) {
-      await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
-         VALUES ($1, $2, $3, 'task_response_submitted', $4::jsonb, $5)`,
-        [
-          dispatcher,
-          '任务已提交完成反馈，待确认',
-          `${username} 已提交「${task.title}」的完成反馈${text ? '：' + text : ''}${images.length ? '（含' + images.length + '个证据文件）' : ''}，请查看并确认。`,
-          JSON.stringify({ task_id: taskId, store: task.store }),
-          tenantId,
-        ]
-      );
-    }
   }
   return { ok: true, taskId };
 }
