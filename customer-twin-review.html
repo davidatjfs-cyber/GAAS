@@ -55,14 +55,19 @@
       <div class="card">
         <div class="stats" id="statsLine">加载中…</div>
       </div>
+      <div id="errorCard" class="card hidden"></div>
       <div id="cardList"></div>
     </div>
   </main>
   <script>
     (function () {
-      const token = localStorage.getItem('hrms_token') || localStorage.getItem('HRMS_API_TOKEN') || '';
       const qs = new URLSearchParams(location.search);
-      const state = { token: qs.get('token') || token, cards: [], generating: false };
+      const token = qs.get('token')
+        || localStorage.getItem('platform_admin_token')
+        || localStorage.getItem('hrms_token')
+        || localStorage.getItem('HRMS_API_TOKEN')
+        || '';
+      const state = { token, cards: [], generating: false };
       const $ = (id) => document.getElementById(id);
       const show = (id, on) => $(id).classList.toggle('hidden', !on);
       function esc(s) {
@@ -130,13 +135,26 @@
       }
 
       async function loadCards() {
+        show('errorCard', false);
         try {
           const data = await api('/api/customer-twin/incidents/pending');
           state.cards = data.cards || [];
           renderStats();
           renderCards();
         } catch (e) {
-          alert('加载失败：' + e.message);
+          const status = e.data && e.data.status ? e.data.status : (e.data && e.data.error === 'unauthorized' ? 401 : null);
+          const el = $('errorCard');
+          if (status === 401 || /unauthorized|token/i.test(e.message)) {
+            el.innerHTML =
+              '<h3>登录状态无效</h3>' +
+              '<p>请先在 <a href="/platform-admin.html" target="_blank" rel="noopener">平台后台（platform-admin）</a> 用管理员账号登录，' +
+              '再回到本页面点「刷新」。</p>' +
+              '<p class="muted">如果已经登录仍无效：复制浏览器 Local Storage 里的 platform_admin_token，' +
+              '用 ' + esc(location.origin + location.pathname + '?token=') + ' 形式访问。</p>';
+          } else {
+            el.innerHTML = '<h3>加载失败</h3><p>' + esc(e.message || '未知错误') + '</p>';
+          }
+          show('errorCard', true);
         }
       }
 
