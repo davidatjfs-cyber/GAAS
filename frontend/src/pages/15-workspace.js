@@ -857,11 +857,20 @@ function wsRenderPllmExperimentCard(it, seen) {
     // channel/ready_copy/image_requirement/duration_days/target_kpi/cost_estimate列——
     // agents-service-v2那边已经把这些字段折叠进action文本一起返回，这里用wsFormatTaskDetail
     // 保留换行/长文本折叠展示，不再假设有独立字段。
+    // 2026-08-04：用户反馈 A/B 双方案「要么都执行、要么都忽略」，无法只采纳A——
+    // 多方案时每个方案各带一个勾选框，采纳时只提交勾中的（acceptedVariantCodes），
+    // 未勾中的由后端标 rejected 且不派发。单方案（新生成的都是单方案）不显示勾选框。
+    const multiVariant = (it.variants || []).length > 1;
     const variantsHtml = (it.variants || []).map((v) => {
         const assignees = canDecide ? wsMarketingAssigneeOptions(v.store) : { empty: true };
+        const vc = wsEsc(v.variantCode || '');
         return (
             '<div class="ws-card__desc" style="margin-top:8px;padding:8px 10px;background:rgba(134,201,162,0.05);border:1px solid rgba(134,201,162,0.18);border-radius:8px;">' +
-            '<div style="font-weight:700;margin-bottom:4px;">方案' + wsEsc(v.variantCode || '') + (v.label ? ' — ' + wsEsc(v.label) : '') + '（' + wsEsc(v.store || '') + '）</div>' +
+            '<div style="font-weight:700;margin-bottom:4px;">' +
+            (canDecide && multiVariant
+                ? '<label style="cursor:pointer;"><input type="checkbox" checked data-ws-pllm-pick="' + vc + '" style="margin-right:6px;vertical-align:middle;">采纳本方案 · </label>'
+                : '') +
+            '方案' + vc + (v.label ? ' — ' + wsEsc(v.label) : '') + '（' + wsEsc(v.store || '') + '）</div>' +
             wsFormatTaskDetail(v.action) +
             (v.executionGuide ? '<div style="margin-top:4px;opacity:.7;font-size:11px;">' + wsEsc(v.executionGuide) + '</div>' : '') +
             (canDecide
@@ -948,21 +957,36 @@ function wsBindMarketingSuggestionsEvents(root) {
             // 接口早就支持storeAssignments却从没有调用方真正传过。这里收集每个variant的
             // 责任人下拉框选择，一起提交，让方案真正落到具体人身上。
             const card = btn.closest('.ws-card');
+            // 2026-08-04：多方案时只采纳勾中的（未勾的后端标 rejected 且不派发）。
+            // 无勾选框=单方案，picks 为 null，后端保持「全部采纳」的原行为。
+            const pickBoxes = card ? [...card.querySelectorAll('[data-ws-pllm-pick]')] : [];
+            const picks = pickBoxes.length
+                ? pickBoxes.filter((b) => b.checked).map((b) => b.getAttribute('data-ws-pllm-pick'))
+                : null;
+            if (picks && !picks.length) {
+                showNotification('请至少勾选一个要采纳的方案', 'warning');
+                return;
+            }
             const assigneeSelects = card ? [...card.querySelectorAll('[data-ws-pllm-assignee]')] : [];
             const storeAssignments = assigneeSelects
                 .map((sel) => ({ variantCode: sel.getAttribute('data-ws-pllm-assignee'), assigneeUsername: sel.value }))
-                .filter((a) => a.assigneeUsername);
+                .filter((a) => a.assigneeUsername && (!picks || picks.includes(a.variantCode)));
             if (assigneeSelects.length && !storeAssignments.length) {
-                showNotification('请至少为一个方案选择责任人', 'warning');
+                showNotification('请至少为一个要采纳的方案选择责任人', 'warning');
                 return;
             }
-            if (!confirm('采纳此PLLM策略实验方案？\n\n将分配给所选责任人，请人工按方案执行。')) return;
+            const pickTip = picks && picks.length < pickBoxes.length
+                ? '\n\n只采纳：方案' + picks.join('、方案') + '（其余标记为不适合）'
+                : '';
+            if (!confirm('采纳此PLLM策略实验方案？' + pickTip + '\n\n将分配给所选责任人，请人工按方案执行。')) return;
             const code = btn.getAttribute('data-ws-pllm-approve');
             const resultEl = card?.querySelector('.ws-action-result');
             btn.disabled = true;
             try {
                 const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/approve', {
-                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ storeAssignments }),
+                    method: 'POST',
+                    headers: wsAuthHeaders(),
+                    body: JSON.stringify({ storeAssignments, ...(picks ? { acceptedVariantCodes: picks } : {}) }),
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));

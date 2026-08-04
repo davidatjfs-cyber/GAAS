@@ -166,7 +166,12 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
     try {
       const role = String(req.user?.role || '').trim();
       if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ ok: false, error: 'forbidden' });
-      const { storeAssignments } = req.body;
+      // acceptedVariantCodes：只采纳部分方案（如只执行A、B不适合），不传则全部采纳。
+      // 2026-08-04 用户反馈 A/B「要么都执行、要么都忽略」无法操作而补上。
+      const { storeAssignments, acceptedVariantCodes } = req.body;
+      const accepted = Array.isArray(acceptedVariantCodes)
+        ? acceptedVariantCodes.map((c) => String(c || '').trim()).filter(Boolean)
+        : null;
       const exp = await pool.query(`SELECT id, status FROM strategy_experiments WHERE experiment_code = $1`, [req.params.code]);
       if (!exp.rows[0]) return res.status(404).json({ ok: false, error: 'not_found' });
       if (exp.rows[0].status !== 'pending_approval') return res.status(400).json({ ok: false, error: 'experiment not in pending_approval status' });
@@ -183,7 +188,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
 
       const agentsUrl = process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101';
       try {
-        const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/approve`, { storeAssignments }, {
+        const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/approve`, { storeAssignments, ...(accepted ? { acceptedVariantCodes: accepted } : {}) }, {
           headers: agentsOutboundHeaders(req, {
             Authorization: req.headers.authorization || '',
             'Content-Type': 'application/json',
@@ -192,6 +197,15 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
         return res.json(resp.data);
       } catch (proxyErr) {
         log.error({ msg: 'proxy_approve_to_agents_service_failed_falling_back_to_local', err: proxyErr?.message });
+      }
+
+      if (accepted && accepted.length) {
+        // 未被采纳的方案标 rejected；下面「pending → executing」那步就不会激活它们
+        await pool.query(
+          `UPDATE strategy_variants SET status = 'rejected'
+            WHERE experiment_id = $1 AND NOT (variant_code = ANY($2))`,
+          [exp.rows[0].id, accepted]
+        );
       }
 
       await pool.query(`
