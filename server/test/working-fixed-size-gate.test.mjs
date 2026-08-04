@@ -327,8 +327,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * （加门店下拉选择器，跟店长/出品经理的单店目标追踪复用同一套渲染）。
  * 2026-08-02 第六十一次上调（71937→71953）："当月目标追踪"换月份筛选后数字不变——
  * applyMonth补上刷新这块，且请求带上?month=。
+ * 2026-08-04 第六十二次上调（71953→71972）：营销建议 A/B 方案支持单独采纳——用户反馈
+ * 双方案「要么都执行、要么都忽略」无法操作，多方案时每个方案各加一个「采纳本方案」
+ * 勾选框，只提交勾中的 acceptedVariantCodes（新代码在 frontend/src/pages/15-workspace.js，
+ * 不是 inline script）。
  */
-const MAX_LINES = 71953;
+const MAX_LINES = 71972;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
