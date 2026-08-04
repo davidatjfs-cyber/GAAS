@@ -12,6 +12,8 @@ export function startGrowthAudienceWorkers(deps) {
     setTouchRulesAudienceGetter,
     loadSegmentPhoneSet,
     fetchGenericRuleCandidates,
+    filterGenericRuleCandidates,
+    loadRuleCandidates,
   } = deps;
 
   // 每条规则当前「涉及会员数」（命中人群且可触达：有企微外部联系人或手机号）。
