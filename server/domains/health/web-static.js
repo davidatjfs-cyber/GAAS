@@ -10,6 +10,7 @@ export function registerWebStaticRoutes(app, { express, fs, path, webRootDir }) 
     'platform-admin.html',
     'sales-sim.html',
     'job-coach.html',
+    'customer-twin-review.html',
     'campaign.html',
     'forecast.html',
     'index.html',
