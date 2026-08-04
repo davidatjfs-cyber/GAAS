@@ -118,7 +118,16 @@ export function inSmsQuietHours(now = new Date()) {
   return !windows.some(([s, e]) => bjMins >= s && bjMins < e);
 }
 
-const SMS_PERMANENT_FAIL_RE = /空号|黑名单|号码状态错误|MOBILE_NUMBER_ILLEGAL|MOBILE_NUMBER_NULL|BLACK_KEY_CONTROL_LIMIT/i;
+// 阿里云「永久失败」判定：命中后写入 growth_sms_suppression，所有自动发送路径（活动规则/
+// 储值提醒/召回/手动活动）直接跳过该号码，避免每次都被拒收。
+// 覆盖中文报错与错误码：黑名单管控 / 用户已退订营销短信 / 手机号码格式错误 / 业务停机 /
+// 空号 / 号码状态错误 / 号码不存在。易失性错误（余额不足、网络、模板缺失、AccessKey 风险）不算。
+const SMS_PERMANENT_FAIL_RE =
+  /空号|黑名单|退订|停机|号码状态错误|号码不存在|手机号(?:码)?格式错误|MOBILE_NUMBER_ILLEGAL|MOBILE_NUMBER_NULL|BLACK_KEY_CONTROL_LIMIT|BLACK_USER_CONTROL_LIMIT/i;
+
+export function isSmsPermanentFailure(errMsg) {
+  return SMS_PERMANENT_FAIL_RE.test(String(errMsg || ''));
+}
 const SMS_BALANCE_FAIL_RE = /余额不足|AMOUNT_NOT_ENOUGH|OUT_OF_SERVICE/i;
 
 export async function isPhoneSuppressed(pool, phone, tenantId = 'default') {
@@ -135,7 +144,7 @@ export async function handleSmsFailure(pool, phone, errMsg, tenantId = 'default'
   const msg = String(errMsg || '');
   try {
     const p = String(phone || '').trim();
-    if (p && SMS_PERMANENT_FAIL_RE.test(msg)) {
+    if (p && isSmsPermanentFailure(msg)) {
       await pool.query(
         `INSERT INTO growth_sms_suppression (phone, reason, error_message, tenant_id) VALUES ($1, 'permanent_failure', $2, $3)
          ON CONFLICT (phone, tenant_id) DO UPDATE SET error_message = EXCLUDED.error_message, updated_at = NOW()`,
@@ -300,6 +309,7 @@ export function buildCampaignTargetQuery(opts) {
     params.push(lifecycleStage);
     clauses.push(`cp.lifecycle_stage = $${params.length}`);
   }
+  clauses.push(`NOT EXISTS (SELECT 1 FROM growth_sms_suppression s WHERE s.phone = cp.phone AND s.tenant_id = cp.tenant_id)`);
   if (Number.isFinite(minVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) >= ${Math.floor(minVisits)}`);
   if (Number.isFinite(maxVisits)) clauses.push(`COALESCE(cp.pos_order_count,0) <= ${Math.floor(maxVisits)}`);
   if (Number.isFinite(minDays)) clauses.push(`${daysExpr} >= ${Math.floor(minDays)}`);
