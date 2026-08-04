@@ -423,6 +423,22 @@ const SALES_BUSINESS_ACK_STRENGTHS = {
   ack_month1: { principle_id: 'implementation', detail: '讲清首月节奏与复盘' },
   ack_who: { principle_id: 'implementation', detail: '明确责任分工' },
   ack_measure: { principle_id: 'implementation', detail: '给出衡量指标' },
+  ack_seg_dim: { principle_id: 'solution_value', detail: '讲清客户分层维度' },
+  ack_seg_strategy: { principle_id: 'solution_value', detail: '给出分人群运营策略' },
+  ack_seg_exec: { principle_id: 'implementation', detail: '讲清分层运营落地执行' },
+  ack_seg_measure: { principle_id: 'implementation', detail: '给出分层运营衡量指标' },
+  ack_ch_diag: { principle_id: 'solution_value', detail: '给出渠道现状诊断' },
+  ack_ch_strategy: { principle_id: 'solution_value', detail: '给出渠道增长策略' },
+  ack_ch_exec: { principle_id: 'implementation', detail: '讲清渠道增长执行节奏' },
+  ack_ch_measure: { principle_id: 'implementation', detail: '给出渠道增长衡量指标' },
+  ack_exec_diag: { principle_id: 'solution_value', detail: '给出执行问题诊断' },
+  ack_exec_task: { principle_id: 'implementation', detail: '设计任务执行闭环' },
+  ack_exec_resp: { principle_id: 'implementation', detail: '明确责任人与验收' },
+  ack_exec_measure: { principle_id: 'implementation', detail: '给出执行效果衡量指标' },
+  ack_renew_value: { principle_id: 'solution_value', detail: '给出价值回顾' },
+  ack_renew_need: { principle_id: 'solution_value', detail: '识别新增需求' },
+  ack_renew_plan: { principle_id: 'solution_value', detail: '给出升级方案' },
+  ack_renew_next: { principle_id: 'implementation', detail: '明确续约升级下一步' },
 };
 
 /** 用客户回合的 customer_intent 回填业务能力优点（仅销售轨业务剧本） */
