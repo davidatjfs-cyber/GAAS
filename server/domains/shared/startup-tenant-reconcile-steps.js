@@ -394,46 +394,39 @@ export async function checkApprovalRequestsOnStartup(ctx, _tenantId) {
   }
 }
 
-/** @param {object} ctx @param {string} tenantId */
+/**
+ * 只读校验，禁止再把「表+blob 合并结果」写回 hrms_state。
+ *
+ * 2026-08-04 事故根因：这里原本每次启动都会把表里最新 500 条 merge 进 blob 并 UPDATE 落库。
+ * 但表用的是自增数字 id（'12345'），blob 里 makeNotif 生成的是 'NOTIF-xxx'，两个 id 空间
+ * 永远不可能相交——于是每次重启都会把这 500 条当成「blob 里没有的」再追加一遍，永久留存。
+ * 生产实测：blob.notifications 涨到 16,888 条（其中 16,366 条是数字 id，即本函数累加进去的），
+ * 单是这一个字段就占 4.6MB，把整个 state blob 撑到 9.5MB。
+ *
+ * 而 getSharedState 有 2s TTL 缓存，有人用的时候每 2 秒就要重新拉取+解析这 9.5MB 并跑 10 个
+ * hydrate，2 核机器 GC 追不上分配速度 → 堆涨到 2GB → pm2 重启 → 重启又追加 500 条 → blob 更大
+ * ——自我强化的死亡螺旋（2026-08-04 当天重启 22 次）。
+ *
+ * 写回本身是纯多余的：hydrateNotificationsFromTable 已经在每次 getSharedState 时做同样的
+ * 表+blob 合并，读路径永远拿得到表里的最新通知，不需要把合并结果持久化进 blob。
+ */
 export async function reconcileNotificationsOnStartup(ctx, tenantId) {
-  const { pool, getSharedState } = ctx;
+  const { pool } = ctx;
   try {
     const dbNotif = await pool.query(
-      `SELECT * FROM hrms_user_notifications ORDER BY created_at DESC LIMIT 500`
+      `SELECT count(*)::int AS cnt FROM hrms_user_notifications WHERE tenant_id = $1`,
+      [tenantId]
     );
-    const dbNotifItems = dbNotif.rows.map((r) => ({
-      id: String(r.id || ''),
-      targetUser: String(r.target_username || '').trim(),
-      title: String(r.title || '').trim(),
-      message: String(r.message || '').trim(),
-      type: String(r.type || 'performance_deduction').trim(),
-      meta: r.meta && typeof r.meta === 'object' ? r.meta : {},
-      createdAt: r.created_at ? String(r.created_at) : '',
-    }));
-    if (dbNotifItems.length > 0) {
-      let stateNotif = (await getSharedState()) || {};
-      const existingNotifs = Array.isArray(stateNotif.notifications) ? stateNotif.notifications : [];
-      const dbNotifIds = new Set(dbNotifItems.map((n) => n.id));
-      const stateOnlyNotifs = existingNotifs.filter((n) => n?.id && !dbNotifIds.has(n.id));
-      const mergedNotifs = [...dbNotifItems, ...stateOnlyNotifs];
-      if (mergedNotifs.length !== existingNotifs.length) {
-        stateNotif = { ...stateNotif, notifications: mergedNotifs };
-        await pool.query(`UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1`, [
-          tenantId,
-          JSON.stringify(stateNotif),
-        ]);
-      }
-      log.info({
-        msg: 'startup',
-        detail: startupDetail([
-          `[startup] 公司通知重建：DB ${dbNotifItems.length} 条 + 孤立 ${stateOnlyNotifs.length} 条 = 共 ${mergedNotifs.length} 条`,
-        ]),
-      });
-    }
+    log.info({
+      msg: 'startup',
+      detail: startupDetail([
+        `[startup] 公司通知：表内 ${dbNotif.rows[0]?.cnt || 0} 条（读路径 hydrate 合并，不写回 blob）`,
+      ]),
+    });
   } catch (e) {
     log.error({
       msg: 'startup',
-      detail: startupDetail(['[startup] 公司通知重建失败（非致命，不影响启动）:', e?.message]),
+      detail: startupDetail(['[startup] 公司通知检查失败（非致命，不影响启动）:', e?.message]),
     });
   }
 }
