@@ -1,7 +1,10 @@
-const CACHE_NAME = 'hrms-pwa-20260704a';
+const CACHE_NAME = 'hrms-pwa-20260804a';
 const PRECACHE_URLS = [
   '/manifest.json',
-  '/pwa-icon.svg'
+  '/pwa-icon.svg',
+  '/pwa-icon-192.png',
+  '/pwa-icon-512.png',
+  '/apple-touch-icon.png'
 ];
 
 function isHtmlDocument(url) {
