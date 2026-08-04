@@ -142,6 +142,65 @@ test('sales-ai/service：remind + risk alerts', async () => {
   });
 });
 
+test('sales-ai/service：风险提醒仅在风险集合变化时发送', async () => {
+  const alerts = [];
+  let storedSig = undefined;
+  let rowOverride = {};
+  const pool = {
+    async query(sql, params) {
+      if (/last_risk_alert_sig/.test(sql) && /SELECT/.test(sql)) {
+        return {
+          rows: [
+            {
+              id: 9,
+              lead_key: 'L9',
+              company: 'D',
+              name: 'M',
+              intent_score: 80,
+              stage: 'demo',
+              last_human_at: new Date(Date.now() - 4 * 86400000).toISOString(),
+              updated_at: new Date(Date.now() - 4 * 86400000).toISOString(),
+              decision_role: null,
+              demo_count: 1,
+              has_asked_price: true,
+              last_risk_check_at: null,
+              last_risk_alert_sig: storedSig,
+              ...rowOverride,
+            },
+          ],
+        };
+      }
+      if (/UPDATE sales_leads SET last_risk_alert_sig/.test(sql)) {
+        storedSig = params[0];
+        return { rows: [] };
+      }
+      if (/UPDATE sales_leads/.test(sql)) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+
+  // 第一次扫描：无历史签名 → 发送 1 条
+  await runRiskAlerts(pool, async (msg) => alerts.push(msg));
+  assert.equal(alerts.length, 1);
+  assert.ok(storedSig && storedSig.includes('未确认决策角色'));
+
+  // 风险集合未变化：再次扫描不再发送
+  await runRiskAlerts(pool, async (msg) => alerts.push(msg));
+  assert.equal(alerts.length, 1);
+
+  // 风险集合变化（决策角色确认为老板 → 移除两条风险）：发送 1 条新提醒
+  rowOverride = { decision_role: '老板', demo_count: 1 };
+  await runRiskAlerts(pool, async (msg) => alerts.push(msg));
+  assert.equal(alerts.length, 2);
+
+  // 风险完全消除：清空签名，不发送
+  rowOverride = { decision_role: '老板', demo_count: 0, intent_score: 50, last_human_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  storedSig = '["已Demo未确认决策人"]';
+  await runRiskAlerts(pool, async (msg) => alerts.push(msg));
+  assert.equal(alerts.length, 2);
+  assert.equal(storedSig, null);
+});
+
 test('growth-wecom-feishu/service：config/sync/list/delete', async () => {
   const cleared = [];
   const ctx = {
