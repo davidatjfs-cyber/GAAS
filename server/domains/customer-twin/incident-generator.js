@@ -272,3 +272,13 @@ export async function setTwinCardActive(pool, cardKey, active) {
   );
   return r.rows?.[0] || null;
 }
+
+export async function deleteTwinCard(pool, cardKey) {
+  const r = await pool.query(
+    `DELETE FROM job_coach_incident_cards
+      WHERE card_key = $1 AND meta->>'source' = 'customer_twin'
+      RETURNING card_key`,
+    [cardKey]
+  );
+  return r.rows?.[0] || null;
+}
