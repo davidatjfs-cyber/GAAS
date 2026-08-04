@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   generateIncidentCards, buildFromTableVisit, buildFromBadReview, deleteTwinCard,
+  setTwinCardActive,
 } from '../incident-generator.js';
 
 function mockPool(rowsFor = {}) {
@@ -104,4 +105,18 @@ test('删除只允许 customer_twin 来源的卡（SQL 带来源守卫）', asyn
   assert.equal(row.card_key, 'twin_tv_1');
   assert.ok(captured.sql.includes("meta->>'source' = 'customer_twin'"));
   assert.deepEqual(captured.params, ['twin_tv_1']);
+});
+
+test('审核 UPDATE 不引用 job_coach_incident_cards 不存在的 updated_at 列', async () => {
+  let captured = null;
+  const pool = {
+    query: async (sql, params) => {
+      captured = { sql, params };
+      return { rows: [{ card_key: 'twin_tv_1' }] };
+    },
+  };
+  await setTwinCardActive(pool, 'twin_tv_1', true);
+  assert.ok(captured.sql.includes('SET active'));
+  assert.ok(!captured.sql.includes('updated_at'), '表无 updated_at 列，禁止在 UPDATE 中引用');
+  assert.deepEqual(captured.params, ['twin_tv_1', true]);
 });
