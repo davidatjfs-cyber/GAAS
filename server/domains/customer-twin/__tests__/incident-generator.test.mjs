@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  generateIncidentCards, buildFromTableVisit, buildFromBadReview,
+  generateIncidentCards, buildFromTableVisit, buildFromBadReview, deleteTwinCard,
 } from '../incident-generator.js';
 
 function mockPool(rowsFor = {}) {
@@ -90,4 +90,18 @@ test('generateIncidentCards：写入 job_coach_incident_cards 且 active=false',
   assert.ok(inserts.every((c) => c.sql.includes('FALSE') && c.sql.includes('$18::jsonb')));
   const keys = inserts.map((c) => c.params[0]).sort();
   assert.deepEqual(keys, ['twin_br_br1', 'twin_tv_1']);
+});
+
+test('删除只允许 customer_twin 来源的卡（SQL 带来源守卫）', async () => {
+  let captured = null;
+  const pool = {
+    query: async (sql, params) => {
+      captured = { sql, params };
+      return { rows: [{ card_key: 'twin_tv_1' }] };
+    },
+  };
+  const row = await deleteTwinCard(pool, 'twin_tv_1');
+  assert.equal(row.card_key, 'twin_tv_1');
+  assert.ok(captured.sql.includes("meta->>'source' = 'customer_twin'"));
+  assert.deepEqual(captured.params, ['twin_tv_1']);
 });

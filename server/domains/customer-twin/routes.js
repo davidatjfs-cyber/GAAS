@@ -6,7 +6,7 @@
 
 import { childLogger } from '../../utils/logger.js';
 import {
-  generateIncidentCards, listPendingTwinCards, setTwinCardActive,
+  generateIncidentCards, listPendingTwinCards, setTwinCardActive, deleteTwinCard,
 } from './incident-generator.js';
 import { ensureNegativeFeedbackSeed } from './seed-negative-feedback.js';
 import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js';
@@ -62,6 +62,17 @@ export function registerCustomerTwinRoutes(ctx) {
       res.json({ ok: true, card_key: row.card_key, active });
     } catch (e) {
       log.error({ msg: 'twin_incidents_approve', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.delete('/api/customer-twin/incidents/:cardKey', platformAdminRequired, async (req, res) => {
+    try {
+      const row = await deleteTwinCard(pool, req.params.cardKey);
+      if (!row) return res.status(404).json({ ok: false, error: 'card_not_found' });
+      res.json({ ok: true, card_key: row.card_key, deleted: true });
+    } catch (e) {
+      log.error({ msg: 'twin_incidents_delete', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>顾客孪生 · 真实客诉培训卡审核</title>
+  <style>
+    :root { --bg:#e7eee9; --ink:#132019; --muted:#627068; --card:#fff;
+      --accent:#0d7a5f; --line:#d0ddd4; --danger:#b91c1c; --warn:#b45309; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+    header { position:sticky; top:0; z-index:20; padding:12px 14px; background:#123c32; color:#fff;
+      display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    header h1 { margin:0; font-size:17px; }
+    header .sub { opacity:.78; font-size:11px; margin-top:3px; }
+    main { max-width:760px; margin:0 auto; padding:10px 10px 30px; display:grid; gap:10px; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    button { padding:10px 14px; border-radius:12px; border:1px solid var(--accent);
+      background:var(--accent); color:#fff; cursor:pointer; font-size:14px; }
+    button.secondary { background:#fff; color:var(--accent); }
+    button.danger { background:#fff; color:var(--danger); border-color:var(--danger); }
+    button:disabled { opacity:.45; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; }
+    .card h3 { margin:0 0 6px; font-size:15px; }
+    .pill { display:inline-flex; padding:3px 9px; border-radius:999px; background:#e8f5f0;
+      color:var(--accent); font-size:12px; font-weight:600; margin-right:6px; }
+    .pill.warn { background:#fdf3e0; color:var(--warn); }
+    .muted { color:var(--muted); font-size:12px; }
+    pre { background:#f6f9f7; border:1px solid var(--line); border-radius:10px; padding:10px;
+      font-size:13px; line-height:1.5; white-space:pre-wrap; word-break:break-word; margin:8px 0; }
+    .facts li { font-size:13px; line-height:1.6; }
+    .actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+    .empty { text-align:center; color:var(--muted); padding:30px 0; }
+    .hidden { display:none !important; }
+    .stats { font-size:13px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>顾客孪生 · 真实客诉培训卡审核</h1>
+      <div class="sub">来自真实桌访/差评的待审事故卡，通过后进入 AI 岗位教练抽卡池</div>
+    </div>
+    <div class="toolbar">
+      <button id="btnGenerate" class="secondary">从真实数据生成</button>
+      <button id="btnRefresh">刷新</button>
+    </div>
+  </header>
+  <main>
+    <div id="authCard" class="card hidden">
+      <p>未找到登录 token。</p>
+      <p class="muted">请从平台后台进入，或在地址后加 ?token=你的管理员token。</p>
+    </div>
+    <div id="homeCard" class="hidden">
+      <div class="card">
+        <div class="stats" id="statsLine">加载中…</div>
+      </div>
+      <div id="cardList"></div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      const token = localStorage.getItem('hrms_token') || localStorage.getItem('HRMS_API_TOKEN') || '';
+      const qs = new URLSearchParams(location.search);
+      const state = { token: qs.get('token') || token, cards: [], generating: false };
+      const $ = (id) => document.getElementById(id);
+      const show = (id, on) => $(id).classList.toggle('hidden', !on);
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+      async function api(path, opts = {}) {
+        const res = await fetch(path, {
+          ...opts,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + state.token,
+            ...(opts.headers || {}),
+          },
+          body: opts.body ? JSON.stringify(opts.body) : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw Object.assign(new Error(data.error || data.message || ('HTTP ' + res.status)), { data });
+        }
+        return data;
+      }
+
+      function renderStats() {
+        const byCat = {};
+        for (const c of state.cards) byCat[c.category_key] = (byCat[c.category_key] || 0) + 1;
+        const catStr = Object.entries(byCat).map(([k, v]) => esc(k) + ' × ' + v).join('，');
+        $('statsLine').textContent = '待审核 ' + state.cards.length + ' 张 · ' + catStr;
+      }
+
+      function renderCards() {
+        const list = $('cardList');
+        list.textContent = '';
+        if (!state.cards.length) {
+          const div = document.createElement('div');
+          div.className = 'empty';
+          div.textContent = '没有待审核的卡片。可点上方「从真实数据生成」拉取最新真实客诉。';
+          list.appendChild(div);
+          return;
+        }
+        for (const card of state.cards) {
+          const el = document.createElement('div');
+          el.className = 'card';
+          const meta = card.meta || {};
+          const facts = (card.locked_facts || []).map((f) => '<li>' + esc(f) + '</li>').join('');
+          el.innerHTML =
+            '<h3>' + esc(card.title) + '</h3>' +
+            '<span class="pill">' + esc(card.category_key) + '</span>' +
+            '<span class="pill">难度 ' + esc(card.difficulty) + '</span>' +
+            '<span class="pill">' + esc(card.job_profile_key) + '</span>' +
+            (meta.store ? '<span class="pill warn">' + esc(meta.store) + '</span>' : '') +
+            '<pre>' + esc(card.incident_brief) + '</pre>' +
+            '<details><summary class="muted">锁定事实 / 开场白 / 来源</summary>' +
+            '<ul class="facts">' + facts + '</ul>' +
+            '<p class="muted">开场白：' + esc(card.opening_line) + '</p>' +
+            '<p class="muted">来源：' + esc(meta.source_table || '') + ' · ' + esc(meta.source_record_id || '') +
+            (meta.date ? ' · ' + esc(meta.date) : '') + (meta.platform ? ' · ' + esc(meta.platform) : '') + '</p>' +
+            '</details>' +
+            '<div class="actions">' +
+            '<button data-approve="' + esc(card.card_key) + '">通过（进岗位教练）</button>' +
+            '<button class="danger" data-delete="' + esc(card.card_key) + '">删除</button>' +
+            '</div>';
+          list.appendChild(el);
+        }
+      }
+
+      async function loadCards() {
+        try {
+          const data = await api('/api/customer-twin/incidents/pending');
+          state.cards = data.cards || [];
+          renderStats();
+          renderCards();
+        } catch (e) {
+          alert('加载失败：' + e.message);
+        }
+      }
+
+      async function approve(key) {
+        if (!confirm('通过「' + key + '」？通过后员工在岗位教练中可能抽到这张卡。')) return;
+        try {
+          await api('/api/customer-twin/incidents/' + encodeURIComponent(key) + '/approve', { method: 'POST', body: { active: true } });
+          await loadCards();
+        } catch (e) {
+          alert('操作失败：' + e.message);
+        }
+      }
+
+      async function remove(key) {
+        if (!confirm('删除「' + key + '」？此操作不可恢复。')) return;
+        try {
+          await api('/api/customer-twin/incidents/' + encodeURIComponent(key), { method: 'DELETE' });
+          await loadCards();
+        } catch (e) {
+          alert('操作失败：' + e.message);
+        }
+      }
+
+      async function generate() {
+        if (state.generating) return;
+        state.generating = true;
+        $('btnGenerate').disabled = true;
+        $('btnGenerate').textContent = '生成中…';
+        try {
+          const r = await api('/api/customer-twin/incidents/generate', { method: 'POST', body: { limit_per_source: 50 } });
+          alert('已生成 ' + r.upserted + ' 张（候选 ' + r.candidates + '）');
+          await loadCards();
+        } catch (e) {
+          alert('生成失败：' + e.message);
+        } finally {
+          state.generating = false;
+          $('btnGenerate').disabled = false;
+          $('btnGenerate').textContent = '从真实数据生成';
+        }
+      }
+
+      document.addEventListener('click', (ev) => {
+        const a = ev.target.closest('[data-approve]');
+        const d = ev.target.closest('[data-delete]');
+        if (a) approve(a.getAttribute('data-approve'));
+        else if (d) remove(d.getAttribute('data-delete'));
+      });
+      $('btnRefresh').addEventListener('click', loadCards);
+      $('btnGenerate').addEventListener('click', generate);
+
+      if (!state.token) {
+        show('authCard', true);
+        return;
+      }
+      show('homeCard', true);
+      loadCards();
+    })();
+  </script>
+</body>
+</html>
