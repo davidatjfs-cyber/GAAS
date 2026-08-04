@@ -340,16 +340,27 @@ export function parseReminderMeta(raw) {
   return raw;
 }
 
+/**
+ * 2026-08-04 修复：这里是一条独立于 server/domains/notifications/append.js#insertHrmsUserNotifications
+ * 的裸 INSERT，从未接入过那边 2026-07-30~08-03 陆续修的原子去重锁（生产实测同一秒插入
+ * 5 条完全相同的"培训任务逾期提醒"，均因训练定时任务在崩溃重启风暴期间并发触发多次、
+ * 各自读到"今天还没发过"就各插一条）。改成同样的 INSERT...WHERE NOT EXISTS 原子判重+插入，
+ * 语义与 append.js 保持一致：未读的挡；已读的只挡最近 4 小时内 acked 过的。
+ */
 export async function createTrainingUserNotification(targetUsername, title, message, meta) {
   try {
     await pool().query(
       `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6)`,
+       SELECT $1, $2, $3, 'training_assignment', $4, NOW(), $5
+        WHERE NOT EXISTS (
+          SELECT 1 FROM hrms_user_notifications
+           WHERE lower(target_username) = lower($1) AND type = 'training_assignment' AND message = $3
+             AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
+        )`,
       [
         targetUsername,
         title,
         message,
-        'training_assignment',
         JSON.stringify(meta || {}),
         resolveTenantIdDefault()
       ]

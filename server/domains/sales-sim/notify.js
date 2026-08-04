@@ -58,24 +58,24 @@ export async function notifyTraineeReport(pool, {
   // 次——跟本次会话更早前修复的营销通知洪水是同一类bug（调用方各自直连INSERT，不走
   // 统一去重）。补上同款去重检查：同用户+同类型+同文案已有未读通知就跳过（不限时间
   // 窗口——早期版本限定10分钟内会挡不住间隔更久的慢速重复触发）。
+  // 2026-08-04 修复：上面这版去重检查是"先 SELECT 查、再 INSERT"两步分开执行，跟
+  // append.js 8/3 号之前的老 bug 是同一个 TOCTOU 竞态——生产实测同一个 session_id
+  // 在同一秒内插入了 4 条完全相同的报告通知。改成单条 INSERT...WHERE NOT EXISTS，
+  // 判重和插入原子完成。
   try {
     const truncatedMessage = message.slice(0, 1800);
-    const dup = await pool.query(
-      `SELECT 1 FROM hrms_user_notifications
-        WHERE lower(target_username) = lower($1) AND type = 'sales_sim_report' AND message = $2
-          AND read_at IS NULL
-        LIMIT 1`,
-      [username, truncatedMessage]
+    await pool.query(
+      `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
+       SELECT $1,$2,$3,'sales_sim_report',$4::jsonb, COALESCE(
+         (SELECT tenant_id FROM sales_sim_sessions WHERE id=$5), 'default'
+       )
+        WHERE NOT EXISTS (
+          SELECT 1 FROM hrms_user_notifications
+           WHERE lower(target_username) = lower($1) AND type = 'sales_sim_report' AND message = $3
+             AND read_at IS NULL
+        )`,
+      [username, title, truncatedMessage, JSON.stringify({ session_id: sessionId, track }), sessionId]
     );
-    if (!dup.rows.length) {
-      await pool.query(
-        `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, tenant_id)
-         VALUES ($1,$2,$3,'sales_sim_report',$4::jsonb, COALESCE(
-           (SELECT tenant_id FROM sales_sim_sessions WHERE id=$5), 'default'
-         ))`,
-        [username, title, truncatedMessage, JSON.stringify({ session_id: sessionId, track }), sessionId]
-      );
-    }
   } catch (_) {
     /* platform-only users may not need / table may reject — ignore */
   }
