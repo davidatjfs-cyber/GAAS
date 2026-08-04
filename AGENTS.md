@@ -91,6 +91,21 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 本地 Node &lt; 22 时不要强行跑测试装过门面——先升级。
 
+### ⚠️ PR 合入纪律（2026-08-04 起强制，勿留开口 PR）
+
+每个代码改动一律走「提交 → PR → CI 全绿 → 立即合并 → 本地同步」闭环：
+
+1. **PR 必须跑 CI 且全绿才能合并**：`test` + `test-integration` 两个 job 全绿（见
+   `docs/branch-protection.md`）后，**立即** `gh pr merge --squash --delete-branch`，
+   不要建完 PR 就放着等下次。
+2. **main 受保护**：直推会被仓库规则拒绝，禁止 `git push origin main` 绕过；所有改动
+   统一经 PR 合入。
+3. **合并后立即同步本地 main**：squash 后本地 main 会与远端分叉（同内容不同 SHA），
+   用 `git switch main && git fetch origin && git reset --hard origin/main` 对齐远端。
+4. **收尾三源一致**：改代码类任务结束时，「生产部署 → 仓库 main → 本地」三者必须同源；
+   生产部署与合入的先后不强制，但收尾时不能留任何一边落后。
+5. 红线：CI 未全绿禁止合并；CI 红了修到绿，不允许跳过/强推。
+
 - **Server**: root@47.100.96.30 (passwordless SSH)
 - **Nginx serves from**: `/opt/hrms` (NOT `/root/hr-management-system/`)
 - **HRMS(GAAS) deploy**: `scp` files to `root@47.100.96.30:/opt/hrms/` then `ssh root@47.100.96.30 "pm2 restart hrms-service"`
