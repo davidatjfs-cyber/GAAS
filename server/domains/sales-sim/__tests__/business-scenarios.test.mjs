@@ -257,10 +257,57 @@ test('新业务人格已内置且可被种子化', () => {
   const keys = new Set(BUILTIN_PERSONAS.map((p) => p.persona_key));
   for (const k of [
     'cs_growth_diagnosis', 'cs_marketing_sms', 'cs_pos_data_connect', 'cs_report_billing', 'cs_activity_setup',
+    'cs_ai_service_query', 'cs_employee_perf', 'cs_approval_flow', 'cs_training_qa', 'cs_marketing_strategy',
+    'cs_account_permission', 'cs_sync_delay',
     'sales_roi_question', 'sales_competitor_compare', 'sales_solution_demo',
+    'sales_customer_segmentation', 'sales_channel_growth', 'sales_employee_exec', 'sales_renew_upgrade',
   ]) {
     assert.ok(keys.has(k), `missing ${k}`);
   }
   assert.ok(!keys.has('cs_member_points_rule'), '会员积分不是系统功能，不得存在');
   assert.ok(!keys.has('cs_stored_value_rule'), '储值规则不是系统功能，不得存在');
+});
+
+test('咨询答疑：AI客服场景逐问推进（范围→人工→配置→效果）', () => {
+  const p = persona('cs_ai_service_query');
+  const plans = runPlan({
+    track: 'consult',
+    personaObj: p,
+    opening: p.opening_line,
+    state: { emotion: 40, trust: 40, close_readiness: 0, satisfaction: 60 },
+    texts: [
+      'AI客服可以自动回复常见咨询，比如营业时间、订餐和活动信息',
+      '答不上来或顾客要求转人工时，会立即转给门店客服处理',
+      '知识库可以由你们在后台配置和更新',
+      '后台能看到回复量、转人工率和顾客满意度数据',
+      '好的，我先整理一份AI客服配置说明',
+    ],
+  });
+  assert.equal(plans[0].intent, 'ack_ai_scope');
+  assert.equal(plans[1].intent, 'ack_ai_handoff');
+  assert.equal(plans[2].intent, 'ack_ai_train');
+  assert.equal(plans[3].intent, 'ack_ai_measure');
+  assert.equal(plans[4].intent, 'resolve');
+});
+
+test('经营专业：客户分层运营按 维度→策略→执行→衡量 推进', () => {
+  const p = persona('sales_customer_segmentation');
+  const plans = runPlan({
+    track: 'sales',
+    personaObj: p,
+    opening: p.opening_line,
+    state: { emotion: 45, trust: 40, close_readiness: 25 },
+    texts: [
+      '按活跃度、消费频次和最近消费时间分层，分出活跃、沉睡和流失客',
+      '沉睡老客做召回活动，活跃客做复购激励，流失客做专项唤醒',
+      '分层策略会生成门店任务，店长负责执行并提交完成证据',
+      '每月看回店率、复购率和活动ROI来评估效果',
+      '好的，我先看一版分层诊断报告',
+    ],
+  });
+  assert.equal(plans[0].intent, 'ack_seg_dim');
+  assert.equal(plans[1].intent, 'ack_seg_strategy');
+  assert.equal(plans[2].intent, 'ack_seg_exec');
+  assert.equal(plans[3].intent, 'ack_seg_measure');
+  assert.equal(plans[4].intent, 'resolve');
 });

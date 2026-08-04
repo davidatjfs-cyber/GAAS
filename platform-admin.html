@@ -5117,10 +5117,16 @@ function legacyCopyFallback(value) {
 
     function showSalesSimDebrief(debrief, rank, curriculumNext, notification) {
       const d = debrief || {};
+      const skillZh = {
+        questioning: '提问能力', listening: '倾听能力', value: '价值表达', closing: '成交推进',
+        solution_value: '方案价值', implementation: '落地实施',
+        empathy: '情绪安抚', diagnosis: '问题定位', resolution: '解决闭环', retention: '关系维护',
+        communication: '沟通能力', product_knowledge: '产品知识', service_awareness: '服务意识', recommendation: '推荐能力',
+      };
       const skillLine = d.skills_line
         || (d.skills_labeled
           ? Object.entries(d.skills_labeled).map(([k, v]) => `${k} ${v}`).join(' · ')
-          : Object.entries(d.skills || {}).map(([k, v]) => `${k} ${v}`).join(' · '));
+          : Object.entries(d.skills || {}).map(([k, v]) => `${skillZh[k] || k} ${v}`).join(' · '));
       const improvements = (d.improvements || []).map((x, i) =>
         `${i + 1}. 【${x.principle_label || x.principle_id}】${x.detail}${x.timing_note ? `（${x.timing_note}）` : ''}`
       ).join('\n') || '暂无';
