@@ -265,7 +265,7 @@ export async function listPendingTwinCards(pool, { limit = 100 } = {}) {
 export async function setTwinCardActive(pool, cardKey, active) {
   const r = await pool.query(
     `UPDATE job_coach_incident_cards
-        SET active = $2, updated_at = NOW()
+        SET active = $2
       WHERE card_key = $1 AND meta->>'source' = 'customer_twin'
       RETURNING card_key`,
     [cardKey, active]
