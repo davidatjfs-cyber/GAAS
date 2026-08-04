@@ -726,11 +726,6 @@ function wsBindMonthFilterControl(root, { persona, store } = {}) {
     };
     btn.addEventListener('click', () => wsOpenMonthPickerSheet(applyMonth));
 }
-function wsSyncMonthPickerToPeriod(root, data) {
-    const period = data?.period, btn = root.querySelector('#ws-month-filter-btn');
-    if (!period || period === _wsMonthPickerValue) return;
-    _wsMonthPickerValue = period; if (btn) btn.textContent = wsMonthLabel(period, period === wsMonthFilterOptions()[0]) + ' ▾';
-}
 
 // 2026-07-30：用户要求① 门店经营明细里加"门店人效值"、把"本月离职率"从顶层挪进去（每店
 // 各自展示，不再是跨全部门店的一个聚合数字，operationalMetrics现在已经把efficiency/
@@ -2016,7 +2011,7 @@ async function wsRenderBossOrHq(root, persona) {
     wsFetchJson('/api/agent-scores/me').then((data) => {
         const el = document.getElementById('ws-my-performance');
         if (el) el.innerHTML = wsRenderMyPerformance(data);
-        wsSyncMonthPickerToPeriod(root, data); });
+    });
     root.querySelectorAll('[data-ws-toggle]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const el = document.getElementById(btn.getAttribute('data-ws-toggle'));
@@ -2334,7 +2329,7 @@ async function wsRenderStore(root) {
     wsFetchJson('/api/agent-scores/me').then((data) => {
         const el = document.getElementById('ws-my-performance');
         if (el) el.innerHTML = wsRenderMyPerformance(data);
-        wsSyncMonthPickerToPeriod(root, data); });
+    });
 }
 
 // 等级字母(A/B/C/D)映射进度条百分比+配色——D/C/B/A 依次对应 --ws-down(粉)/--ws-warn(金)/
