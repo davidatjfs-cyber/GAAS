@@ -77,6 +77,36 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 6. Deployment & Server Info
 
+### 🔴 部署纪律（每次代码修改后必须严格执行，2026-08-04 用户确认）
+
+**main 受保护，必须走 PR。** 每次完成代码修改后严格按以下流程：
+
+1. 改代码
+2. `node --check <改动的文件>`（语法检查）
+3. `npm run test`（全量测试，必须 3000+ 全绿）
+4. **部署前核对本地与生产是否同源（最关键、最易被跳过）**：
+   `scp root@47.100.96.30:/opt/hrms/<file> /tmp/prod-<file>` 后
+   `diff /tmp/prod-<file> <本地file>`——差异必须只有这次改的内容；
+   差异异常大 → 本地/生产不同源，停下核实，别直接覆盖。
+5. 备份生产文件再覆盖（备份放 web root **之外**，禁止在 `/opt/hrms` 内留 `*.bak.*` 或 `*.bak.<ts>/`）：
+   `ssh root@47.100.96.30 "cp /opt/hrms/<file> /opt/hrms-archive/deploy-bak/<file>.bak.$(date +%s)"`
+   → `scp <本地file> root@47.100.96.30:/opt/hrms/<file>`
+   → `ssh root@47.100.96.30 "node --check /opt/hrms/<file> && pm2 restart hrms-service"`
+6. 验证真的起来了（不能只看 pm2 status online）：
+   `curl http://127.0.0.1:3000/api/health` 必须 200；
+   `pm2 logs hrms-service --err --lines 15 --nostream` 不能有新报错。
+7. 如果动了前端（frontend/src/pages/*.js）：
+   `node scripts/bundle-frontend.mjs`（或 `./scripts/deploy-frontend.sh` 一步到位）；
+   `node --test server/test/working-fixed-size-gate.test.mjs`（行数棘轮，超了在注释里登记原因再上调）。
+8. `git checkout -b hotfix/xxx`；`git add ... && git commit -m "..."`；`git push -u origin hotfix/xxx`
+9. `gh pr create --title ... --body ...`
+10. `gh pr checks <PR号> --watch`（等 test + test-integration 都绿；
+    若失败的是 auth-login 那个已知的偶发 flaky 测试，用 `gh run rerun <id> --failed` 重跑）
+11. `gh pr merge <PR号> --merge`
+12. `git checkout main && git pull`（本地 main 同步回最新）
+
+**一句话**：生产是按文件 scp 拼装的，第 4 步"生产是否同源"最容易出事、最容易被跳，绝不跳过。
+
 ### ⚠️ CI 运行时：Node >= 22（闸门必须真跑）
 
 `server` 的 `npm test` / `test:integration` 依赖 Node 的 `--test-force-exit`（Node 22+）。
