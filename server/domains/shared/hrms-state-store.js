@@ -86,6 +86,35 @@ async function getSharedStateImpl(pool, resolveTenantIdDefault, hydrateFn, tenan
   return inflight;
 }
 
+/**
+ * 这些字段的权威来源是真表，getSharedState 每次都会用表数据整体覆盖 blob 里的副本
+ * （见 hydrate-authoritative-state.js）。也就是说 blob 里存的那一份永远不会被读到，
+ * 纯粹是白白增加每次 getSharedState 的拉取+解析开销。
+ *
+ * 2026-08-04：手工把 dailyReports 从 blob 删掉（5247→3835 kB）后几分钟就涨了回来——
+ * 因为业务代码普遍是「getSharedState() 拿到 hydrate 后的完整 state → 改一点 → saveSharedState()」，
+ * 于是 hydrate 填进来的表数据又被原样写回 blob。只删数据不改写入路径是堵不住的。
+ *
+ * 只列「表非空且 hydrate 无条件整体覆盖」的字段：
+ *   - dailyReports：hydrateDailyReportsFromTable 里 `if (fromTable.length > 0) base.dailyReports = fromTable`，
+ *     生产实测 blob 311 条 == daily_reports 表 311 条，且 CLAUDE.md 明确 daily_reports 唯一写入方是 GAAS。
+ * 不要顺手加 inventoryForecastHistory：那张表当前是空的（0 行），hydrate 会保留 blob 副本，
+ * 剥离等于丢数据；要先回填表再考虑。
+ */
+const TABLE_AUTHORITATIVE_FIELDS = ['dailyReports'];
+
+function stripTableAuthoritativeFields(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  let hit = false;
+  for (const f of TABLE_AUTHORITATIVE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(obj, f)) { hit = true; break; }
+  }
+  if (!hit) return obj;
+  const out = { ...obj };
+  for (const f of TABLE_AUTHORITATIVE_FIELDS) delete out[f];
+  return out;
+}
+
 async function saveSharedStateImpl(deps, nextData, tenantId) {
   const { pool, resolveTenantIdDefault, schedulePayrollDomainSync, scheduleLeaveDomainSync, dualWriteStateToDB } = deps;
   if (!nextData || typeof nextData !== 'object' || !Object.keys(nextData).length) return;
@@ -104,7 +133,8 @@ async function saveSharedStateImpl(deps, nextData, tenantId) {
         r.rows?.[0]?.data && typeof r.rows[0].data === 'object' ? r.rows[0].data : {};
       const prevUpdatedAt = r.rows?.[0]?.updated_at;
 
-      const merged = { ...current, ...nextData };
+      // 两边都剥：nextData 挡住「hydrate 后原样写回」，current 顺手清掉 blob 里的历史残留
+      const merged = stripTableAuthoritativeFields({ ...current, ...nextData });
 
       const result = await client.query(
         `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
@@ -191,7 +221,7 @@ async function mergeSharedStateFieldsImpl(deps, patches, arrayIdFields = {}, ten
 
       const updateResult = await client.query(
         `UPDATE hrms_state SET data = $2::jsonb, updated_at = NOW() WHERE key = $1 AND updated_at = $3`,
-        [key, JSON.stringify(next), prevUpdatedAt]
+        [key, JSON.stringify(stripTableAuthoritativeFields(next)), prevUpdatedAt]
       );
       if (updateResult.rowCount > 0) {
         await client.query('COMMIT');
