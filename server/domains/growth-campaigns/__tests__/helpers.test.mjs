@@ -16,7 +16,36 @@ import {
   phoneHashPct,
   phoneAbBucket,
   holdoutPct,
+  isSmsPermanentFailure,
 } from '../helpers.js';
+
+test('isSmsPermanentFailure：识别阿里云永久失败报错', () => {
+  for (const msg of [
+    '黑名单管控',
+    '用户已退订营销短信',
+    '手机号码格式错误',
+    '手机号格式错误',
+    '空号',
+    '号码状态错误',
+    '号码不存在',
+    'isv.MOBILE_NUMBER_ILLEGAL',
+    'BLACK_KEY_CONTROL_LIMIT',
+    'BLACK_USER_CONTROL_LIMIT',
+  ]) {
+    assert.equal(isSmsPermanentFailure(msg), true, msg);
+  }
+  for (const msg of [
+    '账户余额不足',
+    '该账号下找不到对应模板',
+    '业务停机',
+    'fetch failed',
+    'There is a risk of leakage of this AccessKey.',
+    '',
+    null,
+  ]) {
+    assert.equal(isSmsPermanentFailure(msg), false, String(msg));
+  }
+});
 
 test('freqDaysEnv：缺省/空串用默认值，0 表示关闭', () => {
   const key = 'TEST_FREQ_DAYS_' + Date.now();
@@ -70,6 +99,7 @@ test('buildCampaignTargetQuery：带筛选生成 SQL 与参数', () => {
   assert.ok(q.sql.includes('cp.value_tier = $3'));
   assert.ok(q.sql.includes('cp.lifecycle_stage = $4'));
   assert.ok(q.sql.includes('pos_order_count,0) >= 2'));
+  assert.ok(q.sql.includes('growth_sms_suppression s'));
   assert.ok(q.sql.includes('LIMIT 100'));
   assert.deepEqual(q.params, ['30', 'store_a', 'vip', 'active', 'vip_gift']);
 });

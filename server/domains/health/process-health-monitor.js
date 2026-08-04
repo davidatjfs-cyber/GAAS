@@ -3,6 +3,7 @@
  * 进程健康监视：启动时扫 PM2 日志找「非 SIGINT」异常退出；运行中盯内存压线。
  */
 import fs from 'fs';
+import v8 from 'v8';
 import { logger } from '../../utils/logger.js';
 import {
   evaluateMemoryPressure,
@@ -113,12 +114,21 @@ export async function runMemoryPressureCheck(opts) {
     `RSS≈${pressure.rssMb}MB / PM2 max_memory_restart=${pressure.limitMb}MB（${Math.round(pressure.ratio * 100)}%）`,
     '接近阈值后会被 PM2 杀掉重启；请排查泄漏或上调限额。',
   ].join('\n');
+  // 2026-08-04：只报 RSS 不够定位问题——RSS 高既可能是「真需要这么多」，也可能是
+  // 「V8 攒着垃圾还没回收」，两者处置完全相反（前者要加内存，后者要调低 --max-old-space-size
+  // 让 V8 提前做彻底 GC）。补上堆用量/堆上限，才能区分。
+  const mu = process.memoryUsage();
+  const mb = (n) => Math.round(n / 1048576);
   logger.warn({
     msg: 'process_health_memory_pressure',
     process: processName,
     rss_mb: pressure.rssMb,
     limit_mb: pressure.limitMb,
     ratio: pressure.ratio,
+    heap_used_mb: mb(mu.heapUsed),
+    heap_total_mb: mb(mu.heapTotal),
+    external_mb: mb(mu.external),
+    heap_limit_mb: mb(v8.getHeapStatistics().heap_size_limit),
   });
   if (typeof opts.notifyFn === 'function') {
     try {

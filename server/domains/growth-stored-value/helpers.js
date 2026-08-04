@@ -21,6 +21,7 @@ export function buildRemindTargetsQuery(storeId, dormantDays, minBalanceFen, fre
               AND NOT EXISTS (SELECT 1 FROM growth_delivery_logs d
                 WHERE d.channel='sms' AND d.rule_key='stored_value_remind' AND d.status IN ('sent','redeemed')
                   AND d.payload->>'phone' = m.phone AND d.created_at > now() - ($1 || ' days')::interval)
+              AND NOT EXISTS (SELECT 1 FROM growth_sms_suppression s WHERE s.phone = m.phone AND s.tenant_id = m.tenant_id)
             ORDER BY m.balance_fen DESC LIMIT ${maxTargets}`,
     params: [String(freqDays), storeId, minBalanceFen],
   };
