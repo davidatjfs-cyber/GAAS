@@ -441,23 +441,49 @@ export async function abcDistribution(ctx, tenantId, campaignKeyRaw) {
   return { status: 200, body: { ok: true, enabled: true, ...result } };
 }
 
-export async function abcBlacklistSummary(ctx, tenantId) {
+// 红名单汇总缓存：computeAbcDistributionForCampaign 每活动要扫全量人群 + 投递日志，
+// 11 个 ABC 活动串行重算在负载下要几十秒；看板每开一次都重算太贵。改为 5 分钟缓存 +
+// 并发去重 + 后台预热，HTTP 请求命中缓存立即返回。
+const ABC_BLACKLIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const __abcBlacklistCache = new Map(); // tenantId -> { at, data }
+const __abcBlacklistComputing = new Map(); // tenantId -> Promise
+
+async function computeAbcBlacklistSummary(ctx, tenantId) {
   const campaignKeys = Object.keys(ctx.ABC_ROTATION_ORDER);
-  const items = await ctx.tenantContext.run(tenantId, async () => {
-    const out = [];
-    for (const campaignKey of campaignKeys) {
-      const r = await computeAbcDistributionForCampaign(ctx, campaignKey, tenantId).catch(() => null);
-      if (r) {
-        out.push({
-          campaign_key: campaignKey,
-          rule_key: r.rule_key,
-          total: r.total,
-          blacklisted: r.blacklisted,
-        });
-      }
+  const items = [];
+  for (const campaignKey of campaignKeys) {
+    const r = await computeAbcDistributionForCampaign(ctx, campaignKey, tenantId).catch(() => null);
+    if (r) {
+      items.push({
+        campaign_key: campaignKey,
+        rule_key: r.rule_key,
+        total: r.total,
+        blacklisted: r.blacklisted,
+      });
     }
-    return out;
-  });
+  }
   const totalBlacklisted = items.reduce((sum, it) => sum + it.blacklisted, 0);
-  return { status: 200, body: { ok: true, items, total_blacklisted: totalBlacklisted } };
+  return { items, total_blacklisted: totalBlacklisted };
+}
+
+export async function abcBlacklistSummary(ctx, tenantId) {
+  const key = String(tenantId || 'default');
+  const cached = __abcBlacklistCache.get(key);
+  if (cached && Date.now() - cached.at < ABC_BLACKLIST_CACHE_TTL_MS) {
+    return { status: 200, body: { ok: true, cached: true, ...cached.data } };
+  }
+  if (!__abcBlacklistComputing.has(key)) {
+    const pending = ctx.tenantContext
+      .run(tenantId, () => computeAbcBlacklistSummary(ctx, tenantId))
+      .then((data) => {
+        __abcBlacklistCache.set(key, { at: Date.now(), data });
+        return data;
+      })
+      .finally(() => {
+        __abcBlacklistComputing.delete(key);
+      });
+    __abcBlacklistComputing.set(key, pending);
+  }
+  const data = await __abcBlacklistComputing.get(key);
+  return { status: 200, body: { ok: true, ...data } };
 }

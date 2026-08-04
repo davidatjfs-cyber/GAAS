@@ -64,6 +64,8 @@ export { bitText, bitNum, bitDateMs, bitPhone } from './domains/growth-bitable/h
 import {
   loadSegmentPhoneSet,
   fetchGenericRuleCandidates,
+  filterGenericRuleCandidates,
+  loadRuleCandidates,
 } from './domains/growth-touch-rules/helpers.js';
 export {
   fmtYmd,
@@ -73,6 +75,7 @@ export {
   loadSegmentPhoneSet,
 } from './domains/growth-touch-rules/helpers.js';
 import { buildGrowthDailyReport } from './domains/growth-ops/daily-report.js';
+import { abcBlacklistSummary } from './domains/growth-metrics/service.js';
 import { startGrowthRemindWorkers } from './domains/growth-ops/background-remind.js';
 import { startGrowthAudienceWorkers } from './domains/growth-ops/background-audience.js';
 import { startGrowthMiscTimers } from './domains/growth-ops/background-timers.js';
@@ -511,9 +514,19 @@ export function registerGrowthRoutes(app, pool) {
     hasSendGrowthAlert: () => !!_sendGrowthAlert,
     loadSegmentPhoneSet,
     fetchGenericRuleCandidates,
+    filterGenericRuleCandidates,
+    loadRuleCandidates,
   };
   startGrowthRemindWorkers(deps);
   startGrowthAudienceWorkers(deps);
   startGrowthMiscTimers(deps);
+  // 红名单汇总缓存预热：与涉及会员缓存同节奏（启动 15s 后 + 每 10 分钟后台刷新），
+  // 避免看板首屏首次加载时同步等几十秒冷计算。
+  const warmAbcBlacklist = () => {
+    runForActiveTenants((tenantId) => abcBlacklistSummary(deps, tenantId)).catch(() => {});
+  };
+  setTimeout(warmAbcBlacklist, 15000);
+  if (!globalThis.__abcBlacklistWarmTimer) {
+    globalThis.__abcBlacklistWarmTimer = setInterval(warmAbcBlacklist, 10 * 60 * 1000);
+  }
 }
-
