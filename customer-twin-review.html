@@ -39,7 +39,7 @@
   <header>
     <div>
       <h1>顾客孪生 · 真实客诉培训卡审核</h1>
-      <div class="sub">来自真实桌访/差评的待审事故卡，通过后进入 AI 岗位教练抽卡池</div>
+      <div class="sub">来自真实桌访/差评的待审事故卡（门店员工培训用）；通过后进入 AI 岗位教练抽卡池，拒绝后不再重新生成</div>
     </div>
     <div class="toolbar">
       <button id="btnGenerate" class="secondary">从真实数据生成</button>
@@ -128,7 +128,7 @@
             '</details>' +
             '<div class="actions">' +
             '<button data-approve="' + esc(card.card_key) + '">通过（进岗位教练）</button>' +
-            '<button class="danger" data-delete="' + esc(card.card_key) + '">删除</button>' +
+            '<button class="danger" data-delete="' + esc(card.card_key) + '">拒绝（不再生成）</button>' +
             '</div>';
           list.appendChild(el);
         }
@@ -169,7 +169,7 @@
       }
 
       async function remove(key) {
-        if (!confirm('删除「' + key + '」？此操作不可恢复。')) return;
+        if (!confirm('拒绝「' + key + '」？拒绝后该真实客诉不再生成培训卡（员工不会抽到）。')) return;
         try {
           await api('/api/customer-twin/incidents/' + encodeURIComponent(key), { method: 'DELETE' });
           await loadCards();

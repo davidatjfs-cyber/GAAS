@@ -149,7 +149,8 @@ async function upsertCard(pool, card) {
        failure_signals=EXCLUDED.failure_signals, sop_checklist=EXCLUDED.sop_checklist,
        experience_rubric=EXCLUDED.experience_rubric, competency_keys=EXCLUDED.competency_keys,
        kb_title_hints=EXCLUDED.kb_title_hints, model_answer=EXCLUDED.model_answer,
-       probe_questions=EXCLUDED.probe_questions, meta=EXCLUDED.meta`,
+       probe_questions=EXCLUDED.probe_questions, meta=EXCLUDED.meta
+     WHERE job_coach_incident_cards.meta->>'review_status' IS NULL`,
     [
       card.card_key, card.category_key, card.job_profile_key, card.title, card.difficulty,
       card.counterpart_role, card.incident_brief, JSON.stringify(card.locked_facts),
@@ -255,6 +256,7 @@ export async function listPendingTwinCards(pool, { limit = 100 } = {}) {
        FROM job_coach_incident_cards
       WHERE active = FALSE
         AND meta->>'source' = 'customer_twin'
+        AND meta->>'review_status' IS DISTINCT FROM 'rejected'
       ORDER BY created_at DESC
       LIMIT $1`,
     [limit]
@@ -262,23 +264,30 @@ export async function listPendingTwinCards(pool, { limit = 100 } = {}) {
   return r.rows || [];
 }
 
-export async function setTwinCardActive(pool, cardKey, active) {
+export async function setTwinCardActive(pool, cardKey, active, username = 'system') {
+  const reviewStatus = active ? 'approved' : 'rejected';
   const r = await pool.query(
     `UPDATE job_coach_incident_cards
-        SET active = $2
+        SET active = $2,
+            meta = jsonb_set(coalesce(meta, '{}'::jsonb), '{review_status}', to_jsonb($3::text))
+                    || jsonb_build_object('reviewed_at', now(), 'reviewed_by', coalesce($4, 'system'))
       WHERE card_key = $1 AND meta->>'source' = 'customer_twin'
       RETURNING card_key`,
-    [cardKey, active]
+    [cardKey, active, reviewStatus, username]
   );
   return r.rows?.[0] || null;
 }
 
-export async function deleteTwinCard(pool, cardKey) {
+/** 拒绝（软删除）：保留记录并标记 rejected，生成器不再重建该来源 */
+export async function rejectTwinCard(pool, cardKey, username = 'system') {
   const r = await pool.query(
-    `DELETE FROM job_coach_incident_cards
+    `UPDATE job_coach_incident_cards
+        SET active = FALSE,
+            meta = jsonb_set(coalesce(meta, '{}'::jsonb), '{review_status}', to_jsonb('rejected'::text))
+                    || jsonb_build_object('reviewed_at', now(), 'reviewed_by', coalesce($2, 'system'))
       WHERE card_key = $1 AND meta->>'source' = 'customer_twin'
       RETURNING card_key`,
-    [cardKey]
+    [cardKey, username]
   );
   return r.rows?.[0] || null;
 }
