@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  generateIncidentCards, buildFromTableVisit, buildFromBadReview, deleteTwinCard,
+  generateIncidentCards, buildFromTableVisit, buildFromBadReview, rejectTwinCard,
   setTwinCardActive,
 } from '../incident-generator.js';
 
@@ -89,11 +89,12 @@ test('generateIncidentCards：写入 job_coach_incident_cards 且 active=false',
   const inserts = pool.calls.filter((c) => c.sql.includes('INSERT INTO job_coach_incident_cards'));
   assert.equal(inserts.length, 2);
   assert.ok(inserts.every((c) => c.sql.includes('FALSE') && c.sql.includes('$18::jsonb')));
+  assert.ok(inserts.every((c) => c.sql.includes("meta->>'review_status' IS NULL")), '已处理来源不得被重新更新');
   const keys = inserts.map((c) => c.params[0]).sort();
   assert.deepEqual(keys, ['twin_br_br1', 'twin_tv_1']);
 });
 
-test('删除只允许 customer_twin 来源的卡（SQL 带来源守卫）', async () => {
+test('拒绝=软删除：标记 rejected 且只允许 customer_twin 来源', async () => {
   let captured = null;
   const pool = {
     query: async (sql, params) => {
@@ -101,13 +102,15 @@ test('删除只允许 customer_twin 来源的卡（SQL 带来源守卫）', asyn
       return { rows: [{ card_key: 'twin_tv_1' }] };
     },
   };
-  const row = await deleteTwinCard(pool, 'twin_tv_1');
+  const row = await rejectTwinCard(pool, 'twin_tv_1', 'admin');
   assert.equal(row.card_key, 'twin_tv_1');
   assert.ok(captured.sql.includes("meta->>'source' = 'customer_twin'"));
-  assert.deepEqual(captured.params, ['twin_tv_1']);
+  assert.ok(captured.sql.includes('review_status'));
+  assert.ok(captured.sql.includes('active = FALSE'));
+  assert.deepEqual(captured.params, ['twin_tv_1', 'admin']);
 });
 
-test('审核 UPDATE 不引用 job_coach_incident_cards 不存在的 updated_at 列', async () => {
+test('审核通过：标记 approved 且不引用不存在的 updated_at 列', async () => {
   let captured = null;
   const pool = {
     query: async (sql, params) => {
@@ -115,8 +118,9 @@ test('审核 UPDATE 不引用 job_coach_incident_cards 不存在的 updated_at �
       return { rows: [{ card_key: 'twin_tv_1' }] };
     },
   };
-  await setTwinCardActive(pool, 'twin_tv_1', true);
+  await setTwinCardActive(pool, 'twin_tv_1', true, 'admin');
   assert.ok(captured.sql.includes('SET active'));
+  assert.ok(captured.sql.includes('review_status'));
   assert.ok(!captured.sql.includes('updated_at'), '表无 updated_at 列，禁止在 UPDATE 中引用');
-  assert.deepEqual(captured.params, ['twin_tv_1', true]);
+  assert.deepEqual(captured.params, ['twin_tv_1', true, 'approved', 'admin']);
 });

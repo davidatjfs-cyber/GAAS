@@ -6,7 +6,7 @@
 
 import { childLogger } from '../../utils/logger.js';
 import {
-  generateIncidentCards, listPendingTwinCards, setTwinCardActive, deleteTwinCard,
+  generateIncidentCards, listPendingTwinCards, setTwinCardActive, rejectTwinCard,
 } from './incident-generator.js';
 import { ensureNegativeFeedbackSeed } from './seed-negative-feedback.js';
 import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js';
@@ -57,7 +57,8 @@ export function registerCustomerTwinRoutes(ctx) {
   app.post('/api/customer-twin/incidents/:cardKey/approve', platformAdminRequired, async (req, res) => {
     try {
       const active = req.body?.active !== false;
-      const row = await setTwinCardActive(pool, req.params.cardKey, active);
+      const username = req.platformAdmin?.username || 'admin';
+      const row = await setTwinCardActive(pool, req.params.cardKey, active, username);
       if (!row) return res.status(404).json({ ok: false, error: 'card_not_found' });
       res.json({ ok: true, card_key: row.card_key, active });
     } catch (e) {
@@ -68,9 +69,10 @@ export function registerCustomerTwinRoutes(ctx) {
 
   app.delete('/api/customer-twin/incidents/:cardKey', platformAdminRequired, async (req, res) => {
     try {
-      const row = await deleteTwinCard(pool, req.params.cardKey);
+      const username = req.platformAdmin?.username || 'admin';
+      const row = await rejectTwinCard(pool, req.params.cardKey, username);
       if (!row) return res.status(404).json({ ok: false, error: 'card_not_found' });
-      res.json({ ok: true, card_key: row.card_key, deleted: true });
+      res.json({ ok: true, card_key: row.card_key, rejected: true });
     } catch (e) {
       log.error({ msg: 'twin_incidents_delete', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
