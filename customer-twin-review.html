@@ -52,8 +52,12 @@
       <p class="muted">请从平台后台进入，或在地址后加 ?token=你的管理员token。</p>
     </div>
     <div id="homeCard" class="hidden">
+      <div id="tokenInfo" class="card hidden"></div>
       <div class="card">
-        <div class="stats" id="statsLine">加载中…</div>
+        <div class="toolbar">
+          <input id="filterInput" placeholder="筛选：输入菜品/客诉关键词…" style="flex:1;min-width:180px" />
+          <span class="stats" id="statsLine">加载中…</span>
+        </div>
       </div>
       <div id="errorCard" class="card hidden"></div>
       <div id="cardList"></div>
@@ -70,6 +74,14 @@
       const state = { token, cards: [], generating: false };
       const $ = (id) => document.getElementById(id);
       const show = (id, on) => $(id).classList.toggle('hidden', !on);
+      const filterState = { kw: '' };
+      function decodeJwt(t) {
+        try {
+          const p = String(t).split('.')[1];
+          const b = atob(p.replace(/-/g, '+').replace(/_/g, '/'));
+          return JSON.parse(decodeURIComponent(escape(b)));
+        } catch (e) { return null; }
+      }
       function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
           ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -92,23 +104,35 @@
       }
 
       function renderStats() {
+        const shown = currentCards();
         const byCat = {};
-        for (const c of state.cards) byCat[c.category_key] = (byCat[c.category_key] || 0) + 1;
+        for (const c of shown) byCat[c.category_key] = (byCat[c.category_key] || 0) + 1;
         const catStr = Object.entries(byCat).map(([k, v]) => esc(k) + ' × ' + v).join('，');
-        $('statsLine').textContent = '待审核 ' + state.cards.length + ' 张 · ' + catStr;
+        $('statsLine').textContent = '显示 ' + shown.length + ' / 待审 ' + state.cards.length + ' · ' + catStr;
+      }
+
+      function currentCards() {
+        const kw = filterState.kw.trim().toLowerCase();
+        if (!kw) return state.cards;
+        return state.cards.filter((c) =>
+          [c.card_key, c.title, c.incident_brief, c.category_key, (c.meta || {}).store]
+            .filter(Boolean)
+            .some((s) => String(s).toLowerCase().includes(kw))
+        );
       }
 
       function renderCards() {
         const list = $('cardList');
         list.textContent = '';
-        if (!state.cards.length) {
+        const shown = currentCards();
+        if (!shown.length) {
           const div = document.createElement('div');
           div.className = 'empty';
-          div.textContent = '没有待审核的卡片。可点上方「从真实数据生成」拉取最新真实客诉。';
+          div.textContent = state.cards.length ? '没有匹配的卡片，换个关键词试试。' : '没有待审核的卡片。可点上方「从真实数据生成」拉取最新真实客诉。';
           list.appendChild(div);
           return;
         }
-        for (const card of state.cards) {
+        for (const card of shown) {
           const el = document.createElement('div');
           el.className = 'card';
           const meta = card.meta || {};
@@ -136,6 +160,7 @@
 
       async function loadCards() {
         show('errorCard', false);
+        renderTokenInfo();
         try {
           const data = await api('/api/customer-twin/incidents/pending');
           state.cards = data.cards || [];
@@ -156,6 +181,30 @@
           }
           show('errorCard', true);
         }
+      }
+
+      function renderTokenInfo() {
+        const el = $('tokenInfo');
+        const keys = {
+          platform_admin_token: localStorage.getItem('platform_admin_token') || '',
+          hrms_token: localStorage.getItem('hrms_token') || '',
+          HRMS_API_TOKEN: localStorage.getItem('HRMS_API_TOKEN') || '',
+        };
+        const found = Object.entries(keys).filter(([, v]) => v);
+        const payload = decodeJwt(state.token);
+        const expMin = payload && payload.exp ? Math.round((payload.exp * 1000 - Date.now()) / 60000) : null;
+        const roleOk = payload && payload.role === 'platform_admin';
+        const lines = [
+          '当前使用的 token：' + (state.token ? '（' + found.map(([k]) => k).join(' / ') + '）' : '无'),
+        ];
+        if (payload && payload.username) lines.push('token 账号：' + esc(payload.username) + ' · 角色标记 role=' + esc(payload.role || '') + (roleOk ? ' ✓' : ' ✗'));
+        if (expMin !== null) lines.push('token 剩余有效：' + (expMin >= 0 ? expMin + ' 分钟' : '已过期'));
+        if (!state.token) lines.push('提示：请先登录平台后台 https://nnyx.cc/platform-admin.html（管理员账号），并保持与审核页同一域名（nnyx.cc，不带 www）。');
+        else if (!roleOk) lines.push('提示：当前 token 不是平台管理员 token（role 不是 platform_admin）。请用平台后台登录，不要用员工平台（nnyx.cc 首页）登录。');
+        else if (expMin !== null && expMin < 0) lines.push('提示：token 已过期，请重新登录平台后台。');
+        else if (expMin !== null && expMin < 30) lines.push('提示：token 即将过期，建议重新登录平台后台。');
+        el.innerHTML = '<h3 style="font-size:14px">凭证诊断</h3><p class="muted" style="font-size:12px;line-height:1.7">' + lines.join('<br>') + '</p>';
+        show('tokenInfo', true);
       }
 
       async function approve(key) {
@@ -204,6 +253,11 @@
       });
       $('btnRefresh').addEventListener('click', loadCards);
       $('btnGenerate').addEventListener('click', generate);
+      $('filterInput').addEventListener('input', (ev) => {
+        filterState.kw = ev.target.value || '';
+        renderStats();
+        renderCards();
+      });
 
       if (!state.token) {
         show('authCard', true);
