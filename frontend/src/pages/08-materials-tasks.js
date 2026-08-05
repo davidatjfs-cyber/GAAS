@@ -2770,6 +2770,87 @@ ${String(text || '').slice(0, 9000)}`;
             return { ok: true, id18, birthMonth, birthDate: `${yyyy}-${mm}-${dd}`, gender };
         }
 
+        function hrmsMarkFieldInvalid(el) {
+            if (!el) return;
+            try {
+                el.classList.add('field-invalid');
+                el.focus();
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => { try { el.classList.remove('field-invalid'); } catch (e) {} }, 4000);
+            } catch (e) {}
+        }
+
+        function hrmsEmployeeDraftKey() {
+            const u = String(currentUser?.username || 'anon').trim() || 'anon';
+            return `hrms_employee_draft_${u}`;
+        }
+
+        const HRMS_EMPLOYEE_DRAFT_FIELD_IDS = [
+            'employee-form-username', 'employee-form-name', 'employee-form-gender', 'employee-form-birthday',
+            'employee-form-idCardNumber', 'employee-form-hometown', 'employee-form-registeredResidence',
+            'employee-form-maritalStatus', 'employee-form-store', 'employee-form-wechat', 'employee-form-role',
+            'employee-form-department', 'employee-form-position', 'employee-form-level', 'employee-form-manager',
+            'employee-form-salary', 'employee-form-education', 'employee-form-joinDate', 'employee-form-bankCardCompany',
+            'employee-form-bankNameCompany', 'employee-form-bankCardPersonal', 'employee-form-bankNamePersonal',
+            'employee-form-phone', 'employee-form-email', 'employee-form-emergencyContactName',
+            'employee-form-emergencyContactPhone', 'employee-form-emergencyContactRelation',
+            'employee-form-idcard-front-url', 'employee-form-idcard-back-url', 'employee-form-coreTalent'
+        ];
+
+        function saveEmployeeFormDraft() {
+            const modal = document.getElementById('employee-form-modal');
+            if (!modal || String(modal.dataset.mode || '') !== 'create') return;
+            const draft = {};
+            HRMS_EMPLOYEE_DRAFT_FIELD_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                draft[id] = el.type === 'checkbox' ? !!el.checked : String(el.value || '');
+            });
+            draft.savedAt = new Date().toISOString();
+            try {
+                localStorage.setItem(hrmsEmployeeDraftKey(), JSON.stringify(draft));
+                showNotification('草稿已保存，下次打开新增员工时可恢复', 'success');
+            } catch (e) {
+                showNotification('草稿保存失败：' + String(e?.message || e), 'error');
+            }
+        }
+
+        function hrmsLoadEmployeeDraftRaw() {
+            try {
+                const raw = localStorage.getItem(hrmsEmployeeDraftKey());
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+
+        function clearEmployeeFormDraft() {
+            try { localStorage.removeItem(hrmsEmployeeDraftKey()); } catch (e) {}
+        }
+
+        async function hrmsMaybeRestoreEmployeeDraft() {
+            const draft = hrmsLoadEmployeeDraftRaw();
+            if (!draft) return;
+            const ok = await hrmsConfirm({
+                title: '恢复草稿',
+                message: '检测到上次未提交成功的员工信息草稿，是否恢复填充？',
+                okText: '恢复草稿',
+                icon: '📝'
+            });
+            if (!ok) { clearEmployeeFormDraft(); return; }
+            HRMS_EMPLOYEE_DRAFT_FIELD_IDS.forEach(id => {
+                if (!(id in draft)) return;
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (el.type === 'checkbox') el.checked = !!draft[id];
+                else el.value = String(draft[id] || '');
+            });
+            try {
+                const coreTalentEl = document.getElementById('employee-form-coreTalent');
+                const coreTalentLabelEl = document.getElementById('employee-form-coreTalent-label');
+                if (coreTalentEl && coreTalentLabelEl) coreTalentLabelEl.textContent = coreTalentEl.checked ? '是' : '否';
+            } catch (e) {}
+            showNotification('已恢复草稿', 'success');
+        }
+
         function hrmsApplyIdCardDerivedFields(idCardInput, genderEl, birthdayEl) {
             try {
                 const normalized = hrmsNormalizeIdCardNumber(idCardInput || '');
@@ -2941,6 +3022,8 @@ ${String(text || '').slice(0, 9000)}`;
 
             const saveBtn = document.getElementById('employee-form-save-btn');
             if (saveBtn) saveBtn.style.display = realMode === 'view' ? 'none' : '';
+            const draftBtn = document.getElementById('employee-form-draft-btn');
+            if (draftBtn) draftBtn.style.display = realMode === 'create' ? '' : 'none';
 
             const idEl = document.getElementById('employee-form-id');
             const usernameEl = document.getElementById('employee-form-username');
@@ -3368,6 +3451,10 @@ ${String(text || '').slice(0, 9000)}`;
             }
 
             modal.classList.add('show');
+
+            if (realMode === 'create') {
+                try { hrmsMaybeRestoreEmployeeDraft(); } catch (e) {}
+            }
         }
 
         function closeEmployeeFormModal() {
@@ -3703,6 +3790,7 @@ ${String(text || '').slice(0, 9000)}`;
             if (!id) return;
             if (!name) {
                 showNotification('请填写姓名', 'warning');
+                hrmsMarkFieldInvalid(nameEl);
                 return;
             }
             if (!username) {
@@ -3773,25 +3861,28 @@ ${String(text || '').slice(0, 9000)}`;
             }
             if (!managerUsername) {
                 showNotification('请选择直属上级账号', 'warning');
+                hrmsMarkFieldInvalid(managerEl);
                 return;
             }
             if (!joinDate || !/^\d{4}-\d{2}-\d{2}$/.test(joinDate)) {
-                showNotification('请填写入职日期（必填）', 'warning');
+                showNotification('请填写入职日期（必填，格式YYYY-MM-DD）', 'warning');
+                hrmsMarkFieldInvalid(joinDateEl);
                 return;
             }
-            if (!gender) { showNotification('请选择性别（必填）', 'warning'); return; }
-            if (!birthday) { showNotification('请填写出生日期（必填）', 'warning'); return; }
-            if (!store) { showNotification('请选择门店（必填）', 'warning'); return; }
-            if (!role) { showNotification('请选择角色（必填）', 'warning'); return; }
-            if (!department) { showNotification('请填写部门（必填）', 'warning'); return; }
-            if (!position) { showNotification('请填写岗位（必填）', 'warning'); return; }
-            if (!phone) { showNotification('请填写手机号（必填）', 'warning'); return; }
-            if (!hometown) { showNotification('请填写籍贯（必填）', 'warning'); return; }
-            if (!emergencyContactName) { showNotification('请填写紧急联系人姓名（必填）', 'warning'); return; }
-            if (!emergencyContactPhone) { showNotification('请填写紧急联系人电话（必填）', 'warning'); return; }
-            if (!emergencyContactRelation) { showNotification('请填写紧急联系人关系（必填）', 'warning'); return; }
+            if (!gender) { showNotification('请选择性别（必填）', 'warning'); hrmsMarkFieldInvalid(genderEl); return; }
+            if (!birthday) { showNotification('请填写出生日期（必填）', 'warning'); hrmsMarkFieldInvalid(birthdayEl); return; }
+            if (!store) { showNotification('请选择门店（必填）', 'warning'); hrmsMarkFieldInvalid(storeEl); return; }
+            if (!role) { showNotification('请选择角色（必填）', 'warning'); hrmsMarkFieldInvalid(roleEl); return; }
+            if (!department) { showNotification('请填写部门（必填）', 'warning'); hrmsMarkFieldInvalid(deptEl); return; }
+            if (!position) { showNotification('请填写岗位（必填）', 'warning'); hrmsMarkFieldInvalid(posEl); return; }
+            if (!phone) { showNotification('请填写手机号（必填）', 'warning'); hrmsMarkFieldInvalid(phoneEl); return; }
+            if (!hometown) { showNotification('请填写籍贯（必填）', 'warning'); hrmsMarkFieldInvalid(hometownEl); return; }
+            if (!emergencyContactName) { showNotification('请填写紧急联系人姓名（必填）', 'warning'); hrmsMarkFieldInvalid(ecNameEl); return; }
+            if (!emergencyContactPhone) { showNotification('请填写紧急联系人电话（必填）', 'warning'); hrmsMarkFieldInvalid(ecPhoneEl); return; }
+            if (!emergencyContactRelation) { showNotification('请填写紧急联系人关系（必填）', 'warning'); hrmsMarkFieldInvalid(ecRelEl); return; }
             if (String(managerUsername || '').toLowerCase() === String(username || '').toLowerCase()) {
                 showNotification('直属上级账号不能与员工账号相同', 'error');
+                hrmsMarkFieldInvalid(managerEl);
                 return;
             }
 
@@ -3799,6 +3890,7 @@ ${String(text || '').slice(0, 9000)}`;
                 const info = hrmsParseChinaIdCardInfo(idCardNumber);
                 if (!info?.ok) {
                     showNotification('身份证号码不合法，请检查后再提交', 'error');
+                    hrmsMarkFieldInvalid(idCardNumberEl);
                     return;
                 }
                 if (!gender && String(info.gender || '')) {
@@ -3810,13 +3902,15 @@ ${String(text || '').slice(0, 9000)}`;
                     try { if (birthdayEl) birthdayEl.value = String(birthday).slice(0, 10); } catch (e) {}
                 }
                 if (String(info.gender || '') && gender && String(info.gender) !== gender) {
-                    showNotification('身份证号码与性别不一致，请检查', 'error');
+                    showNotification('身份证号码与性别不一致（身份证推算为' + info.gender + '），请检查并修正', 'error');
+                    hrmsMarkFieldInvalid(genderEl);
                     return;
                 }
                 const b = String(birthday || '').trim();
                 const bd = b.length >= 10 ? b.slice(0, 10) : '';
                 if (String(info.birthDate || '') && bd && String(info.birthDate) !== bd) {
-                    showNotification('身份证号码与出生日期不一致，请检查', 'error');
+                    showNotification('身份证号码与出生日期不一致（身份证推算为' + info.birthDate + '），请检查并修正', 'error');
+                    hrmsMarkFieldInvalid(birthdayEl);
                     return;
                 }
                 if (!idCardFrontUrl && !idCardBackUrl) {
@@ -3845,6 +3939,7 @@ ${String(text || '').slice(0, 9000)}`;
                 const employee = { id, username, name, password: pwd, gender, birthday, idCardNumber, hometown, registeredResidence, maritalStatus, wechat, store, role, department, position, level, managerUsername, salary, education, bankCardCompany, bankNameCompany, bankCardPersonal, bankNamePersonal, bankCard, emergencyContactName, emergencyContactPhone, emergencyContactRelation, idCardFrontUrl, idCardBackUrl, joinDate, phone, email, coreTalent };
                 HRMS_API.createApproval('onboarding', { employee })
                     .then(() => {
+                        clearEmployeeFormDraft();
                         closeEmployeeFormModal();
                         showNotification('已提交入职审批（待直属上级 → 总部人事 → 管理员逐级审核）', 'success');
                         try { showPage('approvals'); } catch (e) {}
@@ -3898,6 +3993,7 @@ ${String(text || '').slice(0, 9000)}`;
                     const resp = await HRMS_API.createEmployee(nextEmp);
                     const saved = resp?.employee || nextEmp;
                     HRMS_STORE.setEmployees([...(employees || []), saved]);
+                    clearEmployeeFormDraft();
                 } catch (e) {
                     const raw = String(e?.message || e || '网络错误');
                     showNotification('新增员工失败：' + (raw.includes('duplicate') ? '账号已存在' : raw), 'error');

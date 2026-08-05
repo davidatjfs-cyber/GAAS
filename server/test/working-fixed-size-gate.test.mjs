@@ -336,8 +336,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 取代原独立 customer-twin-review.html 页面；全中文界面）。
  * 2026-08-05 第六十四次上调（72248→72288）：培训卡审核模块补「批量拒绝当前列表」
  * 功能（一次拒绝当前筛选的全部待审卡）。
+ * 2026-08-05 第六十五次上调（72288→72390）：新员工"信息填完但无法保存"排查——补齐必填/
+ * 身份证校验失败时的字段级高亮定位（红框+聚焦+滚动，此前仅弹toast、用户找不到是哪个字段），
+ * 并新增"保存草稿"功能（新增员工表单可随时存本地草稿，提交失败或误关闭弹窗也不用重填，
+ * 下次打开新增表单时提示恢复）。新代码在 frontend/src/pages/08-materials-tasks.js，
+ * 仅 modal footer 补一个"保存草稿"按钮 + CSS，非 inline业务逻辑。
  */
-const MAX_LINES = 72288;
+const MAX_LINES = 72390;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
