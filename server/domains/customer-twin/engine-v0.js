@@ -196,6 +196,66 @@ const FALLBACK_UTTERANCES = {
   noise: ['今天店里有点吵。'],
 };
 
+/**
+ * 表达层 v2：带语境细节的富句式（解决第一轮短句"一眼假"问题）。
+ * 每条模板含情境槽位（等待分钟数、菜品、同桌人），按人格风格确定性选取。
+ */
+const RICH_TEMPLATES = {
+  slow_service: [
+    { style: 'polite', text: '不好意思，我们这桌的{dish}都等了{minutes}分钟了，能帮忙看下后厨吗？' },
+    { style: 'polite', text: '麻烦帮我们催一下，{minutes}分钟了，隔壁桌比我们晚来都上齐了。' },
+    { style: 'direct', text: '我们这桌的{dish}等{minutes}分钟了还没动静，是不是漏单了？' },
+    { style: 'direct', text: '孩子一直等着吃{dish}，再不上真要闹了，麻烦催一下。' },
+  ],
+  wrong_dish: [
+    { style: 'polite', text: '这个好像不是我们点的，我们点的是{dish}，麻烦帮我们确认一下。' },
+    { style: 'direct', text: '这盘不是我们的，我们没点这个，是不是送错桌了？' },
+  ],
+  missing_dish: [
+    { style: 'polite', text: '我们还有一个{dish}一直没上，是不是漏掉了？' },
+    { style: 'direct', text: '{dish}都吃完了，还有一个菜没上，帮忙查一下单。' },
+  ],
+  dish_quality: [
+    { style: 'polite', text: '这个{dish}今天是不是发挥不太稳，感觉比上次差一些。' },
+    { style: 'direct', text: '这个{dish}味道不太对，有点{issue}，你们看看是不是今天这批食材的问题。' },
+  ],
+  service_attitude: [
+    { style: 'polite', text: '麻烦叫一下你们这边能负责的人，我们叫了好几次没人应。' },
+    { style: 'direct', text: '叫了几次都没人理，这服务态度我得反映一下。' },
+  ],
+  waiting: [
+    { style: 'polite', text: '请问还要等多久？我们前面还有几桌？' },
+    { style: 'direct', text: '等了{minutes}分钟了，比我晚来的人都进去了，是按号叫的吗？' },
+  ],
+  checkout: [
+    { style: 'polite', text: '可以帮我们结一下账吗？等了一会儿了。' },
+  ],
+  environment: [
+    { style: 'polite', text: '这边有点{issue}，能帮忙处理一下吗？' },
+  ],
+};
+
+const RICH_DISH_POOL = ['烧鹅', '叉烧', '炒牛河', '清远鸡', '牛杂煲', '鱼生', '捞鸡', '空心菜', '汤'];
+const RICH_ISSUE_POOL = {
+  dish_quality: ['偏咸', '腥', '太油', '不够热'],
+  environment: ['吵', '热', '味道重'],
+};
+
+export function buildRichUtterance({ category, style, minutes = 0, dish = '', issue = '', seedText = '' } = {}) {
+  const list = RICH_TEMPLATES[category] || [];
+  const styled = list.filter((t) => !style || t.style === style || t.style === 'direct');
+  const pool = styled.length ? styled : list;
+  if (!pool.length) return '';
+  const idx = Math.abs(String(seedText).length + (pool[0].text.length || 0)) % pool.length;
+  const t = pool[idx].text;
+  const dishName = dish || RICH_DISH_POOL[Math.abs(String(seedText).length + category.length) % RICH_DISH_POOL.length];
+  const issueName = issue || (RICH_ISSUE_POOL[category] || ['一般'])[Math.abs(String(seedText).length) % (RICH_ISSUE_POOL[category] || ['一般']).length];
+  return t
+    .replace('{dish}', dishName)
+    .replace('{minutes}', String(Math.max(minutes, 1)))
+    .replace('{issue}', issueName);
+}
+
 export function pickCorpus(entries, style, seedText) {
   const pool = entries.length
     ? entries
