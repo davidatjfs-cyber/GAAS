@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mulberry32, samplePersonas, runSimulation, expressUtterance,
+  buildRichUtterance,
 } from '../engine-v0.js';
 
 test('同 seed 生成同人格（确定性）', () => {
@@ -65,4 +66,14 @@ test('表达器：返回非空文本并带事件/风格', () => {
   assert.ok(out.text.length > 0);
   assert.equal(out.event, 'wait_food');
   assert.ok(['corpus', 'template'].includes(out.source));
+});
+
+test('表达器 v2：富句式填充槽位且确定性', () => {
+  const a = buildRichUtterance({ category: 'slow_service', style: 'polite', minutes: 25, dish: '烧鹅', seedText: 'x1' });
+  const b = buildRichUtterance({ category: 'slow_service', style: 'polite', minutes: 25, dish: '烧鹅', seedText: 'x1' });
+  assert.equal(a, b);
+  assert.ok(a.includes('烧鹅'));
+  assert.ok(a.length > 10);
+  const direct = buildRichUtterance({ category: 'wrong_dish', style: 'direct', dish: '捞鸡', seedText: 'y2' });
+  assert.ok(direct.length > 8);
 });
