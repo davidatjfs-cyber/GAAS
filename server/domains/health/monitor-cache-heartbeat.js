@@ -3,6 +3,7 @@
  */
 import { childLogger } from '../../utils/logger.js';
 import { wasRecentlyFiredPersisted, markFiredPersisted } from './monitor-beat.js';
+import { evaluateSchedulerHealth } from './scheduler-registry.js';
 const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export async function scheduleCacheAndHeartbeat(deps) {
@@ -16,7 +17,10 @@ export async function scheduleCacheAndHeartbeat(deps) {
     isPosSalesCheckWindow: _isPosSalesCheckWindow, isLeaveCumulativeSnapshotWindow: _isLeaveCumulativeSnapshotWindow,
     findMissingPosStores: _findMissingPosStores, expectedStoresFromState: _expectedStoresFromState,
     dailyReportItemFromPgRow: _dailyReportItemFromPgRow,
-    DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN, filterStaleHeartbeats,
+    // 2026-08-05：阈值表与 filterStaleHeartbeats 已被 scheduler-registry.js 的
+    // evaluateSchedulerHealth 取代（见下方心跳检查注释），保留解构仅为不改调用方签名。
+    DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN: _DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN,
+    filterStaleHeartbeats: _filterStaleHeartbeats,
     formatStaleHeartbeatDeadLabel, staleHeartbeatDedupeKey,
   } = deps;
 
@@ -35,8 +39,6 @@ if (allowSchemaChanges) {
     log.error({ msg: 'monitor', detail: ['[monitor] heartbeat table init error:', e?.message].map((x) => (x == null ? '' : String(x))).join(' ') });
   }
 }
-
-const HEARTBEAT_ALERT_THRESHOLDS_MIN = DEFAULT_HEARTBEAT_ALERT_THRESHOLDS_MIN;
 
 // 带心跳的缓存清理（覆盖原 setInterval）
 // agent_metric_cache 带tenant_id/RLS，原只清default租户会导致其他租户缓存堆积不过期；改为遍历活跃租户。
@@ -70,23 +72,42 @@ setIntervalFn(async () => {
       // 一轮比一轮乱，形成自我循环放大。改成只查HEARTBEAT_ALERT_THRESHOLDS_MIN白名单里
       // 登记过的真实周期性任务，其它任何一次性去重标记/本函数自身的dedupe key都不会再被
       // 当作"心跳任务"来判断是否停摆。
-      const knownTaskNames = Object.keys(HEARTBEAT_ALERT_THRESHOLDS_MIN).filter((k) => k !== 'default');
-      const r = await pool.query(`
-        SELECT task_name,
-               EXTRACT(EPOCH FROM (NOW() - last_beat)) / 60 AS minutes_ago
-        FROM scheduler_heartbeat
-        WHERE task_name = ANY($1::text[])
-      `, [knownTaskNames]);
-      const staleRows = filterStaleHeartbeats(r.rows || [], HEARTBEAT_ALERT_THRESHOLDS_MIN);
-      if (staleRows.length > 0) {
-        const dead = formatStaleHeartbeatDeadLabel(staleRows);
-        const dedupeKey = staleHeartbeatDedupeKey(staleRows);
+      //
+      // 2026-08-05 修复（比上面那轮更根本）：上面这条 SQL 的 WHERE 白名单虽然挡住了刷屏，
+      // 却引入了一个更危险的反向漏洞——**心跳表里没有这一行时，查询结果就没有这个任务，
+      // 于是它永远不会被判定为停摆**。生产实测 master_kg_health_tick / sms_template_reconcile
+      // / leave_cumulative_snapshot 三个任务在白名单里登记着、心跳表里 0 行，等于"任务彻底
+      // 没跑"时监控反而最安静。现在改成以 scheduler-registry.js 注册表为准去比对心跳表：
+      // 缺行 = never（进程运行时长不足一个周期时给宽限，避免重启后误报），
+      // 已委托给 agents-service-v2 的 tick 标记 delegated 不参与判定。
+      const r = await pool.query(`SELECT task_name, last_beat, status, last_error, duration_ms, last_success_at FROM scheduler_heartbeat`);
+      const evaluated = evaluateSchedulerHealth({
+        rows: r.rows || [],
+        uptimeMs: process.uptime() * 1000,
+      });
+      const toAlertRow = (t) => ({
+        task_name: t.task_name,
+        // never 没有 last_beat，用预期间隔占位，让告警文案与去重 key 仍可计算
+        minutes_ago: t.ageMinutes == null ? t.expectedMaxMinutes : t.ageMinutes,
+        status: t.status,
+      });
+      // never 的冷却时间给到 24h：它描述的是"一直就没跑过"这种稳态，按 2h 重复播报没有
+      // 任何新信息，只会复刻本文件历史上反复出现过的告警刷屏。overdue/failing 是新出现的
+      // 状态变化，保持 2h。
+      const buckets = [
+        { rows: evaluated.unhealthy.filter((t) => t.status !== 'never').map(toAlertRow), cooldownMin: 2 * 60, title: '定时任务心跳异常' },
+        { rows: evaluated.unhealthy.filter((t) => t.status === 'never').map(toAlertRow), cooldownMin: 24 * 60, title: '定时任务从未执行' },
+      ];
+      for (const bucket of buckets) {
+        if (bucket.rows.length === 0) continue;
+        const dead = formatStaleHeartbeatDeadLabel(bucket.rows);
+        const dedupeKey = staleHeartbeatDedupeKey(bucket.rows);
         // 2026-08-01 修复：heartbeatAlertDedup 是进程内 Map，pm2 restart 就清零——生产实测
         // 同一次"心跳异常"检测因为重启在同一时间戳被插入了两条一模一样的通知。改成持久化
         // 去重（复用 monitor-beat.js 的 wasRecentlyFiredPersisted），reason 见该函数注释。
-        if (await wasRecentlyFiredPersisted(pool, `heartbeat_alert_${dedupeKey}`, 2 * 60)) return;
+        if (await wasRecentlyFiredPersisted(pool, `heartbeat_alert_${dedupeKey}`, bucket.cooldownMin)) continue;
         await markFiredPersisted(pool, `heartbeat_alert_${dedupeKey}`);
-        const msg = `🚨 [HRMS] 定时任务心跳异常\n停止任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
+        const msg = `🚨 [HRMS] ${bucket.title}\n涉及任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
         log.error({ msg: 'monitor', detail: ['[monitor] Dead tasks:', dead].map((x) => (x == null ? '' : String(x))).join(' ') });
         await sendSystemAlert(msg);
       }

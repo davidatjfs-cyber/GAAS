@@ -5,17 +5,42 @@ import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
-export async function beatHeartbeat(deps, taskName) {
+/**
+ * 2026-08-05：心跳除了"跑过"还记录"跑得怎么样"（migration 180 加的 status/last_error/
+ * duration_ms/last_success_at）。不传 options 时行为与之前完全一致（记为一次成功），
+ * 所以存量几十个调用点不需要改。
+ *
+ * last_success_at 只在成功时推进——失败时保留旧值，于是"最近一次成功距今多久"可以直接读出来，
+ * 用来抓「准时触发但每次都失败」这种从 last_beat 看完全健康的故障。
+ */
+const HEARTBEAT_UPSERT_SQL = `
+  INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id, status, last_error, duration_ms, last_success_at)
+  VALUES ($1, NOW(), 1, 'default', $2, $3, $4, CASE WHEN $2 = 'ok' THEN NOW() ELSE NULL END)
+  ON CONFLICT (task_name)
+  DO UPDATE SET
+    last_beat = NOW(),
+    run_count = scheduler_heartbeat.run_count + 1,
+    status = EXCLUDED.status,
+    last_error = EXCLUDED.last_error,
+    duration_ms = EXCLUDED.duration_ms,
+    last_success_at = CASE WHEN EXCLUDED.status = 'ok' THEN NOW() ELSE scheduler_heartbeat.last_success_at END`;
+
+/** @param {{ status?: 'ok'|'error', durationMs?: number|null, error?: unknown }} [options] */
+function heartbeatParams(taskName, options) {
+  const status = options?.status === 'error' ? 'error' : 'ok';
+  const rawError = options?.error;
+  const lastError = status === 'error' && rawError != null
+    ? String(rawError?.message || rawError).slice(0, 500)
+    : null;
+  const durationMs = Number.isFinite(Number(options?.durationMs)) ? Math.round(Number(options.durationMs)) : null;
+  return [taskName, status, lastError, durationMs];
+}
+
+export async function beatHeartbeat(deps, taskName, options) {
   const { pool, tenantContext } = deps;
   try {
     await tenantContext.run('default', async () => {
-      await pool.query(
-        `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
-         VALUES ($1, NOW(), 1, 'default')
-         ON CONFLICT (task_name)
-         DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
-        [taskName]
-      );
+      await pool.query(HEARTBEAT_UPSERT_SQL, heartbeatParams(taskName, options));
     });
   } catch (_) {
     /* ignore */
@@ -29,15 +54,9 @@ export async function beatHeartbeat(deps, taskName) {
  * beatHeartbeat 写同一张 scheduler_heartbeat 表，tenant_id 固定 'default'——这些后台
  * 循环本身也不区分租户。
  */
-export async function beatHeartbeatSimple(pool, taskName) {
+export async function beatHeartbeatSimple(pool, taskName, options) {
   try {
-    await pool.query(
-      `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
-       VALUES ($1, NOW(), 1, 'default')
-       ON CONFLICT (task_name)
-       DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
-      [taskName]
-    );
+    await pool.query(HEARTBEAT_UPSERT_SQL, heartbeatParams(taskName, options));
   } catch (_) {
     /* ignore */
   }
