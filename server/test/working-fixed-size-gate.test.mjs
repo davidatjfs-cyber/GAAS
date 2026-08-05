@@ -331,8 +331,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 双方案「要么都执行、要么都忽略」无法操作，多方案时每个方案各加一个「采纳本方案」
  * 勾选框，只提交勾中的 acceptedVariantCodes（新代码在 frontend/src/pages/15-workspace.js，
  * 不是 inline script）。
+ * 2026-08-05 第六十三次上调（71972→72248）：新增 frontend/src/pages/16-customer-twin.js
+ * （培训卡审核模块，仅系统管理员可见——审核真实桌访/差评生成的岗位教练培训卡，
+ * 取代原独立 customer-twin-review.html 页面；全中文界面）。
  */
-const MAX_LINES = 71972;
+const MAX_LINES = 72248;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

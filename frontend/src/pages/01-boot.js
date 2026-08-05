@@ -4964,6 +4964,11 @@ th { background: #F2EAEE; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
             }
+            // 培训卡审核：仅系统管理员可见（硬边界，不参与角色模块配置）
+            if (page === 'customer-twin-review') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                return r === ROLES.ADMIN;
+            }
             if (page === 'strategy') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.PRODUCTION_MANAGER;
@@ -5127,4 +5132,3 @@ th { background: #F2EAEE; font-weight: 700; }
                 showNotification('切换门店失败: ' + (e?.message || e), 'error');
             }
         }
-

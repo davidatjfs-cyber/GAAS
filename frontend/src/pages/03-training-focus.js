@@ -1950,6 +1950,24 @@
                 var line = document.getElementById('job-coach-radar-line');
                 if (line) line.textContent = '打开陪练页开始今日训练';
             });
+
+            // 培训卡审核入口（仅系统管理员可见）
+            if (typeof isAdminUser === 'function' && isAdminUser() && !document.getElementById('twin-review-entry-card')) {
+                var reviewCard = document.createElement('div');
+                reviewCard.id = 'twin-review-entry-card';
+                reviewCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:rgba(207,161,74,.10);border:1px solid rgba(207,161,74,.35);';
+                reviewCard.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
+                    + '<div><div style="font-size:15px;font-weight:700;color:#F3E1B9;">培训卡审核</div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">审核真实桌访与差评生成的培训卡（仅管理员可见）</div></div>'
+                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#a8802f;color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;">进入审核</button>'
+                    + '</div>';
+                var anchor = document.getElementById('job-coach-entry-card');
+                home.insertBefore(reviewCard, anchor ? anchor.nextSibling : home.firstChild);
+                var enterBtn = reviewCard.querySelector('button');
+                if (enterBtn) enterBtn.addEventListener('click', function () {
+                    if (typeof showPage === 'function') showPage('customer-twin-review');
+                });
+            }
         }
 
         function loadTrainingPage() {
@@ -5585,4 +5603,3 @@
             st.completedLogged = true;
             renderKnowledgeFlashcardHistory();
         }
-

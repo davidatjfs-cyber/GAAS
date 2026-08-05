@@ -11,6 +11,7 @@ import {
 import { ensureNegativeFeedbackSeed } from './seed-negative-feedback.js';
 import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js';
 import { PERSONA_KEYS } from './persona-schema.js';
+import { createCustomerTwinAdminRequired } from './admin-guard.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -32,9 +33,11 @@ async function loadCorpus(pool) {
  * @param {{ app: any, pool: any, platformAdminRequired: Function, callLLM?: Function }} ctx
  */
 export function registerCustomerTwinRoutes(ctx) {
-  const { app, pool, platformAdminRequired } = ctx;
+  const { app, pool } = ctx;
+  const twinAdminRequired = createCustomerTwinAdminRequired();
+  const adminName = (req) => req.platformAdmin?.username || req.twinAdmin?.username || 'admin';
 
-  app.post('/api/customer-twin/incidents/generate', platformAdminRequired, async (req, res) => {
+  app.post('/api/customer-twin/incidents/generate', twinAdminRequired, async (req, res) => {
     try {
       const limit = Math.min(Number(req.body?.limit_per_source) || 50, 200);
       const result = await generateIncidentCards(pool, { limitPerSource: limit });
@@ -45,7 +48,7 @@ export function registerCustomerTwinRoutes(ctx) {
     }
   });
 
-  app.get('/api/customer-twin/incidents/pending', platformAdminRequired, async (_req, res) => {
+  app.get('/api/customer-twin/incidents/pending', twinAdminRequired, async (_req, res) => {
     try {
       res.json({ ok: true, cards: await listPendingTwinCards(pool) });
     } catch (e) {
@@ -54,10 +57,10 @@ export function registerCustomerTwinRoutes(ctx) {
     }
   });
 
-  app.post('/api/customer-twin/incidents/:cardKey/approve', platformAdminRequired, async (req, res) => {
+  app.post('/api/customer-twin/incidents/:cardKey/approve', twinAdminRequired, async (req, res) => {
     try {
       const active = req.body?.active !== false;
-      const username = req.platformAdmin?.username || 'admin';
+      const username = adminName(req);
       const row = await setTwinCardActive(pool, req.params.cardKey, active, username);
       if (!row) return res.status(404).json({ ok: false, error: 'card_not_found' });
       res.json({ ok: true, card_key: row.card_key, active });
@@ -67,9 +70,9 @@ export function registerCustomerTwinRoutes(ctx) {
     }
   });
 
-  app.delete('/api/customer-twin/incidents/:cardKey', platformAdminRequired, async (req, res) => {
+  app.delete('/api/customer-twin/incidents/:cardKey', twinAdminRequired, async (req, res) => {
     try {
-      const username = req.platformAdmin?.username || 'admin';
+      const username = adminName(req);
       const row = await rejectTwinCard(pool, req.params.cardKey, username);
       if (!row) return res.status(404).json({ ok: false, error: 'card_not_found' });
       res.json({ ok: true, card_key: row.card_key, rejected: true });
@@ -79,7 +82,7 @@ export function registerCustomerTwinRoutes(ctx) {
     }
   });
 
-  app.post('/api/customer-twin/simulate', platformAdminRequired, async (req, res) => {
+  app.post('/api/customer-twin/simulate', twinAdminRequired, async (req, res) => {
     try {
       const personaKey = String(req.body?.persona_key || 'family_dinner');
       if (!PERSONA_KEYS.includes(personaKey)) {
