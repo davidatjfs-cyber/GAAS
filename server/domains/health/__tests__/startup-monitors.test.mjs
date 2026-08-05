@@ -72,8 +72,23 @@ test('createListenMonitors: beatHeartbeat + start wires intervals', async () => 
         return { rows: [], rowCount: 1 };
       }
       if (/CREATE TABLE IF NOT EXISTS scheduler_heartbeat/i.test(s)) return { rows: [] };
-      if (/FROM scheduler_heartbeat/i.test(s) && /minutes_ago/i.test(s)) {
-        return { rows: [{ task_name: 'cache_purge', minutes_ago: 999 }] };
+      // 2026-08-05：心跳检查改为注册表驱动（scheduler-registry.js），SQL 从
+      // "算好 minutes_ago" 变成 "取原始 last_beat/status 再在内存里判定"。
+      // cache_purge 给一个远超阈值(390分钟)的 last_beat，用来断言 overdue 会告警。
+      // 只匹配全表扫描那条（含 duration_ms）；wasRecentlyFiredPersisted 的
+      // `SELECT last_beat ... WHERE task_name = $1` 必须继续走空结果，否则去重逻辑
+      // 会误判成"刚刚已告警过"，把 POS 销售缺失等告警一并吞掉。
+      if (/FROM scheduler_heartbeat/i.test(s) && /duration_ms/i.test(s)) {
+        return {
+          rows: [{
+            task_name: 'cache_purge',
+            last_beat: new Date(Date.now() - 999 * 60 * 1000).toISOString(),
+            status: 'ok',
+            last_error: null,
+            duration_ms: null,
+            last_success_at: new Date(Date.now() - 999 * 60 * 1000).toISOString(),
+          }],
+        };
       }
       if (/MAX\(date\)/i.test(s) && /daily_reports/i.test(s)) {
         return { rows: [{ latest: '2026-07-01' }] };
