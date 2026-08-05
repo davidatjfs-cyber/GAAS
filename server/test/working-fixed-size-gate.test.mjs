@@ -334,8 +334,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-05 第六十三次上调（71972→72248）：新增 frontend/src/pages/16-customer-twin.js
  * （培训卡审核模块，仅系统管理员可见——审核真实桌访/差评生成的岗位教练培训卡，
  * 取代原独立 customer-twin-review.html 页面；全中文界面）。
+ * 2026-08-05 第六十四次上调（72248→72288）：培训卡审核模块补「批量拒绝当前列表」
+ * 功能（一次拒绝当前筛选的全部待审卡）。
  */
-const MAX_LINES = 72248;
+const MAX_LINES = 72288;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

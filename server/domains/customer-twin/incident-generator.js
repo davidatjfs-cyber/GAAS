@@ -264,6 +264,17 @@ export async function listPendingTwinCards(pool, { limit = 100 } = {}) {
   return r.rows || [];
 }
 
+export async function countPendingTwinCards(pool) {
+  const r = await pool.query(
+    `SELECT count(*)::int AS n
+       FROM job_coach_incident_cards
+      WHERE active = FALSE
+        AND meta->>'source' = 'customer_twin'
+        AND meta->>'review_status' IS DISTINCT FROM 'rejected'`
+  );
+  return r.rows?.[0]?.n || 0;
+}
+
 export async function setTwinCardActive(pool, cardKey, active, username = 'system') {
   const reviewStatus = active ? 'approved' : 'rejected';
   const r = await pool.query(

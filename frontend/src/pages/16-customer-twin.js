@@ -31,6 +31,7 @@ function ctrEnsureContainer() {
     '<div style="font-size:12px;color:rgba(232,238,242,.62);margin-top:2px">来自真实桌访与差评的待审培训卡（供门店员工岗位教练使用）</div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     '<button data-ctr-action="generate" style="padding:9px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">从真实数据生成</button>' +
+    '<button data-ctr-action="reject-all" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(185,28,28,.7);background:transparent;color:#f2a0a0;cursor:pointer;font-size:13px">批量拒绝当前列表</button>' +
     '<button data-ctr-action="refresh" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(232,238,242,.35);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px">刷新</button>' +
     '</div></div>' +
     '<div style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:rgba(232,238,242,.75)">' +
@@ -192,6 +193,43 @@ async function ctrReject(key) {
   }
 }
 
+async function ctrRejectAll() {
+  const shown = ctrCurrentCards();
+  if (!shown.length) {
+    if (typeof showNotification === 'function') showNotification('当前没有可拒绝的培训卡', 'warning');
+    return;
+  }
+  const ok = typeof hrmsConfirm === 'function'
+    ? await hrmsConfirm({
+        title: '确认批量拒绝',
+        message: '将拒绝当前显示的 ' + shown.length + ' 张培训卡。拒绝后这些真实客诉不再生成培训卡，员工不会抽到。确认？',
+        okText: '确认拒绝',
+        icon: '⛔',
+      })
+    : confirm('将拒绝当前显示的 ' + shown.length + ' 张培训卡，拒绝后不再生成。确认？');
+  if (!ok) return;
+  const btn = document.querySelector('[data-ctr-action="reject-all"]');
+  if (btn) { btn.disabled = true; btn.textContent = '拒绝中…'; }
+  let done = 0;
+  let failed = 0;
+  try {
+    for (const card of shown) {
+      try {
+        await ctrApi('/api/customer-twin/incidents/' + encodeURIComponent(card.card_key), { method: 'DELETE' });
+        done += 1;
+      } catch (e) {
+        failed += 1;
+      }
+    }
+    if (typeof showNotification === 'function') {
+      showNotification('已拒绝 ' + done + ' 张' + (failed ? '，失败 ' + failed + ' 张' : ''), failed ? 'warning' : 'success');
+    }
+    await ctrLoad();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '批量拒绝当前列表'; }
+  }
+}
+
 async function ctrGenerate() {
   if (__ctr.generating) return;
   __ctr.generating = true;
@@ -227,9 +265,11 @@ function ctrWireEvents() {
 function ctrHandleClick(ev) {
   const gen = ev.target.closest('[data-ctr-action="generate"]');
   const ref = ev.target.closest('[data-ctr-action="refresh"]');
+  const rjAll = ev.target.closest('[data-ctr-action="reject-all"]');
   const ap = ev.target.closest('[data-ctr-approve]');
   const rj = ev.target.closest('[data-ctr-reject]');
   if (gen) ctrGenerate();
+  else if (rjAll) ctrRejectAll();
   else if (ref) ctrLoad();
   else if (ap) ctrApprove(ap.getAttribute('data-ctr-approve'));
   else if (rj) ctrReject(rj.getAttribute('data-ctr-reject'));
