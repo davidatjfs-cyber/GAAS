@@ -286,6 +286,7 @@
             <button data-target="agentSection">基础配置</button>
             <button data-target="templateSection">模板库</button>
             <button data-target="acceptanceSection">验收 / 修复</button>
+            <button data-target="schedulerSection">定时任务总览</button>
             <button data-target="logSection">操作日志</button>
           </div>
         </div>
@@ -483,6 +484,49 @@
                 <div class="empty">暂无告警。</div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section class="card pad anchor" id="schedulerSection">
+          <div class="section-title">
+            <div>
+              <h2>定时任务总览</h2>
+              <div class="small">
+                跨服务的定时任务存活 + 业务产出新鲜度。上半部分回答「任务有没有按时跑」，
+                下半部分回答「跑了有没有真的出数据」——后者是心跳看不见的那类故障。
+              </div>
+            </div>
+            <div class="toolbar">
+              <span id="schedulerOverallBadge" class="pill">等待加载</span>
+              <button type="button" id="schedulerRefreshBtn" class="ghost">刷新</button>
+            </div>
+          </div>
+
+          <div class="section-title" style="margin-top:12px">
+            <h3>业务产出新鲜度</h3>
+            <span id="schedulerOutputBadge" class="pill info">-</span>
+          </div>
+          <div class="table-wrap">
+            <table class="ops-table">
+              <thead><tr><th>产出</th><th>状态</th><th>最新数据</th><th>产出方</th><th>说明</th></tr></thead>
+              <tbody id="schedulerOutputRows"><tr><td colspan="5" class="empty">等待加载…</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="section-title" style="margin-top:16px">
+            <h3>调度存活</h3>
+            <span id="schedulerTaskBadge" class="pill info">-</span>
+          </div>
+          <div class="table-wrap">
+            <table class="ops-table">
+              <thead><tr><th>任务</th><th>状态</th><th>距上次</th><th>调度周期</th><th>归属</th><th>最近错误</th></tr></thead>
+              <tbody id="schedulerTaskRows"><tr><td colspan="6" class="empty">等待加载…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="small" style="margin-top:8px">
+            <strong>状态含义</strong>：正常 = 在预期窗口内；已停摆 = 有心跳但超过预期间隔；
+            在跑但失败 = 准时触发却持续报错或长期没有成功记录；从未执行 = 已登记但一条心跳都没有；
+            委托 V2 = 本环境由 agents-service-v2 执行，本服务不做判定。
           </div>
         </section>
 
@@ -1216,6 +1260,7 @@
       return hay.includes(filter);
     })));
     $('openPlatformBtn').addEventListener('click', () => window.open('/platform-admin/', '_blank', 'noopener'));
+    $('schedulerRefreshBtn').addEventListener('click', () => loadSchedulerOps().catch((e) => log(`定时任务总览刷新失败：${e.message}`)));
     $('createPromptBtn').addEventListener('click', () => createTemplate('prompt'));
     $('createReplyBtn').addEventListener('click', () => createTemplate('reply'));
     $('runAcceptanceInlineBtn').addEventListener('click', () => runAction('acceptance'));
@@ -1248,6 +1293,80 @@
     window.bindTemplate = bindTemplate;
     window.deleteTemplate = deleteTemplate;
 
+    // ── 定时任务总览（/api/ops/schedulers）────────────────────────────
+    const SCHEDULER_STATUS_META = {
+      ok: { label: '正常', cls: 'ok' },
+      overdue: { label: '已停摆', cls: 'bad' },
+      failing: { label: '在跑但失败', cls: 'bad' },
+      never: { label: '从未执行', cls: 'bad' },
+      delegated: { label: '委托 V2', cls: 'info' },
+      stale: { label: '断档', cls: 'bad' },
+      error: { label: '查询失败', cls: 'bad' },
+    };
+
+    function statusPill(status) {
+      const meta = SCHEDULER_STATUS_META[status] || { label: status || '-', cls: 'info' };
+      return `<span class="pill ${meta.cls}">${esc(meta.label)}</span>`;
+    }
+
+    function formatAgeMinutes(min) {
+      if (min === null || min === undefined) return '-';
+      const n = Number(min);
+      if (!Number.isFinite(n)) return '-';
+      if (n < 60) return `${n} 分钟`;
+      if (n < 60 * 24) return `${(n / 60).toFixed(1)} 小时`;
+      return `${(n / 60 / 24).toFixed(1)} 天`;
+    }
+
+    function renderSchedulerOps(data) {
+      const outputs = (data && data.outputs) || { items: [], stale: [] };
+      const schedulers = (data && data.schedulers) || { tasks: [], unhealthy: [], counts: {} };
+
+      $('schedulerOverallBadge').textContent = data && data.ok ? '全部正常' : '存在异常';
+      $('schedulerOverallBadge').className = `pill ${data && data.ok ? 'ok' : 'bad'}`;
+
+      const outputItems = outputs.items || [];
+      $('schedulerOutputBadge').textContent = `${outputItems.length - (outputs.stale || []).length}/${outputItems.length} 正常`;
+      $('schedulerOutputBadge').className = `pill ${(outputs.stale || []).length ? 'bad' : 'ok'}`;
+      $('schedulerOutputRows').innerHTML = outputItems.length
+        ? outputItems
+            .slice()
+            .sort((a, b) => (a.status === 'ok') - (b.status === 'ok'))
+            .map((o) => `<tr>
+              <td>${esc(o.label)}</td>
+              <td>${statusPill(o.status)}</td>
+              <td>${o.latest ? esc(new Date(o.latest).toLocaleString('zh-CN')) : '-'}</td>
+              <td class="small">${esc(o.produces)}</td>
+              <td class="small">${esc(o.detail)}${o.note ? `<br><span class="small">口径：${esc(o.note)}</span>` : ''}</td>
+            </tr>`)
+            .join('')
+        : '<tr><td colspan="5" class="empty">无数据</td></tr>';
+
+      const tasks = (schedulers.tasks || []).slice().sort((a, b) => {
+        const rank = (t) => (t.status === 'ok' ? 1 : t.status === 'delegated' ? 2 : 0);
+        return rank(a) - rank(b) || String(a.task_name).localeCompare(String(b.task_name));
+      });
+      const unhealthyCount = (schedulers.unhealthy || []).length;
+      $('schedulerTaskBadge').textContent = `${schedulers.checked || 0} 项在检 · ${unhealthyCount} 项异常`;
+      $('schedulerTaskBadge').className = `pill ${unhealthyCount ? 'bad' : 'ok'}`;
+      $('schedulerTaskRows').innerHTML = tasks.length
+        ? tasks.map((t) => `<tr>
+            <td>${esc(t.task_name)}</td>
+            <td>${statusPill(t.status)}</td>
+            <td>${t.status === 'delegated' ? '-' : formatAgeMinutes(t.ageMinutes)}</td>
+            <td class="small">${esc(t.schedule)}</td>
+            <td class="small">${esc(t.owner === 'gaas' ? 'GAAS' : t.owner)}</td>
+            <td class="small">${esc(t.last_error || '-')}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="6" class="empty">无数据</td></tr>';
+    }
+
+    async function loadSchedulerOps() {
+      const data = await api('/api/ops/schedulers');
+      renderSchedulerOps(data);
+      return data;
+    }
+
     async function boot() {
       const hasToken = !!localStorage.getItem(tokenKey);
       $('loginStatusPill').textContent = hasToken ? '已登录' : '未登录';
@@ -1257,6 +1376,8 @@
         : '尚未登录，请先打开 /platform-admin/ 登录后再回到这个页面（同一浏览器即可共享登录态）。';
       if (!hasToken) return;
       const fromQuery = new URL(location.href).searchParams.get('tenant_id') || localStorage.getItem(tenantKey) || '';
+      // 定时任务总览与租户无关，单独加载；失败不阻断租户列表。
+      loadSchedulerOps().catch((e) => log(`定时任务总览加载失败：${e.message}`));
       try {
         await loadTenants();
         if (fromQuery) {

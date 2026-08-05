@@ -4,6 +4,7 @@
 import { childLogger } from '../../utils/logger.js';
 import { wasRecentlyFiredPersisted, markFiredPersisted } from './monitor-beat.js';
 import { evaluateSchedulerHealth } from './scheduler-registry.js';
+import { collectOutputFreshness, formatStaleOutputAlert, staleOutputDedupeKey } from '../scheduler-ops/service.js';
 const log = childLogger({ domain: 'health', handler: 'startup-monitors' });
 
 export async function scheduleCacheAndHeartbeat(deps) {
@@ -110,6 +111,24 @@ setIntervalFn(async () => {
         const msg = `🚨 [HRMS] ${bucket.title}\n涉及任务：${dead}\n请登录服务器检查：\nsystemctl status hrms.service`;
         log.error({ msg: 'monitor', detail: ['[monitor] Dead tasks:', dead].map((x) => (x == null ? '' : String(x))).join(' ') });
         await sendSystemAlert(msg);
+      }
+
+      // 2026-08-05 P3：心跳只能证明"函数被调用过"。BI 异常扣分这类任务可能准时触发、
+      // 心跳照跳，但内部查不到数据/写库失败，结果 agent_scores 一行新数据都没有而监控全绿。
+      // 这里直接断言业务表的产出新鲜度——看产出不看过程，也是唯一能覆盖 agents-service-v2
+      // 侧任务的手段（那些 tick 跑在另一个进程，GAAS 拿不到心跳，但共用同一个库）。
+      const outputs = await collectOutputFreshness(pool);
+      const staleOutputs = outputs.filter((o) => o.status === 'stale' || o.status === 'error');
+      if (staleOutputs.length > 0) {
+        const outputKey = `output_freshness_${staleOutputDedupeKey(staleOutputs)}`;
+        // 产出断档是"天级"问题（周度任务断一次要等下周才可能恢复），6h 冷却足够，
+        // 按 2h 播报只会重复同一条没有新信息的消息。
+        if (!(await wasRecentlyFiredPersisted(pool, outputKey, 6 * 60))) {
+          await markFiredPersisted(pool, outputKey);
+          const detail = formatStaleOutputAlert(staleOutputs);
+          log.error({ msg: 'monitor', detail: `[monitor] stale outputs: ${staleOutputs.map((o) => o.key).join(',')}` });
+          await sendSystemAlert(`🚨 [HRMS] 业务产出断档（任务可能在跑但没出数据）\n${detail}`);
+        }
       }
     } catch (e) {
       log.error({ msg: 'monitor', detail: ['[monitor] heartbeat check error:', e?.message].map((x) => (x == null ? '' : String(x))).join(' ') });
