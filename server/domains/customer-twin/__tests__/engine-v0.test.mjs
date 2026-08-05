@@ -77,3 +77,29 @@ test('表达器 v2：富句式填充槽位且确定性', () => {
   const direct = buildRichUtterance({ category: 'wrong_dish', style: 'direct', dish: '捞鸡', seedText: 'y2' });
   assert.ok(direct.length > 8);
 });
+
+test('恢复上限：食安事件加满补偿也不超过 65', () => {
+  const [persona] = samplePersonas({ seed: 21, count: 1, keys: ['family_dinner'] });
+  const events = [
+    { type: 'food_safety' },
+    { type: 'manager_apology' }, { type: 'rework' }, { type: 'discount' }, { type: 'dessert' },
+    { type: 'dish_good' },
+  ];
+  const sim = runSimulation({ persona, events, startEmotion: 85 });
+  assert.ok(sim.satisfaction.total <= 65, '食安恢复上限 65');
+  assert.equal(sim.satisfaction.dominant_event, 'food_safety');
+  assert.equal(sim.satisfaction.recovery_ceiling, 65);
+});
+
+test('恢复上限：服务态度不超过 60', () => {
+  const [persona] = samplePersonas({ seed: 22, count: 1, keys: ['couple_date'] });
+  const sim = runSimulation({ persona, events: [{ type: 'attitude' }, { type: 'manager_apology' }], startEmotion: 80 });
+  assert.ok(sim.satisfaction.total <= 60);
+});
+
+test('恢复上限：招牌售罄不超过 58', () => {
+  const [persona] = samplePersonas({ seed: 23, count: 1, keys: ['quality_focused'] });
+  const sim = runSimulation({ persona, events: [{ type: 'sold_out' }, { type: 'explain' }, { type: 'manager_apology' }], startEmotion: 82 });
+  assert.ok(sim.satisfaction.total <= 58);
+  assert.equal(sim.satisfaction.dominant_event, 'sold_out');
+});

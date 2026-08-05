@@ -59,6 +59,8 @@ const EVENT_DEFS = {
   cold_food: { corpusCategory: 'dish_quality', basePenalty: 15 },
   quality_issue: { corpusCategory: 'dish_quality', basePenalty: 20 },
   attitude: { corpusCategory: 'service_attitude', basePenalty: 18 },
+  food_safety: { corpusCategory: 'dish_quality', basePenalty: 45 },
+  sold_out: { corpusCategory: null, basePenalty: 25 },
   queue: { corpusCategory: 'waiting', basePenalty: 8, unit: 'minutes' },
   checkout_slow: { corpusCategory: 'checkout', basePenalty: 8 },
   noise: { corpusCategory: 'environment', basePenalty: 8 },
@@ -68,6 +70,21 @@ const EVENT_DEFS = {
   rework: { corpusCategory: null, recovery: 18 },
   discount: { corpusCategory: null, recovery: 12 },
   dish_good: { corpusCategory: null, recovery: 15 },
+};
+
+/**
+ * 恢复上限（Recovery Ceiling）：不同事件类型的满意度恢复天花板。
+ * 黄金基准集判卷约束——"送一份甜品就从 40 恢复到 90" 属于失真。
+ * 食安/服务态度/招牌售罄为底线型或软性伤害型事件，恢复永远有限。
+ */
+export const RECOVERY_CEILING = {
+  food_safety: 65,
+  attitude: 60,
+  sold_out: 58,
+  quality_issue: 70,
+  cold_food: 70,
+  wait_food: 85,
+  default: 85,
 };
 
 export function computeEventPenalty(persona, event) {
@@ -104,6 +121,7 @@ export function runSimulation({ persona, events = [], startEmotion = 80 } = {}) 
   let totalLoss = 0;
   let totalRecovery = 0;
   const surprises = [];
+  const lossByType = {};
 
   for (const event of events) {
     const delta = computeEventPenalty(persona, event);
@@ -114,6 +132,7 @@ export function runSimulation({ persona, events = [], startEmotion = 80 } = {}) 
       surprises.push(event.type);
     } else if (delta > 0) {
       totalLoss += delta;
+      lossByType[event.type] = (lossByType[event.type] || 0) + delta;
       emotion = Math.max(20, emotion - delta);
     }
     trace.push({
@@ -127,9 +146,12 @@ export function runSimulation({ persona, events = [], startEmotion = 80 } = {}) 
 
   const finalSatisfaction = Math.max(0, Math.min(100, Math.round(emotion)));
   const breakdown = buildSatisfactionBreakdown(persona, events);
-  const revisit = finalSatisfaction >= 70;
-  const recommend = finalSatisfaction >= 85 && surprises.length > 0;
-  const complain = finalSatisfaction < persona.emotion.anger_threshold && persona.complaint !== 'never';
+  const dominantType = Object.keys(lossByType).sort((a, b) => lossByType[b] - lossByType[a])[0] || null;
+  const ceiling = (dominantType && RECOVERY_CEILING[dominantType]) || RECOVERY_CEILING.default;
+  const cappedSatisfaction = Math.min(finalSatisfaction, ceiling);
+  const revisit = cappedSatisfaction >= 70;
+  const recommend = cappedSatisfaction >= 85 && surprises.length > 0;
+  const complain = cappedSatisfaction < persona.emotion.anger_threshold && persona.complaint !== 'never';
 
   return {
     persona_key: persona.persona_key,
@@ -137,8 +159,10 @@ export function runSimulation({ persona, events = [], startEmotion = 80 } = {}) 
     emotion_curve: trace,
     final_emotion: Math.round(emotion),
     satisfaction: {
-      total: finalSatisfaction,
+      total: cappedSatisfaction,
       breakdown,
+      recovery_ceiling: ceiling,
+      dominant_event: dominantType,
     },
     decisions: {
       complain,
@@ -190,6 +214,8 @@ const FALLBACK_UTTERANCES = {
   missing_dish: ['还有一个菜一直没上，是不是漏了一道？'],
   cold_food: ['这个菜有点凉了，能帮我们加热一下吗？'],
   quality_issue: ['这个今天发挥不太稳定，感觉没有上次好。'],
+  food_safety: ['服务员，这边有只蟑螂，麻烦过来看一下。'],
+  sold_out: ['我们就是冲着烧鹅来的，七点半就卖完了吗？'],
   attitude: ['叫了几次都没人回应，服务有点跟不上。'],
   queue: ['请问还要等多久？前面还有几桌？'],
   checkout_slow: ['可以结账了吗？已经等了一会儿了。'],

@@ -9,6 +9,7 @@ import {
   generateIncidentCards, listPendingTwinCards, setTwinCardActive, rejectTwinCard,
 } from './incident-generator.js';
 import { ensureNegativeFeedbackSeed } from './seed-negative-feedback.js';
+import { ensureGoldenCaseSeed } from './seed-golden-cases.js';
 import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js';
 import { PERSONA_KEYS } from './persona-schema.js';
 import { createCustomerTwinAdminRequired } from './admin-guard.js';
@@ -36,6 +37,7 @@ export function registerCustomerTwinRoutes(ctx) {
   const { app, pool } = ctx;
   const twinAdminRequired = createCustomerTwinAdminRequired();
   const adminName = (req) => req.platformAdmin?.username || req.twinAdmin?.username || 'admin';
+  ensureGoldenCaseSeed(pool).catch((e) => log.warn({ msg: 'customer_twin_golden_seed_failed', err: e?.message }));
 
   app.post('/api/customer-twin/incidents/generate', twinAdminRequired, async (req, res) => {
     try {
