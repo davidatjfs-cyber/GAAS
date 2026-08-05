@@ -193,6 +193,7 @@ import axios from 'axios';
 import { setPool as setAgentPool, ensureAgentTables, registerAgentRoutes, startAgentScheduler, setTaskResponseHook, startBitablePolling, startScheduledTasks, assertCriticalFunctions, verifyLLMHealth, getAgentHealthStatus, getAgentPerformanceMetrics, getScheduledTaskStatus, clearAgentCache, runAgentEvalSuite, getSharedState as getAgentSharedState, inferBrandFromStoreName, fetchStoreRatingForProfileDisplay, registerFeishuUser, runDataAuditor, runChiefEvaluator, pushIssuesToFeishu, pushScoresToFeishu, getLarkTenantToken, routeMessage, callVisionLLM, pool as agentPool, startWeeklyReportScheduler, sendWeeklyReports, sendMonthlyReports, sendTestReportsToUser, lookupFeishuUserByUsername, sendLarkMessage, onFeishuEvent, callLLM, invalidateTenantLlmConfigCache, getBitableSubmissionStats, archiveOldBitableSubmissions } from './agents.js';
 import { registerAgentDataCenterRoutes } from './domains/agent-data-center/routes.js';
 import { registerAgentOpsRoutes } from './domains/agent-ops/routes.js';
+import { registerSchedulerOpsRoutes } from './domains/scheduler-ops/routes.js';
 import { registerAgentRecordsRoutes } from './domains/agent-records/routes.js';
 import { registerAgentTriggersRoutes } from './domains/agent-triggers/routes.js';
 import { registerAgentFeishuBotRoutes } from './domains/agent-feishu-bot/routes.js';
@@ -1293,6 +1294,9 @@ registerHealthRoutes(app, {
   indexFilePath: __filename,
   serverDir: __dirname,
 });
+
+// 2026-08-05: 全局定时任务面板 → domains/scheduler-ops/
+registerSchedulerOpsRoutes(app, authRequired, { pool });
 
 // Wave 4o: exam-results → domains/exam-results/routes.js
 
