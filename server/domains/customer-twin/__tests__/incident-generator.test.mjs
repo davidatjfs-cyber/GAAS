@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   generateIncidentCards, buildFromTableVisit, buildFromBadReview, rejectTwinCard,
-  setTwinCardActive,
+  setTwinCardActive, countPendingTwinCards,
 } from '../incident-generator.js';
 
 function mockPool(rowsFor = {}) {
@@ -123,4 +123,17 @@ test('审核通过：标记 approved 且不引用不存在的 updated_at 列', a
   assert.ok(captured.sql.includes('review_status'));
   assert.ok(!captured.sql.includes('updated_at'), '表无 updated_at 列，禁止在 UPDATE 中引用');
   assert.deepEqual(captured.params, ['twin_tv_1', true, 'approved', 'admin']);
+});
+
+test('待审计数：排除已拒绝的来源', async () => {
+  let captured = null;
+  const pool = {
+    query: async (sql, params) => {
+      captured = { sql, params };
+      return { rows: [{ n: 51 }] };
+    },
+  };
+  const n = await countPendingTwinCards(pool);
+  assert.equal(n, 51);
+  assert.ok(captured.sql.includes("review_status' IS DISTINCT FROM 'rejected'"));
 });

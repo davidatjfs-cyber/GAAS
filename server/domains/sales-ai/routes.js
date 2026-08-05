@@ -17,6 +17,7 @@ import { registerSalesAiSchedulers } from './routes-schedulers.js';
 import { registerSalesLeadScopeMiddleware } from './routes-lead-scope.js';
 import { registerSalesSimRoutes } from '../sales-sim/routes.js';
 import { registerCustomerTwinRoutes } from '../customer-twin/routes.js';
+import { startCustomerTwinSchedulers } from '../customer-twin/scheduler.js';
 import { childLogger } from '../../utils/logger.js';
 
 const log = childLogger({ domain: 'sales-ai', handler: 'routes' });
@@ -48,4 +49,5 @@ export function registerSalesAiRoutes(app, pool, platformAdminRequired, {
   registerSalesAiOpsRoutes(ctx);
   registerSalesSimRoutes(ctx);
   registerCustomerTwinRoutes(ctx);
+  startCustomerTwinSchedulers(pool, sendOpsAlert);
 }
