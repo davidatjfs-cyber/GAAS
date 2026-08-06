@@ -56,6 +56,21 @@ test('风险预判：真实差评命中时引用原文', () => {
   assert.ok(priceRisk.evidence.some((e) => e.text.includes('性价比')));
 });
 
+test('风险预判：语料证据按风险关键词优先匹配', () => {
+  const risks = buildDishRisks({
+    dish: { ...DISH, spicy_level: '不辣', is_new: '否' },
+    avgPrice: 50,
+    corpus: [
+      { code: 'NEG-200', category: 'dish_quality', content: '今天有点咸。' },
+      { code: 'NEG-208', category: 'dish_quality', content: '这个有点油。' },
+    ],
+    realComplaints: [],
+  });
+  const oily = risks.find((r) => r.risk === '油腻/健康感');
+  assert.ok(oily);
+  assert.ok(oily.evidence.some((e) => e.code === 'NEG-208'), '应优先引用含"油"的语料');
+});
+
 test('试菜验证清单：定价/口味/分量问题 3-5 条', () => {
   const m = matchDishToPersonas({ dish: DISH, avgPrice: 50 });
   const risks = buildDishRisks({ dish: m.dish, avgPrice: 50, corpus: [], realComplaints: [] });
@@ -63,4 +78,13 @@ test('试菜验证清单：定价/口味/分量问题 3-5 条', () => {
   assert.ok(checklist.length >= 3 && checklist.length <= 5);
   assert.ok(checklist.some((q) => q.question.includes('定价')));
   assert.ok(checklist.some((q) => q.question.includes('辣度')));
+});
+
+test('试菜验证清单：至少 2 条（风险少时补客群匹配问题）', () => {
+  const dish = { ...DISH, spicy_level: '不辣', price: 45, is_new: '否' };
+  const m = matchDishToPersonas({ dish, avgPrice: 50 });
+  const risks = buildDishRisks({ dish: m.dish, avgPrice: 50, corpus: [], realComplaints: [] });
+  const checklist = buildTastingChecklist({ dish: m.dish, match: m, risks });
+  assert.ok(checklist.length >= 2);
+  assert.ok(checklist.some((q) => q.focus === '客群匹配验证'));
 });

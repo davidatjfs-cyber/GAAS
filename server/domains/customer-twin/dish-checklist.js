@@ -60,5 +60,12 @@ export function buildTastingChecklist({ dish, match, risks }) {
       related_segments: newRisk.segment,
     });
   }
+  if (questions.length < 2 && match.main_segments.length) {
+    questions.push({
+      question: `按体检结果，这道菜主攻「${match.main_segments.slice(0, 3).join('、')}」客群——试菜时请重点验证这些客群的代表性意见`,
+      focus: '客群匹配验证',
+      related_segments: match.main_segments.slice(0, 3).join('、'),
+    });
+  }
   return questions.slice(0, 5);
 }

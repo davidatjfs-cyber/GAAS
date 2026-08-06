@@ -87,6 +87,16 @@ const RISK_CORPUS_CATEGORY = {
   new_dish_unknown: ['dish_quality'],
 };
 
+const RISK_CORPUS_KEYWORDS = {
+  spicy_high: ['辣'],
+  raw_dish: ['腥', '不新鲜'],
+  oily_fried: ['油', '腻'],
+  portion_small: ['少', '分量'],
+  price_high: ['贵', '不值', '性价比'],
+  expensive_not_signature: ['贵', '性价比'],
+  new_dish_unknown: ['一般', '稳定'],
+};
+
 /**
  * @param {{dish: object, avgPrice: number, corpus: Array, realComplaints: Array}} param
  */
@@ -98,7 +108,11 @@ export function buildDishRisks({ dish, avgPrice = 60, corpus = [], realComplaint
     if (!rule.condition(normalized, ctx)) continue;
     const evidence = [];
     const wantCat = RISK_CORPUS_CATEGORY[rule.id] || [];
-    const corpusHit = (corpus || []).find((c) => c && wantCat.includes(c.category));
+    const wantKw = RISK_CORPUS_KEYWORDS[rule.id] || [];
+    const inCat = (corpus || []).filter((c) => c && wantCat.includes(c.category));
+    const corpusHit = wantKw.length
+      ? inCat.find((c) => wantKw.some((k) => String(c.content || '').includes(k))) || inCat[0]
+      : inCat[0];
     if (corpusHit) evidence.push({ source: '负反馈知识库', text: String(corpusHit.content || '').slice(0, 60), code: corpusHit.code || '' });
     const match = EVIDENCE_KEYWORDS.find((e) => rule.risk.includes(e.risk));
     if (match) {
