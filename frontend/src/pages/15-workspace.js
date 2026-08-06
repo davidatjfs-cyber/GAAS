@@ -892,10 +892,14 @@ function wsRenderPllmExperimentCard(it, seen) {
         '</summary>' +
         '<div style="margin-top:10px;">' +
         (it.anomalyType ? '<div class="ws-card__desc">触发信号：' + wsEsc(it.anomalyType) + (it.goal ? '（' + wsEsc(it.goal) + '）' : '') + '</div>' : '') +
+        (it.feedback && it.feedback.total > 0
+            ? '<div class="ws-card__desc" style="opacity:.62;font-size:12px;">近30天本店审核：采纳 ' + it.feedback.approved + ' / 拒绝 ' + it.feedback.rejected +
+              (it.feedback.topReasons && it.feedback.topReasons.length ? ' · 主要拒绝原因：' + wsEsc(it.feedback.topReasons.map((r) => r.label + (r.count > 1 ? '×' + r.count : '')).join('、')) : '') + '</div>'
+            : '') +
         variantsHtml +
         (canDecide
             ? '<div class="ws-card__acts">' +
-              '<button type="button" class="ws-btn ws-btn--primary" data-ws-pllm-approve="' + wsEsc(it.actionKey || '') + '">采纳·分配责任人执行</button>' +
+              '<button type="button" class="ws-btn ws-btn--primary" data-ws-pllm-approve="' + wsEsc(it.actionKey || '') + '">通过·进入推送池</button>' +
               '<button type="button" class="ws-btn" data-ws-pllm-reject="' + wsEsc(it.actionKey || '') + '">不适合</button>' +
               '</div>'
             : '<div class="ws-card__desc" style="opacity:.6;">待总部审批决策，暂不需要门店操作</div>') +
@@ -978,7 +982,7 @@ function wsBindMarketingSuggestionsEvents(root) {
             const pickTip = picks && picks.length < pickBoxes.length
                 ? '\n\n只采纳：方案' + picks.join('、方案') + '（其余标记为不适合）'
                 : '';
-            if (!confirm('采纳此PLLM策略实验方案？' + pickTip + '\n\n将分配给所选责任人，请人工按方案执行。')) return;
+            if (!confirm('采纳此PLLM策略实验方案？' + pickTip + '\n\n将通过审批并进入推送池：自动生成门店活动计划草稿并派发给所选责任人，由门店人工按方案执行。')) return;
             const code = btn.getAttribute('data-ws-pllm-approve');
             const resultEl = card?.querySelector('.ws-action-result');
             btn.disabled = true;
@@ -1000,15 +1004,18 @@ function wsBindMarketingSuggestionsEvents(root) {
     });
     root.querySelectorAll('[data-ws-pllm-reject]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-            if (!confirm('标记为不适合执行？该实验将从待审批列表中移除。')) return;
+            const reason = typeof hrmsAskMarketingRejectReason === 'function' ? await hrmsAskMarketingRejectReason() : null;
+            if (!reason) return;
             const code = btn.getAttribute('data-ws-pllm-reject');
             const resultEl = btn.closest('.ws-card')?.querySelector('.ws-action-result');
             btn.disabled = true;
             try {
-                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/reject', { method: 'POST', headers: wsAuthHeaders() });
+                const r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/reject', {
+                    method: 'POST', headers: wsAuthHeaders(), body: JSON.stringify({ reason })
+                });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok || d?.ok === false) throw new Error(d?.error || ('HTTP ' + r.status));
-                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已标记为不适合</span>';
+                if (resultEl) resultEl.innerHTML = '<span class="ws-ok">已拒绝（' + (reason.primary || 'other') + '），原因已回流给 AI，同类型方案短期内不会重复推送</span>';
                 btn.closest('.ws-card__acts')?.remove();
             } catch (e) {
                 btn.disabled = false;

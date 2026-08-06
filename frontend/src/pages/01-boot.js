@@ -53,6 +53,43 @@
             }
         }
 
+// ========== 营销建议拒绝原因弹窗（工作台/增长看板共用） ==========
+var HRMS_MKT_REJECT_REASONS = [
+    ['not_fit_store', '不贴合本店客群'], ['cost_too_high', '成本/预算过高'],
+    ['channel_unavailable', '投放渠道本店不可用'], ['duplicate', '与近期方案重复'],
+    ['conflict', '与进行中活动冲突'], ['targets_unrealistic', '目标不可达'],
+    ['cannot_execute', '无法执行（缺责任人/缺条件）'], ['copy_quality', '文案/方案质量差'],
+    ['other', '其他'],
+];
+function hrmsAskMarketingRejectReason() {
+    return new Promise(function (resolve) {
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        var box = document.createElement('div');
+        box.style.cssText = 'width:min(92vw,460px);max-height:82vh;overflow:auto;background:#1d1a22;border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:16px;color:#e8eef2;font-size:13px;';
+        var html = '<div style="font-size:15px;font-weight:800;margin-bottom:4px">拒绝该营销建议</div>' +
+            '<div style="opacity:.68;margin-bottom:10px;font-size:12px">请选择主要原因，会回流给 AI 作为下次生成的约束，避免重复推送同类方案。</div>';
+        HRMS_MKT_REJECT_REASONS.forEach(function (r, i) {
+            html += '<label style="display:block;padding:7px 8px;border:1px solid rgba(255,255,255,.12);border-radius:9px;margin-bottom:6px;cursor:pointer;">' +
+                '<input type="radio" name="mkt-reject-primary" value="' + r[0] + '"' + (i === 0 ? ' checked' : '') + ' style="margin-right:6px;">' + r[1] + '</label>';
+        });
+        html += '<textarea id="mkt-reject-note" placeholder="补充说明（选填，比如具体原因/期望调整方向）" style="width:100%;box-sizing:border-box;height:70px;margin-top:6px;padding:8px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#e8eef2;font-size:13px;resize:vertical;"></textarea>' +
+            '<div style="display:flex;gap:8px;margin-top:12px;">' +
+            '<button id="mkt-reject-ok" style="flex:1;padding:9px 0;border-radius:10px;border:none;background:#b8332e;color:#fff;cursor:pointer;font-size:13px;font-weight:700;">确认拒绝</button>' +
+            '<button id="mkt-reject-cancel" style="flex:1;padding:9px 0;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px;">取消</button></div>';
+        box.innerHTML = html;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        function done(val) { overlay.remove(); resolve(val); }
+        box.querySelector('#mkt-reject-ok').addEventListener('click', function () {
+            var sel = box.querySelector('input[name="mkt-reject-primary"]:checked');
+            done({ primary: sel ? sel.value : 'other', note: box.querySelector('#mkt-reject-note').value.trim() });
+        });
+        box.querySelector('#mkt-reject-cancel').addEventListener('click', function () { done(null); });
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) done(null); });
+    });
+}
+
         (function applyTenantBranding() {
             try {
                 const tenantId = resolveHrmsLoginTenantId();

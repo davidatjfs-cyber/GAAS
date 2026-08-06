@@ -94,13 +94,65 @@ export async function listActions(ctx, tenantId, query) {
   return { status: 200, body: { ok: true, actions, total: actions.length, limit, offset } };
 }
 
-export async function setPllmExperimentStatus(ctx, tenantId, codeRaw, status) {
+const REJECT_REASON_CODES = new Set([
+  'not_fit_store', 'cost_too_high', 'channel_unavailable', 'duplicate',
+  'conflict', 'targets_unrealistic', 'cannot_execute', 'copy_quality', 'other',
+]);
+
+function normalizeRejectReason(raw) {
+  if (raw && typeof raw === 'object' && REJECT_REASON_CODES.has(String(raw.primary || ''))) {
+    return { primary: String(raw.primary), note: String(raw.note || '').trim().slice(0, 500) };
+  }
+  if (raw && typeof raw === 'object') {
+    return { primary: 'other', note: String(raw.note || '').trim().slice(0, 500) };
+  }
+  const str = String(raw || '').trim();
+  return REJECT_REASON_CODES.has(str) ? { primary: str, note: '' } : { primary: 'other', note: str ? str.slice(0, 500) : '' };
+}
+
+export async function setPllmExperimentStatus(ctx, tenantId, codeRaw, status, opts = {}) {
   const code = cleanText(codeRaw, 100);
   await ctx.tenantContext.run(tenantId, async () => {
-    await ctx.pool.query(
-      `UPDATE strategy_experiments SET status = $3, updated_at = NOW() WHERE experiment_code = $1 AND tenant_id = $2`,
-      [code, tenantId, status]
-    );
+    if (status === 'rejected') {
+      const reason = normalizeRejectReason(opts?.reason);
+      await ctx.pool.query(
+        `UPDATE strategy_experiments
+           SET status = 'rejected', rejected_at = NOW(), rejected_by = $3, reject_reason = $4, updated_at = NOW()
+          WHERE experiment_code = $1 AND tenant_id = $2`,
+        [code, tenantId, opts?.operator?.username || 'admin', JSON.stringify(reason)]
+      );
+    } else {
+      await ctx.pool.query(
+        `UPDATE strategy_experiments SET status = $3, approved_by = COALESCE($4, approved_by), approved_at = COALESCE(approved_at, NOW()), updated_at = NOW()
+          WHERE experiment_code = $1 AND tenant_id = $2`,
+        [code, tenantId, status, opts?.operator?.username || null]
+      );
+      if (status === 'approved') {
+        // 采纳 → 推送池：把已通过 variant 落成活动计划草稿（GAAS 写入）
+        const { createCampaignPlanFromExperiment } = await import('../growth-campaigns/service.js');
+        const exp = await ctx.pool.query(
+          `SELECT id, experiment_code, planned_start, planned_end FROM strategy_experiments WHERE experiment_code = $1`,
+          [code]
+        );
+        if (exp.rows[0]) {
+          const variants = await ctx.pool.query(
+            `SELECT variant_code, store, plan_fields FROM strategy_variants WHERE experiment_id = $1 AND status <> 'rejected'`,
+            [exp.rows[0].id]
+          );
+          for (const v of variants.rows || []) {
+            await createCampaignPlanFromExperiment(ctx.pool, tenantId, {
+              code: exp.rows[0].experiment_code,
+              variantCode: v.variant_code,
+              store: v.store,
+              planFields: v.plan_fields,
+              approver: opts?.operator?.username || 'admin',
+              plannedStart: exp.rows[0].planned_start,
+              plannedEnd: exp.rows[0].planned_end,
+            }).catch((e) => log.warn({ msg: 'pllm_approve_push_pool_failed', code, err: e?.message }));
+          }
+        }
+      }
+    }
   });
   return { status: 200, body: { ok: true } };
 }
