@@ -44,8 +44,18 @@ export function createAppendHelpers({
       // 去重锁形同虚设。今天定位"弹窗点了又来"时实测同一条告警存在两条完全相同的记录
       // （同 created_at/message/meta），主因是 system-alert.js 把同一批通知连续插了两遍
       // （已单独修复），但只要这里还是"查完再插"，任何并发路径都可能重现同样的重复。
-      // 改成单条 INSERT ... SELECT ... WHERE NOT EXISTS：判重和插入在同一条 SQL 语句里
-      // 原子完成，并发下最多只有一条能插进去。
+      // 改成单条 INSERT ... SELECT ... WHERE NOT EXISTS。
+      // 2026-08-06 更正：上一行原本写着「判重和插入在同一条 SQL 语句里原子完成，并发下最多
+      // 只有一条能插进去」——这个说法是错的，别再照抄。PostgreSQL 默认 READ COMMITTED 下，
+      // 两个并发事务互相看不到对方未提交的行，双方的 NOT EXISTS 都会返回真、双方都插入成功；
+      // 没有 UNIQUE 约束时 WHERE NOT EXISTS 挡不住并发重复。生产实证：admin 在 2026-08-06
+      // 15:08:36 收到 id 11851217 / 11851428 两条完全相同的心跳告警，近 7 天 66 组重复。
+      //
+      // 真正的保证来自 migration 183 建的**部分唯一索引** uniq_hrms_notif_unread_msg
+      // (lower(target_username), type, md5(message)) WHERE read_at IS NULL，
+      // 配合下面的 ON CONFLICT DO NOTHING —— 唯一性由数据库裁决，并发下必然只有一条落地。
+      // 保留 WHERE NOT EXISTS 是因为它还多管一件唯一索引管不了的事：已读通知在 4 小时冷却期内
+      // 不重复提醒（已读行不在部分索引里，只能靠这个子查询挡）。两者职责不同，都要留着。
       await pool.query(
         `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
          SELECT $1,$2,$3,$4,$5,$6,$7
@@ -53,7 +63,8 @@ export function createAppendHelpers({
             SELECT 1 FROM hrms_user_notifications
              WHERE lower(target_username) = lower($1) AND type = $4 AND message = $3
                AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
-          )`,
+          )
+         ON CONFLICT DO NOTHING`,
         [
           target,
           String(n?.title || '').trim() || '通知',
