@@ -341,8 +341,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 并新增"保存草稿"功能（新增员工表单可随时存本地草稿，提交失败或误关闭弹窗也不用重填，
  * 下次打开新增表单时提示恢复）。新代码在 frontend/src/pages/08-materials-tasks.js，
  * 仅 modal footer 补一个"保存草稿"按钮 + CSS，非 inline业务逻辑。
+ * 2026-08-06 第六十六次上调（72390→72556）：新增 frontend/src/pages/17-dish-test.js
+ * 菜品测试模块（仅系统管理员：试菜前客群体检——客群匹配 + 风险预判 + 试菜验证清单）。
  */
-const MAX_LINES = 72390;
+const MAX_LINES = 72556;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
