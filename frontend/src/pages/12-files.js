@@ -1420,7 +1420,7 @@
             { key: 'audience', label: '客户数据', members: ['pos', 'wecom'] },
             { key: 'engine', label: '自动营销', members: ['automarketing', 'abtests', 'paymentrules'] },
             { key: 'content', label: '海报创意', members: ['posters'] },
-            { key: 'execution', label: '执行中心', members: ['actions', 'exec-logs'] },
+            { key: 'execution', label: '执行中心', members: ['actions', 'review', 'exec-logs'] },
             { key: 'settings', label: '设置治理', members: ['wecomconfig', 'constraints', 'rules'] }
         ];
         var GROWTH_MEMBER_LABEL = {
@@ -1428,9 +1428,10 @@
             automarketing: '规则引擎', abtests: 'A/B测试', paymentrules: '支付发券',
             campaigns: '活动管理', posters: '海报创意', public: '公域品宣', contentsys: '内容系统',
             actions: 'AI建议', 'exec-logs': '执行记录',
+            review: '活动审核',
             wecomconfig: '企微配置', constraints: '营销约束', rules: '经营规则设置'
         };
-        var GROWTH_ALL_MEMBERS = ['dashboard', 'ontology', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'rules', 'posters', 'public', 'actions', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
+        var GROWTH_ALL_MEMBERS = ['dashboard', 'ontology', 'wecom', 'wecomconfig', 'campaigns', 'profiles', 'posdiagnosis', 'maintenance', 'constraints', 'rules', 'posters', 'public', 'actions', 'review', 'abtests', 'contentsys', 'pos', 'exec-logs', 'automarketing', 'paymentrules'];
         var __growthActiveSub = {}; // group.key -> 最近激活的成员
 
         function growthGroupOf(member) {
@@ -1448,6 +1449,7 @@
             else if (member === 'maintenance') { loadCampaignLog(); loadAutoMarketingSummary(); }
             else if (member === 'constraints') { loadGrowthConstraints(); }
             else if (member === 'actions') { loadGrowthActionBoard(); }
+            else if (member === 'review') { loadGrowthMarketingReview(); }
             else if (member === 'abtests') { loadGrowthAbTests(); loadAbTemplates(); }
             else if (member === 'contentsys') { loadGrowthContentSuggestions(); loadGrowthContentPerformance(); loadGrowthLearnings(); }
             else if (member === 'posters') {
@@ -1763,4 +1765,3 @@
                 return '<button type="button" class="rep-subtab' + (on ? ' rep-subtab--active' : '') + '" data-click="showGrowthTab" data-arg="' + m + '">' + (GROWTH_MEMBER_LABEL[m] || m) + '</button>';
             }).join('');
         }
-

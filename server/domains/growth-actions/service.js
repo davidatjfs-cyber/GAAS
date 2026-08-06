@@ -55,7 +55,7 @@ export async function listActions(ctx, tenantId, query) {
             FROM strategy_experiments se
             LEFT JOIN strategy_variants sv_a ON sv_a.experiment_id = se.id AND sv_a.variant_code = 'A'
             LEFT JOIN strategy_variants sv_b ON sv_b.experiment_id = se.id AND sv_b.variant_code = 'B'
-            WHERE se.tenant_id = $1 AND se.created_by = 'pllm' AND se.status = 'pending_approval'
+            WHERE se.tenant_id = $1 AND se.status = 'pending_approval'
             ORDER BY se.created_at DESC LIMIT 200`;
         expRows = (await ctx.pool.query(expSql, [tenantId])).rows.map((e) => ({
           action_key: `pllm_exp_${e.experiment_code}`,

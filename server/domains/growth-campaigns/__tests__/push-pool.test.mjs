@@ -52,7 +52,7 @@ test('createCampaignPlanFromExperiment：落成 draft 推送池草稿，带结�
   const call = pool.calls[0];
   assert.match(call.sql, /INSERT INTO growth_campaign_plans/);
   assert.equal(call.params[0], 'exp:EXP-20260806-001:A');
-  assert.equal(call.params[1], '洪潮大宁久光店');
+  assert.equal(call.params[1], '64822111', '门店名应映射为 growth 门店编码，与增长看板筛选口径一致');
   assert.equal(call.params[2], 'EXP-20260806-001');
   assert.equal(call.params[3], '推出晚市双人套餐');
   assert.equal(call.params[4], '企微、抖音');

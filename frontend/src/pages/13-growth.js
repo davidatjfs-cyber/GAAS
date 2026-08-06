@@ -2236,8 +2236,8 @@
         async function applyBrandTemplate() {
             var v = document.getElementById('constraint-brand-template')?.value || '';
             var TEMPLATES = {
-                majixian: { brand:'马己仙广东小馆', voice:'精致', min_discount:0.85, max_coupon:2000, budget:80000, touch:2, cooldown:48, channels:['wecom','xiaohongshu','miniprogram'], disallowed:['大额折扣'] },
-                hongchao: { brand:'洪潮', voice:'豪迈', min_discount:0.8, max_coupon:3000, budget:50000, touch:1, cooldown:24, channels:['wecom','dianping','miniprogram'], disallowed:['赠品'] },
+                majixian: { brand:'马己仙广东小馆', voice:'精致', min_discount:0.85, max_coupon:2000, budget:80000, touch:2, cooldown:48, channels:['wecom','xiaohongshu','dianping','douyin'], disallowed:['大额折扣'] },
+                hongchao: { brand:'洪潮', voice:'豪迈', min_discount:0.8, max_coupon:3000, budget:50000, touch:1, cooldown:24, channels:['wecom','xiaohongshu','dianping','douyin'], disallowed:['赠品'] },
                 custom: { brand:'自定义', voice:'', min_discount:0.9, max_coupon:1000, budget:30000, touch:1, cooldown:24, channels:[], disallowed:[] }
             };
             var t = TEMPLATES[v] || TEMPLATES.custom;
@@ -2986,6 +2986,269 @@
                 showNotification('已拒绝，原因已回流给 AI', 'info');
                 loadGrowthActionBoard();
             } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
+        }
+
+        // ── 营销活动审核（执行中心 → 活动审核：待审 / 推送池 / 门店回填 / 门店画像） ──
+        async function loadGrowthMarketingReview() {
+            var role = String(currentUser?.role || '');
+            var isAdmin = role === 'admin' || role === 'hq_manager';
+            var pw = document.getElementById('mkt-review-pending-wrap');
+            if (pw) pw.style.display = isAdmin ? '' : 'none';
+            if (isAdmin) mktReviewLoadPending();
+            mktReviewLoadPool();
+            mktReviewLoadStoreExec();
+            mktReviewLoadProfiles();
+        }
+
+        async function mktReviewLoadPending() {
+            var host = document.getElementById('mkt-review-pending');
+            if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
+            try {
+                var r = await fetch('/api/workspace/marketing-suggestions', { headers: growthAuthHeaders() });
+                var d = await r.json();
+                var items = Array.isArray(d?.items) ? d.items : [];
+                if (!items.length) { host.innerHTML = '<div class="rep-pay-empty">暂无待审核营销建议（每天 09:30 生成）</div>'; return; }
+                host.innerHTML = items.map(function (it) {
+                    var fb = it.feedback ? ('近30天本店审核：采纳 ' + it.feedback.approved + ' / 拒绝 ' + it.feedback.rejected +
+                        (it.feedback.topReasons && it.feedback.topReasons.length ? ' · ' + it.feedback.topReasons.map(function (t) { return t.label + (t.count > 1 ? '×' + t.count : ''); }).join('、') : '')) : '';
+                    var vs = (it.variants || []).map(function (v) {
+                        var opts = wsMarketingAssigneeOptions(v.store);
+                        return '<div style="border:1px solid rgba(209,143,160,0.18);border-radius:10px;padding:10px;margin:8px 0;background:rgba(209,143,160,0.04);">'
+                            + '<div style="font-weight:700;color:#fff;">方案' + escHtml(v.variantCode || 'A') + (v.label ? ' — ' + escHtml(v.label) : '') + '（' + escHtml(v.store || '') + '）</div>'
+                            + '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:rgba(242,234,238,0.82);background:rgba(0,0,0,.2);border-radius:8px;padding:8px;margin:6px 0;max-height:220px;overflow:auto;">' + escHtml(v.action || '') + '</pre>'
+                            + (v.executionGuide ? '<div style="font-size:11px;opacity:.72;">' + escHtml(v.executionGuide) + '</div>' : '')
+                            + (opts.empty
+                                ? '<div style="font-size:12px;color:#EDA1AC;">本店未配置店长/前厅主管，无法分配</div>'
+                                : '<div style="font-size:12px;margin-top:6px;">责任人：<select data-mkt-assignee="' + escHtml(v.variantCode || 'A') + '" style="min-width:180px;padding:7px 10px;border-radius:8px;border:1px solid rgba(242,234,238,0.15);background:rgba(0,0,0,0.35);color:var(--rep-text);">' + opts.html + '</select></div>')
+                            + '</div>';
+                    }).join('');
+                    return '<div style="border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(0,0,0,0.18);">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div style="font-weight:800;color:#fff;font-size:14px;">' + escHtml((it.store || '') + ' — ' + (it.title || '')) + '</div><span style="font-size:11px;color:#EABBC5;">' + escHtml(it.anomalyType || '') + '</span></div>'
+                        + (fb ? '<div style="font-size:11px;opacity:.65;margin:4px 0;">' + escHtml(fb) + '</div>' : '')
+                        + vs
+                        + '<div style="display:flex;gap:8px;margin-top:8px;"><button data-click="mktReviewApprove" data-arg="' + escHtml(it.actionKey || '') + '" data-arg-self style="padding:8px 14px;border:none;border-radius:9px;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px;font-weight:700;">通过·进入推送池</button>'
+                        + '<button data-click="mktReviewReject" data-arg="' + escHtml(it.actionKey || '') + '" data-arg-self style="padding:8px 14px;border:1px solid rgba(229,139,152,0.5);border-radius:9px;background:transparent;color:#EDA1AC;cursor:pointer;font-size:13px;">不适合</button></div>'
+                        + '</div>';
+                }).join('');
+            } catch (e) { host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escHtml(e?.message || e) + '</div>'; }
+        }
+
+        async function mktReviewApprove(code, btn) {
+            if (!code) return;
+            var card = btn && btn.closest ? btn.closest('div[style*="border"]') : null;
+            var selects = card ? card.querySelectorAll('[data-mkt-assignee]') : [];
+            var storeAssignments = Array.prototype.map.call(selects, function (s) {
+                return { variantCode: s.getAttribute('data-mkt-assignee'), assigneeUsername: s.value };
+            }).filter(function (a) { return a.assigneeUsername; });
+            if (selects.length && !storeAssignments.length) { showNotification('请至少为一个方案选择责任人', 'warning'); return; }
+            if (!confirm('通过该营销建议？\n\n将进入推送池（自动生成活动计划草稿）并派发给所选责任人，由门店人工按方案执行。')) return;
+            try {
+                var r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/approve', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ storeAssignments })
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'approve_failed');
+                showNotification('已通过，进入推送池', 'success');
+                loadGrowthMarketingReview();
+            } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function mktReviewReject(code, btn) {
+            if (!code) return;
+            var reason = typeof hrmsAskMarketingRejectReason === 'function' ? await hrmsAskMarketingRejectReason() : null;
+            if (!reason) return;
+            try {
+                var r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/reject', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ reason })
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'reject_failed');
+                showNotification('已拒绝，原因已回流给 AI', 'info');
+                loadGrowthMarketingReview();
+            } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function mktReviewLoadPool() {
+            var host = document.getElementById('mkt-review-pool');
+            if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
+            try {
+                var r = await fetch('/api/growth/campaign-plans', { headers: growthAuthHeaders() });
+                var d = await r.json();
+                var rows = (d?.plans || []).filter(function (p) { return p.status === 'draft' || p.status === 'active'; }).slice(0, 30);
+                if (!rows.length) { host.innerHTML = '<div class="rep-pay-empty">推送池暂无活动草稿（采纳建议后自动生成，也可在「活动管理」新建）</div>'; return; }
+                host.innerHTML = rows.map(function (p) {
+                    var cid = p.campaign_id || p.plan_id || '';
+                    return '<div style="border:1px solid rgba(242,234,238,0.08);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">'
+                        + '<div style="flex:1;min-width:0;"><strong style="color:#fff;">' + escHtml(p.title || '未命名活动') + '</strong>'
+                        + '<div style="font-size:11px;color:rgba(242,234,238,0.6);margin-top:3px;">' + escHtml(growthStoreName(p.store_id)) + ' · ' + escHtml(growthChannelLabel(p.channel) || p.channel || '') + ' · 预算 ¥' + Math.round(Number(p.budget_fen || 0) / 100) + ' · ' + String(p.planned_start || '').slice(0, 10) + ' ~ ' + String(p.planned_end || '').slice(0, 10) + '</div></div>'
+                        + (p.status === 'draft'
+                            ? '<div style="display:flex;gap:6px;"><button data-click="activateCampaignPlan" data-arg="' + escHtml(cid) + '" style="padding:6px 12px;border:none;border-radius:8px;background:rgba(134,201,162,0.18);color:#86C9A2;cursor:pointer;font-size:12px;font-weight:700;">激活</button>'
+                              + '<button data-click="cancelCampaignPlan" data-arg="' + escHtml(cid) + '" style="padding:6px 12px;border:1px solid rgba(229,139,152,0.3);border-radius:8px;background:transparent;color:#EDA1AC;cursor:pointer;font-size:12px;">取消</button></div>'
+                            : '<span style="color:#86C9A2;font-size:12px;">✅ 进行中</span>')
+                        + '</div>';
+                }).join('');
+            } catch (e) { host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escHtml(e?.message || e) + '</div>'; }
+        }
+
+        async function mktReviewLoadStoreExec() {
+            var host = document.getElementById('mkt-review-store-exec');
+            if (!host) return;
+            host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
+            try {
+                var isAdmin = ['admin', 'hq_manager'].includes(String(currentUser?.role || ''));
+                var url = isAdmin ? '/api/strategy-experiments?status=running&limit=100' : '/api/strategy-experiments/pending-for-store';
+                var r = await fetch(url, { headers: growthAuthHeaders() });
+                var d = await r.json();
+                var variants = [];
+                if (isAdmin) {
+                    (d?.experiments || []).forEach(function (e) {
+                        (e.variants || []).forEach(function (v) {
+                            if (v.status === 'pending' || v.status === 'executing') variants.push({ experimentCode: e.experiment_code, variantCode: v.variant_code, store: v.store || '', title: e.title || '', status: v.status, action: v.action || '' });
+                        });
+                    });
+                } else {
+                    variants = (d?.variants || []).map(function (v) {
+                        return { experimentCode: v.experiment_code, variantCode: v.variant_code, store: v.store || '', title: v.title || '', status: v.status, action: v.action || '' };
+                    });
+                }
+                if (!variants.length) { host.innerHTML = '<div class="rep-pay-empty">暂无待执行/执行中的营销活动（管理员采纳后出现在这里；到期后系统还会按 POS 数据自动评估）</div>'; return; }
+                host.innerHTML = variants.map(function (v) {
+                    return '<div style="border:1px solid rgba(242,234,238,0.08);border-radius:10px;padding:10px;margin-bottom:8px;">'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong style="color:#fff;">' + escHtml((v.store || '') + ' — ' + v.title) + '</strong><span style="font-size:11px;color:' + (v.status === 'executing' ? '#CFA14A' : '#EABBC5') + ';">' + (v.status === 'executing' ? '⏳ 执行中·待回填' : '待执行') + '</span></div>'
+                        + '<details><summary style="font-size:12px;color:rgba(242,234,238,0.55);cursor:pointer;margin-top:4px;">查看方案全文</summary><pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:rgba(242,234,238,0.8);background:rgba(0,0,0,.2);border-radius:8px;padding:8px;margin:6px 0;max-height:240px;overflow:auto;">' + escHtml(v.action || '') + '</pre></details>'
+                        + '<button data-click="mktReviewOpenResultForm" data-arg="' + escHtml(v.experimentCode) + '" data-arg2="' + escHtml(v.variantCode) + '" data-arg3="' + escHtml(v.title) + '" style="margin-top:8px;padding:7px 14px;border:none;border-radius:8px;background:rgba(207,161,74,0.18);color:#CFA14A;cursor:pointer;font-size:12px;font-weight:700;">📊 回填执行结果</button>'
+                        + '</div>';
+                }).join('');
+            } catch (e) { host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escHtml(e?.message || e) + '</div>'; }
+        }
+
+        function mktReviewOpenResultForm(code, variantCode, title) {
+            if (!code || !variantCode) return;
+            var ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+            ov.innerHTML =
+                '<div style="background:#121012;border:1px solid rgba(242,234,238,0.1);border-radius:14px;max-width:440px;width:100%;padding:18px;max-height:92vh;overflow:auto;">'
+                + '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px;">📊 回填活动执行结果</div>'
+                + '<div style="font-size:12px;color:rgba(242,234,238,0.55);margin-bottom:12px;">' + escHtml(title || code) + ' · 方案' + escHtml(variantCode) + '</div>'
+                + '<div style="font-size:11px;color:rgba(242,234,238,0.5);margin-bottom:8px;">执行期日均营收与执行前日均营收（系统会在到期后按 POS 自动比对，这里用于补充执行保真度/成本/主观反馈）</div>'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">执行前日均营收（元）*</label><input id="mkt-rf-before-rev" type="number" min="0" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">执行期日均营收（元）*</label><input id="mkt-rf-during-rev" type="number" min="0" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">执行前日均客流（可选）</label><input id="mkt-rf-before-traffic" type="number" min="0" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">执行期日均客流（可选）</label><input id="mkt-rf-during-traffic" type="number" min="0" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">额外投入成本（元，可选）</label><input id="mkt-rf-cost" type="number" min="0" placeholder="如 1200" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;">'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">执行完整度</label><select id="mkt-rf-fidelity" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;"><option value="full">完整执行</option><option value="partial" selected>部分执行</option><option value="failed">未执行</option></select>'
+                + '<label style="font-size:12px;color:rgba(242,234,238,0.7);display:block;margin-bottom:4px;">备注（可选）</label><textarea id="mkt-rf-note" rows="2" placeholder="实际执行情况/复盘" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;"></textarea>'
+                + '<div style="display:flex;gap:8px;"><button data-click="mktReviewSubmitResult" data-arg="' + escHtml(code) + '" data-arg2="' + escHtml(variantCode) + '" style="flex:1;padding:10px;border:none;border-radius:10px;background:#86C9A2;color:#fff;font-weight:700;cursor:pointer;">提交回填</button>'
+                + '<button data-click="hrmsRemoveById" data-arg="mkt-review-result-overlay" style="padding:10px 16px;border:none;border-radius:10px;background:rgba(242,234,238,0.08);color:#fff;cursor:pointer;">取消</button></div>'
+                + '</div>';
+            ov.id = 'mkt-review-result-overlay';
+            ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+            document.body.appendChild(ov);
+        }
+
+        async function mktReviewSubmitResult(code, variantCode) {
+            var beforeRev = Number(document.getElementById('mkt-rf-before-rev')?.value);
+            var duringRev = Number(document.getElementById('mkt-rf-during-rev')?.value);
+            if (!(beforeRev > 0) || !(duringRev > 0)) { showNotification('请填写执行前/执行期日均营收', 'warning'); return; }
+            var body = {
+                before_daily_revenue: beforeRev,
+                during_daily_revenue: duringRev,
+                before_daily_traffic: Number(document.getElementById('mkt-rf-before-traffic')?.value || 0),
+                during_daily_traffic: Number(document.getElementById('mkt-rf-during-traffic')?.value || 0),
+                extra_cost: document.getElementById('mkt-rf-cost')?.value ? Number(document.getElementById('mkt-rf-cost').value) : null,
+                execution_fidelity: document.getElementById('mkt-rf-fidelity')?.value || 'partial',
+                feedback: document.getElementById('mkt-rf-note')?.value || ''
+            };
+            try {
+                var r = await fetch('/api/strategy-experiments/' + encodeURIComponent(code) + '/variants/' + encodeURIComponent(variantCode) + '/result', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'submit_failed');
+                document.getElementById('mkt-review-result-overlay')?.remove();
+                showNotification('已回填，将参与自动评分', 'success');
+                mktReviewLoadStoreExec();
+            } catch (e) { showNotification('回填失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function mktReviewLoadProfiles() {
+            var host = document.getElementById('mkt-review-profiles');
+            if (!host) return;
+            try {
+                var r = await fetch('/api/growth/store-profiles', { headers: growthAuthHeaders() });
+                var d = await r.json();
+                var rows = d?.profiles || [];
+                var listHtml = rows.length ? rows.map(function (p) {
+                    return '<div style="border:1px solid rgba(242,234,238,0.08);border-radius:10px;padding:10px;margin-bottom:8px;font-size:12px;color:rgba(242,234,238,0.78);">'
+                        + '<strong style="color:#fff;">' + escHtml(p.store_id) + (p.brand ? ' · ' + escHtml(p.brand) : '') + '</strong>'
+                        + ' · 客单价 ¥' + Math.round(Number(p.avg_ticket_fen || 0) / 100) + ' · ' + escHtml(p.primary_audience || '')
+                        + '<div style="margin-top:3px;font-size:11px;color:rgba(242,234,238,0.55);">适合券：' + escHtml((p.suitable_offers || []).join('、') || '-') + ' ｜ 禁用活动：' + escHtml((p.unsuitable_offers || []).join('、') || '-') + ' ｜ 高峰：' + escHtml((p.peak_hours || []).join('、') || '-') + '</div></div>';
+                }).join('') : '<div class="rep-pay-empty">暂无门店画像（填了之后 AI 会按客单价/适合券/禁用活动生成方案）</div>';
+                var storeOptions = Object.keys(window.__GROWTH_STORE_MAP || {}).map(function (k) { return '<option value="' + escHtml(k) + '">' + escHtml(__GROWTH_STORE_MAP[k]) + '</option>'; }).join('');
+                host.innerHTML = listHtml
+                    + '<div style="border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:12px;margin-top:12px;background:rgba(0,0,0,0.16);">'
+                    + '<div style="font-weight:800;color:#fff;margin-bottom:8px;">新增/更新门店画像</div>'
+                    + '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+                    + '<button data-click="mktReviewApplyProfileTemplate" data-arg="majixian" style="padding:6px 12px;border:1px solid rgba(134,201,162,0.35);border-radius:8px;background:rgba(134,201,162,0.12);color:#86C9A2;cursor:pointer;font-size:12px;">马己仙模板</button>'
+                    + '<button data-click="mktReviewApplyProfileTemplate" data-arg="hongchao" style="padding:6px 12px;border:1px solid rgba(209,143,160,0.35);border-radius:8px;background:rgba(209,143,160,0.12);color:#EABBC5;cursor:pointer;font-size:12px;">洪潮模板</button></div>'
+                    + '<select id="mkt-profile-store" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.15);background:rgba(0,0,0,0.35);color:var(--rep-text);font-size:13px;margin-bottom:8px;">' + storeOptions + '</select>'
+                    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><input id="mkt-profile-brand" placeholder="品牌（如 马己仙）" style="flex:1;min-width:120px;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;box-sizing:border-box;">'
+                    + '<input id="mkt-profile-ticket" type="number" min="0" placeholder="客单价（元）" style="flex:1;min-width:110px;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;box-sizing:border-box;"></div>'
+                    + '<input id="mkt-profile-audience" placeholder="主力客群（如 音乐广场周边家庭/年轻客群）" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">'
+                    + '<input id="mkt-profile-peak" placeholder="高峰时段（逗号分隔，如 午市,晚市）" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">'
+                    + '<input id="mkt-profile-suitable" placeholder="适合券类型（逗号分隔，如 双人套餐,储值赠券）" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">'
+                    + '<input id="mkt-profile-unsuitable" placeholder="禁用活动类型（逗号分隔，如 大额折扣,赠品）" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:8px;box-sizing:border-box;">'
+                    + '<textarea id="mkt-profile-notes" rows="2" placeholder="备注（选填）" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(242,234,238,0.12);background:rgba(242,234,238,0.06);color:#fff;font-size:13px;margin-bottom:10px;box-sizing:border-box;resize:vertical;"></textarea>'
+                    + '<button data-click="mktReviewSaveProfile" style="width:100%;padding:10px;border:none;border-radius:10px;background:#0d7a5f;color:#fff;font-weight:700;cursor:pointer;">保存画像</button>'
+                    + '</div>';
+            } catch (e) { host.innerHTML = '<div class="rep-pay-empty" style="color:#E58B98;">加载失败：' + escHtml(e?.message || e) + '</div>'; }
+        }
+
+        function mktReviewApplyProfileTemplate(kind) {
+            var T = {
+                majixian: { brand: '马己仙', ticket: 120, audience: '音乐广场周边家庭/年轻客群', peak: '午市,晚市', suitable: '双人套餐,储值赠券', unsuitable: '大额折扣' },
+                hongchao: { brand: '洪潮', ticket: 160, audience: '大宁商圈家庭/聚会客群', peak: '午市,晚市', suitable: '多人套餐,会员日', unsuitable: '赠品' }
+            };
+            var t = T[kind] || T.majixian;
+            setVal('mkt-profile-brand', t.brand);
+            setVal('mkt-profile-ticket', t.ticket);
+            setVal('mkt-profile-audience', t.audience);
+            setVal('mkt-profile-peak', t.peak);
+            setVal('mkt-profile-suitable', t.suitable);
+            setVal('mkt-profile-unsuitable', t.unsuitable);
+            if (kind === 'majixian') setVal('mkt-profile-store', '51866138');
+            if (kind === 'hongchao') setVal('mkt-profile-store', '64822111');
+        }
+
+        async function mktReviewSaveProfile() {
+            var storeId = document.getElementById('mkt-profile-store')?.value || '';
+            if (!storeId) { showNotification('请选择门店', 'warning'); return; }
+            var ticketYuan = Number(document.getElementById('mkt-profile-ticket')?.value || 0);
+            var body = {
+                store_id: storeId,
+                brand: document.getElementById('mkt-profile-brand')?.value || '',
+                avg_ticket_fen: Math.round(ticketYuan * 100),
+                primary_audience: document.getElementById('mkt-profile-audience')?.value || '',
+                peak_hours: growthCsvList('mkt-profile-peak'),
+                suitable_offers: growthCsvList('mkt-profile-suitable'),
+                unsuitable_offers: growthCsvList('mkt-profile-unsuitable'),
+                notes: document.getElementById('mkt-profile-notes')?.value || ''
+            };
+            try {
+                var r = await fetch('/api/growth/store-profiles', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'save_failed');
+                showNotification('门店画像已保存，将作为后续方案生成约束', 'success');
+                mktReviewLoadProfiles();
+            } catch (e) { showNotification('保存失败：' + (e?.message || e), 'error'); }
         }
 
         // ── 自动营销治理 + 闭环统计 ──

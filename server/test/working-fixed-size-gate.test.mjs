@@ -343,8 +343,12 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 仅 modal footer 补一个"保存草稿"按钮 + CSS，非 inline业务逻辑。
  * 2026-08-06 第六十六次上调（72390→72556）：新增 frontend/src/pages/17-dish-test.js
  * 菜品测试模块（仅系统管理员：试菜前客群体检——客群匹配 + 风险预判 + 试菜验证清单）。
+ * 2026-08-06 第六十七次上调（72556→72727）：新增「营销活动审核」模块（执行中心→活动审核：
+ * 待审建议/推送池/门店回填/门店画像四区块），并把业务确认的真实渠道
+ * （大众点评/小红书/企微/抖音）接入增长页；JS 走 frontend/src/pages，页面结构区在
+ * working-fixed.html body，均未堆内联主 script 业务逻辑。
  */
-const MAX_LINES = 72556;
+const MAX_LINES = 72727;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
