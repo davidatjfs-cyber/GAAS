@@ -9,8 +9,54 @@ import { Router } from 'express';
 import { resolveAgentCanonicalStore } from './v2-store-alignment.js';
 import { agentsOutboundHeaders } from './domains/shared/agents-service-auth.js';
 import { childLogger } from './utils/logger.js';
+import { createCampaignPlanFromExperiment } from './domains/growth-campaigns/service.js';
 
 const log = childLogger({ domain: 'strategy-experiment', handler: 'api' });
+
+/** 与 agents-service-v2 marketing-feedback.js 的拒绝原因目录保持一致 */
+const REJECT_REASON_CODES = new Set([
+  'not_fit_store', 'cost_too_high', 'channel_unavailable', 'duplicate',
+  'conflict', 'targets_unrealistic', 'cannot_execute', 'copy_quality', 'other',
+]);
+
+function normalizeRejectReason(raw) {
+  if (raw && typeof raw === 'object' && REJECT_REASON_CODES.has(String(raw.primary || ''))) {
+    return { primary: String(raw.primary), note: String(raw.note || '').trim().slice(0, 500) };
+  }
+  if (raw && typeof raw === 'object') {
+    return { primary: 'other', note: String(raw.note || '').trim().slice(0, 500) };
+  }
+  const str = String(raw || '').trim();
+  return REJECT_REASON_CODES.has(str) ? { primary: str, note: '' } : { primary: 'other', note: str ? str.slice(0, 500) : '' };
+}
+
+/** 采纳后把每个被采纳 variant 落成推送池活动草稿（GAAS 写入，失败不阻塞审批） */
+async function createPushPoolPlans(pool, tenantId, code, approver) {
+  try {
+    const exp = await pool.query(
+      `SELECT id, experiment_code, planned_start, planned_end FROM strategy_experiments WHERE experiment_code = $1`,
+      [code]
+    );
+    if (!exp.rows[0]) return;
+    const variants = await pool.query(
+      `SELECT variant_code, store, plan_fields FROM strategy_variants WHERE experiment_id = $1 AND status <> 'rejected'`,
+      [exp.rows[0].id]
+    );
+    for (const v of variants.rows || []) {
+      await createCampaignPlanFromExperiment(pool, tenantId, {
+        code: exp.rows[0].experiment_code,
+        variantCode: v.variant_code,
+        store: v.store,
+        planFields: v.plan_fields,
+        approver,
+        plannedStart: exp.rows[0].planned_start,
+        plannedEnd: exp.rows[0].planned_end,
+      });
+    }
+  } catch (e) {
+    log.warn({ msg: 'create_push_pool_plans_failed', code, err: e?.message });
+  }
+}
 
 
 export default function strategyExperimentRoutes(pool, authRequired) {
@@ -194,6 +240,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
             'Content-Type': 'application/json',
           }),
         });
+        await createPushPoolPlans(pool, String(req.tenantId || req.user?.tenant_id || 'default'), req.params.code, req.user?.username || 'admin');
         return res.json(resp.data);
       } catch (proxyErr) {
         log.error({ msg: 'proxy_approve_to_agents_service_failed_falling_back_to_local', err: proxyErr?.message });
@@ -227,6 +274,7 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
         WHERE experiment_id = $1 AND status = 'pending'
       `, [exp.rows[0].id]);
 
+      await createPushPoolPlans(pool, String(req.tenantId || req.user?.tenant_id || 'default'), req.params.code, req.user?.username || 'admin');
       const updated = await pool.query(`SELECT * FROM strategy_experiments WHERE id = $1`, [exp.rows[0].id]);
       const variants = await pool.query(`SELECT * FROM strategy_variants WHERE experiment_id = $1 ORDER BY variant_code`, [exp.rows[0].id]);
       res.json({ ok: true, experiment: updated.rows[0], variants: variants.rows });
@@ -244,7 +292,12 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
       const exp = await pool.query(`SELECT id, status FROM strategy_experiments WHERE experiment_code = $1`, [req.params.code]);
       if (!exp.rows[0]) return res.status(404).json({ ok: false, error: 'not_found' });
 
-      await pool.query(`UPDATE strategy_experiments SET status = 'rejected', updated_at = NOW() WHERE id = $1`, [exp.rows[0].id]);
+      const reason = normalizeRejectReason(req.body?.reason);
+      await pool.query(`
+        UPDATE strategy_experiments
+        SET status = 'rejected', rejected_at = NOW(), rejected_by = $2, reject_reason = $3, updated_at = NOW()
+        WHERE id = $1
+      `, [exp.rows[0].id, req.user?.username || 'admin', JSON.stringify(reason)]);
 
       const updated = await pool.query(`SELECT * FROM strategy_experiments WHERE id = $1`, [exp.rows[0].id]);
       res.json({ ok: true, experiment: updated.rows[0] });

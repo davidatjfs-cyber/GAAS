@@ -69,7 +69,10 @@ export function registerGrowthActionsRoutes(app, pool) {
     if (!requireGrowthAdminRole(req, res)) return;
     return send(
       res,
-      await setPllmExperimentStatus(ctx, getGrowthTenantId(req), req.params.code, 'rejected')
+      await setPllmExperimentStatus(ctx, getGrowthTenantId(req), req.params.code, 'rejected', {
+        reason: req.body?.reason,
+        operator: getGrowthOperator(req),
+      })
     );
   });
 

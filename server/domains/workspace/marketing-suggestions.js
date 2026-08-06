@@ -12,6 +12,49 @@ import { expandAgentStoreLabels } from '../../v2-store-alignment.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'marketing-suggestions' });
 
+const REJECT_LABELS = {
+  not_fit_store: '不贴合本店客群', cost_too_high: '成本过高', channel_unavailable: '渠道不可用',
+  duplicate: '重复', conflict: '与现有活动冲突', targets_unrealistic: '目标不可达',
+  cannot_execute: '无法执行', copy_quality: '文案质量差', other: '其他',
+};
+
+/** 门店近 30 天审核反馈摘要（采纳/拒绝/主要拒绝原因），供审核卡片展示 */
+async function loadStoreFeedbackSummary(pool, tenantId, stores) {
+  const summary = new Map();
+  if (!Array.isArray(stores) || !stores.length) return summary;
+  try {
+    const r = await pool.query(
+      `SELECT v.store,
+              COUNT(*) FILTER (WHERE e.status IN ('approved','running','completed'))::int AS approved,
+              COUNT(*) FILTER (WHERE e.status = 'rejected')::int AS rejected,
+              jsonb_agg(e.reject_reason) FILTER (WHERE e.status = 'rejected' AND e.reject_reason IS NOT NULL) AS reasons
+         FROM strategy_experiments e
+         JOIN strategy_variants v ON v.experiment_id = e.id
+        WHERE e.tenant_id = $1 AND v.store = ANY($2)
+          AND e.created_at > NOW() - interval '30 days'
+        GROUP BY v.store`,
+      [tenantId, stores]
+    );
+    for (const row of r.rows || []) {
+      const reasons = (row.reasons || []).filter(Boolean);
+      const byCode = new Map();
+      for (const rz of reasons) {
+        const code = String(rz?.primary || 'other');
+        byCode.set(code, (byCode.get(code) || 0) + 1);
+      }
+      summary.set(row.store, {
+        total: Number(row.approved || 0) + Number(row.rejected || 0),
+        approved: Number(row.approved || 0),
+        rejected: Number(row.rejected || 0),
+        topReasons: [...byCode.entries()].map(([code, count]) => ({ label: REJECT_LABELS[code] || '其他', count })).sort((a, b) => b.count - a.count).slice(0, 2),
+      });
+    }
+  } catch (e) {
+    log.warn({ msg: 'load_store_feedback_summary_failed', err: e?.message });
+  }
+  return summary;
+}
+
 /**
  * 采纳/不适合仅admin/hq_manager可操作（复用现成的/api/strategy-experiments/:code/
  * approve|reject，跟增长看板用同一套接口，不新建），店长/出品经理视角只读展示、了解
@@ -50,6 +93,7 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
         byStore.get(store).push(row);
       }
     }
+    const feedback = await loadStoreFeedbackSummary(pool, tenantId, [...byStore.keys()]);
     const seenExperiment = new Set();
     const picked = [];
     for (const [, queue] of byStore) {
@@ -62,16 +106,29 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
         taken++;
       }
     }
-    return picked.map((row) => ({
-      kind: 'pllm_experiment',
-      actionKey: row.experiment_code,
-      store: [...new Set((row.variants || []).map((v) => v.store).filter(Boolean))].join('/'),
-      title: row.title,
-      goal: row.goal,
-      anomalyType: row.anomaly_type,
-      createdAt: row.created_at,
-      variants: row.variants || [],
-    }));
+    return picked.map((row) => {
+      const rowStores = [...new Set((row.variants || []).map((v) => v.store).filter(Boolean))];
+      const fbParts = rowStores.map((s) => feedback.get(s)).filter(Boolean);
+      const fb = fbParts.length
+        ? {
+            total: fbParts.reduce((s, x) => s + (x.total || 0), 0),
+            approved: fbParts.reduce((s, x) => s + (x.approved || 0), 0),
+            rejected: fbParts.reduce((s, x) => s + (x.rejected || 0), 0),
+            topReasons: fbParts.flatMap((x) => x.topReasons || []).slice(0, 2),
+          }
+        : null;
+      return {
+        kind: 'pllm_experiment',
+        actionKey: row.experiment_code,
+        store: rowStores.join('/'),
+        title: row.title,
+        goal: row.goal,
+        anomalyType: row.anomaly_type,
+        createdAt: row.created_at,
+        variants: row.variants || [],
+        feedback: fb,
+      };
+    });
   } catch (e) {
     log.error({ msg: 'marketing_suggestions_failed', err: e?.message || String(e) });
     return [];

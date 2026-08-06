@@ -41,6 +41,41 @@ export async function upsertCampaignPlan(pool, tenantId, body = {}) {
   return r.rows[0] || null;
 }
 
+/** 从「预估成本」文本解析预算（分）：取区间上限，无数字返回 0 */
+export function parsePlanCostFen(costText) {
+  const nums = String(costText || '').match(/\d+(?:\.\d+)?/g);
+  if (!nums || !nums.length) return 0;
+  const values = nums.map(Number).filter((n) => n > 0);
+  return values.length ? Math.round(Math.max(...values) * 100) : 0;
+}
+
+/**
+ * 营销建议「采纳 → 推送池」：把已通过的策略实验 variant 落成一条活动计划草稿。
+ * 由 GAAS 写入（growth_campaign_plans 归 GAAS 侧写），门店/总部后续可激活执行。
+ * @param {{ pool: any, tenantId: string, code: string, title: string, store: string,
+ *           planFields: object|null, approver: string, plannedStart?: string|null, plannedEnd?: string|null }} p
+ */
+export async function createCampaignPlanFromExperiment(pool, tenantId, {
+  code, variantCode = 'A', title = '', store = '', planFields = null,
+  approver = 'admin', plannedStart = null, plannedEnd = null,
+}) {
+  const fields = planFields && typeof planFields === 'object' ? planFields : {};
+  const plan = await upsertCampaignPlan(pool, tenantId, {
+    plan_id: `exp:${String(code || '').slice(0, 60)}:${String(variantCode).slice(0, 10)}`,
+    store_id: String(store || '').slice(0, 128),
+    campaign_id: String(code || '').slice(0, 128),
+    title: String(fields['策略名称'] || title || '营销活动方案').slice(0, 500),
+    channel: String(fields['投放渠道'] || 'wecom').slice(0, 80),
+    target_audience: String(fields['对象'] || 'all').slice(0, 200),
+    budget_fen: parsePlanCostFen(fields['预估成本']),
+    status: 'draft',
+    planned_start: plannedStart || undefined,
+    planned_end: plannedEnd || undefined,
+    created_by: String(approver || 'admin').slice(0, 80),
+  });
+  return plan;
+}
+
 export async function listCampaignPlans(pool, { storeId = '', status = '' } = {}) {
   const sid = cleanText(storeId, 128);
   const st = cleanText(status, 40);

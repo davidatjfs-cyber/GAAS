@@ -2962,27 +2962,28 @@
         async function feedbackGrowthAction(actionKey) { return; }
 
         async function approvePllmExp(experimentCode) {
-            if (!confirm('采纳此PLLM策略实验方案？\n\n请人工按方案执行，系统记录为已采纳。')) return;
+            if (!confirm('采纳此PLLM策略实验方案？\n\n将通过审批并进入推送池：自动生成门店活动计划草稿并派发给责任人，由门店人工按方案执行。')) return;
             try {
                 const r = await fetch('/api/growth/pllm-experiment/' + encodeURIComponent(experimentCode) + '/approve', {
                     method: 'POST', headers: growthAuthHeaders()
                 });
                 const data = await r.json();
                 if (!data.ok) throw new Error(data.error || 'approve_failed');
-                showNotification('已采纳，请按方案执行', 'success');
+                showNotification('已通过，进入推送池', 'success');
                 loadGrowthActionBoard();
             } catch (e) { showNotification('采纳失败：' + (e?.message || e), 'error'); }
         }
 
         async function rejectPllmExp(experimentCode) {
-            if (!confirm('标记为不适合执行？该实验将从待审批列表中移除。')) return;
+            const reason = typeof hrmsAskMarketingRejectReason === 'function' ? await hrmsAskMarketingRejectReason() : null;
+            if (!reason) return;
             try {
                 const r = await fetch('/api/growth/pllm-experiment/' + encodeURIComponent(experimentCode) + '/reject', {
-                    method: 'POST', headers: growthAuthHeaders()
+                    method: 'POST', headers: growthAuthHeaders(), body: JSON.stringify({ reason })
                 });
                 const data = await r.json();
                 if (!data.ok) throw new Error(data.error || 'reject_failed');
-                showNotification('已标记为不适合', 'info');
+                showNotification('已拒绝，原因已回流给 AI', 'info');
                 loadGrowthActionBoard();
             } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
         }
@@ -3708,4 +3709,3 @@
                 loadAutoMarketing();
             } catch (e) { showNotification('保存渠道失败：' + (e && e.message || e), 'error'); }
         }
-
