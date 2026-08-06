@@ -1366,6 +1366,13 @@
             if (filesCountEl) filesCountEl.textContent = String(visibleItems.length || 0);
             if (focusEl) focusEl.textContent = String(focusLabel || '全部');
             if (contextEl) contextEl.textContent = String(contextText || '向下查看资料列表，点击卡片进入详情。');
+            renderKbBreadcrumb(focusLabel);
+        }
+        function kbGoHome() { __KB_ACTIVE_GROUP_ID = ''; const searchEl = document.getElementById('knowledge-search'); if (searchEl) searchEl.value = ''; const st = getKnowledgeFilterState(); st.tab = 'all'; st.category = ''; st.q = ''; setKnowledgeFilterState(st); renderKbCategoryBar(); setKnowledgeTab('all'); }
+        function renderKbBreadcrumb(focusLabel) {
+            const el = document.getElementById('kb-breadcrumb'); if (!el) return;
+            const label = String(focusLabel || '').trim(), atRoot = !__KB_ACTIVE_GROUP_ID && (!label || label === '全部' || label === '分组');
+            el.innerHTML = atRoot ? `<span class="kb-v2-crumb kb-v2-crumb-current">🏠 首页</span>` : `<button type="button" class="kb-v2-crumb kb-v2-crumb-link" data-click="kbGoHome">🏠 首页</button><span class="kb-v2-crumb-sep">›</span><span class="kb-v2-crumb kb-v2-crumb-current">${escapeHtml(label || '当前')}</span>`;
         }
 
         function syncKnowledgeAdminUi() {
@@ -1809,12 +1816,13 @@
                     if (CATS.includes(c)) { if (!grouped[c]) grouped[c] = []; grouped[c].push(it); }
                     else uncategorized.push(it);
                 });
-                let html = '';
+                let html = '', isFirstGroup = true; // 默认只展开第一个分组，其余折叠，手机上不再一次性刷出长列表
                 CATS.forEach(cat => {
                     const grp = grouped[cat] || [];
                     if (!grp.length) return;
                     const catIcon = (KB_CATEGORY_ICON || {})[cat] || '📂';
-                    html += `<div class="kb-v2-cat-group">
+                    const collapsedCls = isFirstGroup ? (isFirstGroup = false, '') : ' kb-v2-collapsed';
+                    html += `<div class="kb-v2-cat-group${collapsedCls}">
                         <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">${catIcon}</span>
                             <span class="kb-v2-cat-hdr-name">${escapeHtml(cat)}</span>
@@ -1825,7 +1833,7 @@
                     </div>`;
                 });
                 if (uncategorized.length) {
-                    html += `<div class="kb-v2-cat-group">
+                    html += `<div class="kb-v2-cat-group${isFirstGroup ? '' : ' kb-v2-collapsed'}">
                         <div class="kb-v2-cat-hdr" data-click="hrmsToggleParentClass" data-arg="kb-v2-collapsed" data-arg-self="1">
                             <span class="kb-v2-cat-hdr-icon">📂</span>
                             <span class="kb-v2-cat-hdr-name">其他</span>
@@ -2200,23 +2208,24 @@
             }
         }
 
-        async function loadTrainingTopics() {
-            try {
+        let __TT_CACHED_TOPICS = []; async function loadTrainingTopics() { try {
                 const position = document.getElementById('training-filter-position')?.value || '';
                 const resp = await fetch('/api/training/topics?position=' + encodeURIComponent(position), {
                     headers: { 'Authorization': 'Bearer ' + localStorage.getItem('hrms_token') }
                 });
                 const data = await resp.json();
-                const list = document.getElementById('training-topics-list');
-                if (!list) return;
-                if (!data.success || !data.topics?.length) {
-                    list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无知识点</div>';
-                    return;
-                }
+                if (!data.success) { const list = document.getElementById('training-topics-list'); if (list) list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无知识点</div>'; return; }
+                __TT_CACHED_TOPICS = Array.isArray(data.topics) ? data.topics : [];
+                const assignSelect = document.getElementById('training-assign-topic'); if (assignSelect) assignSelect.innerHTML = '<option value="">请选择</option>' + __TT_CACHED_TOPICS.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join(''); renderTrainingTopicsFiltered();
+            } catch (e) { showNotification('加载知识点失败：' + e.message, 'error'); }
+        }
+        function renderTrainingTopicsFiltered() {
+                const list = document.getElementById('training-topics-list'); if (!list) return;
+                const q = String(document.getElementById('training-topics-search')?.value || '').trim().toLowerCase(), allTopics = __TT_CACHED_TOPICS, data = { topics: q ? allTopics.filter(t => String(t?.title || '').toLowerCase().includes(q)) : allTopics };
+                if (!data.topics.length) { list.innerHTML = allTopics.length ? `<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">没有找到和“${escapeHtml(q)}”相关的知识点</div>` : '<div style="text-align:center;padding:40px;color:rgba(242,234,238,0.5);">暂无知识点</div>'; return; }
                 const canEdit = isAdminOrHQ();
                 const TT_LEVEL_LABEL = { T1:'T1 合格', T2:'T2 师傅', T3:'T3 厨师长', M1:'M1 主管', M2:'M2 经理', M3:'M3 店长', L1:'L1', L2:'L2', L3:'L3' };
                 const ttLevelRank = lv => { const m = /^([A-Z]+)(\d+)$/.exec(lv || ''); return m ? m[1].charCodeAt(0) * 100 + Number(m[2]) : 9999; };
-
                 const renderTopicCard = (t, displayTitle) => {
                     const posArr = (t.position || '').split(',').map(s => s.trim()).filter(Boolean);
                     const posTags = posArr.map(p => `<span class="training-admin-chip">${escapeHtml(p)}</span>`).join('');
@@ -2295,7 +2304,7 @@
                     });
                     const levelLabel = TT_LEVEL_LABEL[g.level] || g.level;
                     html += `
-                    <details class="tt-level-group" open>
+                    <details class="tt-level-group"${q ? ' open' : ''}>
                         <summary>
                             <span>${escapeHtml(g.position)} · ${escapeHtml(levelLabel)}</span>
                             <span class="training-admin-badge" style="background:rgba(134,201,162,0.16);color:#86C9A2;">${g.items.length} 项</span>
@@ -2305,7 +2314,7 @@
                 });
                 if (ungraded.length) {
                     html += `
-                    <details class="tt-level-group" open>
+                    <details class="tt-level-group"${q ? ' open' : ''}>
                         <summary>
                             <span>📚 通用知识点（非晋升要求）</span>
                             <span class="training-admin-badge" style="background:rgba(242,234,238,0.08);color:rgba(242,234,238,0.6);">${ungraded.length} 项</span>
@@ -2313,18 +2322,8 @@
                         <div class="tt-level-body">${ungraded.map(t => renderTopicCard(t, t.title)).join('')}</div>
                     </details>`;
                 }
-                html += `</div>`;
-                list.innerHTML = html;
-
-                // 更新指派弹窗的下拉框
-                const assignSelect = document.getElementById('training-assign-topic');
-                if (assignSelect) {
-                    assignSelect.innerHTML = '<option value="">请选择</option>' + data.topics.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join('');
-                }
-            } catch (e) {
-                showNotification('加载知识点失败：' + e.message, 'error');
+                html += `</div>`; list.innerHTML = html;
             }
-        }
 
         // ── 知识库多选 picker ──────────────────────────────────
         let _selectedKbArticles = []; // [{id, title, category, excerpt}]
