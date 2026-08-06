@@ -17,6 +17,12 @@
 -- 附带效果（正是用户要的语义）：users.username 上的唯一索引变成大小写不敏感，
 -- 从此**建不出 'Foo' 和 'foo' 两个账号**——大小写默认就是同一个账号。
 --
+-- 🔴 部署顺序（实测确认，不能凭习惯反过来）：**先部署代码，再跑这个 migration**。
+-- 旧代码里 `lower(target_username) = lower($1)` 那几条 SQL 打到已转 citext 的库会直接报
+-- 42P08 text versus citext，**整条语句失败** = 所有通知写不进去。演练库实测复现过。
+-- 反向的窗口是无害的：新代码的 `target_username = $1` 打到尚未转换的 text 列，
+-- 只是判重暂时区分大小写，且 migration 183 的唯一索引仍在兜底。
+--
 -- 安全性：
 --  - citext 在 PG13+ 是 trusted 扩展，非超级用户（本库的 hrms）可安装。
 --  - 已核对：无视图依赖这些列（不会阻塞 ALTER TYPE）；除 3 个 NULL 外无大小写撞车

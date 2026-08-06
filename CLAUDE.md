@@ -539,3 +539,17 @@ HTML/CSS 改动会留下，只有 JS 没了，所以现象非常迷惑：功能�
 - **例外**：`user_login_log.username` 虽然也转了 citext（比较忽略大小写），但它存的值
   **保留用户当时输入的原文**，migration 的归一化步骤显式跳过它——那是审计事实，不能改写。
 - citext 只改变**比较**语义，不改变存储值；已有的 `lower(username)` 写法继续有效，不需要清理。
+
+**⚠️ citext 列的参数不要再套 `lower()`**：`INSERT ... SELECT $1 ... WHERE lower(col) = lower($1)`
+这种写法在 citext 列上会报 `42P08 inconsistent types deduced for parameter $1 (text versus citext)`
+——同一个 `$1` 既被推断为 citext（插入值）又被要求是 text（`lower()` 参数），**整条语句失败**。
+2026-08-06 改造当天命中三处通知写入 SQL，若未先跑集成测试就上线，所有通知会静默写不进去。
+闸门：`server/test/citext-param-conflict-gate.test.mjs`。直接写 `col = $1` 即可，citext 本就忽略大小写。
+
+**⚠️ 部署顺序：先部署代码，再跑 migration 184**（实测确认）。旧代码的 `lower($1)` 打到已转
+citext 的库立刻 42P08；反过来（新代码打到未转换的 text 列）只是判重暂时区分大小写，无害。
+
+**⚠️ 运行时建表（listen-time ensure*）也要用 CITEXT**：`server/customer-ops.js` 这类
+`CREATE TABLE IF NOT EXISTS` 在"先跑 migration 再启动"的环境里晚于 184 执行，184 扫不到它们。
+CI 实测因此漏过两列。新建这类表时用户名列直接写 CITEXT，并在建表前
+`CREATE EXTENSION IF NOT EXISTS citext`。
