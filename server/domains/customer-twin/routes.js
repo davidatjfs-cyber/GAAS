@@ -13,6 +13,7 @@ import { ensureGoldenCaseSeed } from './seed-golden-cases.js';
 import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js';
 import { PERSONA_KEYS } from './persona-schema.js';
 import { createCustomerTwinAdminRequired } from './admin-guard.js';
+import { syncDishData } from './feishu-dish-sync.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -104,6 +105,16 @@ export function registerCustomerTwinRoutes(ctx) {
       res.json({ ok: true, persona: { key: persona.persona_key, label: persona.label }, sim, utterance });
     } catch (e) {
       log.error({ msg: 'twin_simulate', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/customer-twin/dish-sync/run', twinAdminRequired, async (_req, res) => {
+    try {
+      const result = await syncDishData(pool);
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      log.error({ msg: 'twin_dish_sync_run', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
