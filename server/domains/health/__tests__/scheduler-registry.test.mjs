@@ -98,23 +98,30 @@ test('failing：准时在跑，但距上次成功已超过一个完整周期', (
   assert.equal(r.tasks[0].status, 'failing');
 });
 
-test('delegated：委托给 agents-service-v2 时不判定、不计入 checked', () => {
+test('delegated：委托出去的任务完全不出现在 GAAS 的输出里', () => {
   const registry = [entry({ delegatedWhen: () => true })];
   const r = evaluateSchedulerHealth({ registry, rows: [], uptimeMs: 10 * 60 * MIN });
-  assert.equal(r.tasks[0].status, 'delegated');
+  // 2026-08-06 去重叠：不再以 delegated 行混在 tasks 中，GAAS 只汇报自己执行的任务
+  assert.equal(r.tasks.length, 0);
   assert.equal(r.ok, true);
   assert.equal(r.checked, 0);
+  assert.deepEqual(r.delegatedToOtherService, ['demo_task']);
 });
 
-test('master-agent tick 在 DISABLE_AGENT_SCHEDULING=true 时标记为 delegated', () => {
+test('master-agent tick 在 DISABLE_AGENT_SCHEDULING=true 时不进 GAAS 面板', () => {
   const r = evaluateSchedulerHealth({
     rows: [],
     uptimeMs: 30 * 24 * 60 * MIN,
     env: { DISABLE_AGENT_SCHEDULING: 'true' },
   });
-  const kg = r.tasks.find((t) => t.task_name === 'master_kg_health_tick');
-  assert.ok(kg, 'master_kg_health_tick 应在注册表中');
-  assert.equal(kg.status, 'delegated');
+  assert.ok(
+    !r.tasks.some((t) => t.task_name === 'master_kg_health_tick'),
+    'master tick 由 agents-service-v2 执行并自行监控，不该出现在 GAAS 的任务列表里'
+  );
+  assert.ok(
+    r.delegatedToOtherService.includes('master_kg_health_tick'),
+    '但仍应记录在 delegatedToOtherService，证明是「有意交出去」而不是「漏登记」'
+  );
 });
 
 test('master-agent tick 在本服务自己执行时，缺心跳会被报出来', () => {

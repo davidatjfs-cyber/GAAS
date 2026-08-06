@@ -25,24 +25,20 @@
  */
 
 /** @type {FreshnessAssertion[]} */
+/**
+ * ⚠️ 只登记 **GAAS 自己产出** 的数据（2026-08-06 去重叠）。
+ *
+ * 原先这里还断言了 agent_scores（BI 异常扣分）、anomaly_triggers、master_tasks、
+ * employee_scores 四项——但这四张表的写入方都是 agents-service-v2。V2 侧有自己的
+ * cron 运行台账（agent_v2_cron_runs，失败即时飞书告警）和自己的面板，两边同时断言
+ * 同一份产出，一次故障会收到两条来源不同的告警，运维还要先判断"这是同一件事吗"。
+ * 那四项已迁到 V2 面板，本文件只保留 GAAS 写入的表。
+ *
+ * 加新断言前先确认：这张表是 GAAS 写的吗？不是就别加在这里。
+ * （注意 pos_order_items 是个反例：它被 GAAS 和 V2 双写，违反 CLAUDE.md 的共享表矩阵，
+ *   已作为独立问题记录，不在本文件断言，避免把"双写"问题伪装成"新鲜度"问题。）
+ */
 export const OUTPUT_FRESHNESS_ASSERTIONS = [
-  {
-    key: 'bi_anomaly_weekly_scores',
-    label: 'BI 异常扣分（周度评分）',
-    produces: 'agents-service-v2 周度 periodic-scoring（每周一 00:0x）',
-    // 每周一次 → 给 8 天：跨过一个完整周期还没有新行才算停摆，避免周末/延迟误报。
-    maxAgeHours: 8 * 24,
-    sql: `SELECT MAX(created_at) AS latest FROM agent_scores WHERE score_model = 'anomaly_rollups_v2'`,
-    note: '员工月度综合评分的扣分来源；断档意味着当月扣分会静默按 100 分兜底',
-  },
-  {
-    key: 'anomaly_triggers_daily',
-    label: '异常触发明细',
-    produces: 'agents-service-v2 每日巡检',
-    maxAgeHours: 48,
-    sql: `SELECT MAX(trigger_date)::timestamptz AS latest FROM anomaly_triggers`,
-    note: 'BI 异常扣分的上游；这里没数据则周度评分必然扣不出分',
-  },
   {
     key: 'daily_reports',
     label: '门店日报',
@@ -50,62 +46,7 @@ export const OUTPUT_FRESHNESS_ASSERTIONS = [
     maxAgeHours: 48,
     sql: `SELECT MAX(date)::timestamptz AS latest FROM daily_reports`,
   },
-  {
-    key: 'pos_order_items',
-    label: 'POS 销售明细',
-    produces: 'GAAS POS 导入（pos_sales_check / pos_feishu_sync_cron）',
-    // 2026-08-06 用户确认：POS 明细实际按周更新，不是每日——48h 阈值对这条业务节奏来说
-    // 太紧，会在正常的周内间隔里误报。给 9 天（跟本文件其它"每周一次"断言口径一致），
-    // 真正断了一个完整周期以上才算异常。
-    maxAgeHours: 9 * 24,
-    sql: `SELECT MAX(checkout_time) AS latest FROM pos_order_items`,
-    note: '营收类口径的唯一权威来源；按周更新，非每日',
-  },
-  {
-    key: 'master_tasks',
-    label: 'Master 任务派发',
-    produces: 'agents-service-v2 master-agent tick',
-    // GAAS 侧 DISABLE_AGENT_SCHEDULING=true，master tick 的心跳看不见，
-    // 这条产出断言是判断"V2 的编排到底还活着没有"的唯一手段。
-    maxAgeHours: 48,
-    sql: `SELECT MAX(created_at) AS latest FROM master_tasks`,
-  },
 ];
-
-/**
- * 月度员工评分是"按日历门控"的：作业在每月 10 号 01:00 跑上一个月，
- * 10 号之前根本不该有上月数据，用固定 maxAgeHours 判定必然误报。
- * 单独用一条规则表达：**只有过了 10 号还缺上月数据才算异常**。
- *
- * @param {{ latestPeriod?: string|null, now?: Date }} input
- * @returns {{ status: 'ok'|'stale', expectedPeriod: string|null, detail: string }}
- */
-export function evaluateMonthlyEmployeeScores({ latestPeriod = null, now = new Date() } = {}) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(now);
-  const get = (t) => parts.find((p) => p.type === t)?.value || '';
-  const year = Number(get('year'));
-  const month = Number(get('month'));
-  const day = Number(get('day'));
-
-  // 10 号（含）之前：上上个月才是"应该已经有"的最新一期。
-  const closedOffset = day >= 10 ? 1 : 2;
-  const target = new Date(Date.UTC(year, month - 1 - closedOffset, 1));
-  const expectedPeriod = `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, '0')}`;
-
-  if (!latestPeriod) {
-    return { status: 'stale', expectedPeriod, detail: `期望至少有 ${expectedPeriod}，实际没有任何数据` };
-  }
-  const ok = String(latestPeriod) >= expectedPeriod;
-  return {
-    status: ok ? 'ok' : 'stale',
-    expectedPeriod,
-    detail: ok
-      ? `最新一期 ${latestPeriod}`
-      : `期望至少有 ${expectedPeriod}，实际最新只有 ${latestPeriod}`,
-  };
-}
 
 /**
  * @param {{ key: string, label: string, produces: string, maxAgeHours: number, note?: string }} assertion

@@ -183,11 +183,19 @@ export function evaluateSchedulerHealth(input = {}) {
   });
 
   const UNHEALTHY = new Set(['overdue', 'never', 'failing']);
-  const unhealthy = tasks.filter((t) => UNHEALTHY.has(t.status));
+  // 2026-08-06 去重叠：委托给 agents-service-v2 执行的任务不再出现在 GAAS 的输出里。
+  // 之前它们以 delegated 行的形式混在 tasks 中，等于 GAAS 的面板/health 里挂着 16 行
+  // 别人家的任务——V2 侧有自己的 cron 监控（agent_v2_cron_runs + 失败即时飞书告警）
+  // 和自己的面板，两边都列同一批任务只会让"谁该管"变模糊。注册表仍保留这些条目，
+  // 这样万一 DISABLE_AGENT_SCHEDULING 翻回 false（GAAS 自己执行），它们会自动回到判定范围。
+  const owned = tasks.filter((t) => t.status !== 'delegated');
+  const unhealthy = owned.filter((t) => UNHEALTHY.has(t.status));
   return {
     ok: unhealthy.length === 0,
-    checked: tasks.filter((t) => t.status !== 'delegated').length,
-    tasks,
+    checked: owned.length,
+    tasks: owned,
+    /** 仅供排查时确认"这批任务确实是有意交给 V2 的"，不参与任何判定与展示 */
+    delegatedToOtherService: tasks.filter((t) => t.status === 'delegated').map((t) => t.task_name),
     unhealthy,
   };
 }

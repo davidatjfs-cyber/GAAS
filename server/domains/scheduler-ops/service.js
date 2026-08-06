@@ -6,14 +6,11 @@ import { evaluateSchedulerHealth } from '../health/scheduler-registry.js';
 import {
   OUTPUT_FRESHNESS_ASSERTIONS,
   evaluateFreshness,
-  evaluateMonthlyEmployeeScores,
 } from './output-freshness.js';
 
 const HEARTBEAT_SQL = `
   SELECT task_name, last_beat, status, last_error, duration_ms, last_success_at
   FROM scheduler_heartbeat`;
-
-const MONTHLY_SCORES_SQL = `SELECT MAX(period) AS latest_period FROM employee_scores`;
 
 /**
  * 逐条跑产出断言。单条失败不影响其它条——面板的价值就在于"一屏看全"，
@@ -41,37 +38,6 @@ export async function collectOutputFreshness(pool, nowMs = Date.now()) {
       }
     })
   );
-
-  try {
-    const r = await pool.query(MONTHLY_SCORES_SQL);
-    const monthly = evaluateMonthlyEmployeeScores({
-      latestPeriod: r.rows?.[0]?.latest_period ?? null,
-      now: new Date(nowMs),
-    });
-    results.push({
-      key: 'employee_scores_monthly',
-      label: '员工月度综合评分',
-      produces: 'GAAS performance-jobs（每月 10 号 01:00）',
-      maxAgeHours: null,
-      note: '按日历门控，10 号前不该有上月数据',
-      latest: null,
-      ageHours: null,
-      status: monthly.status,
-      detail: monthly.detail,
-    });
-  } catch (e) {
-    results.push({
-      key: 'employee_scores_monthly',
-      label: '员工月度综合评分',
-      produces: 'GAAS performance-jobs（每月 10 号 01:00）',
-      maxAgeHours: null,
-      note: null,
-      latest: null,
-      ageHours: null,
-      status: 'error',
-      detail: `查询失败：${String(e?.message || e)}`,
-    });
-  }
 
   return results;
 }
