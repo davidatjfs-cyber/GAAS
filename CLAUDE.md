@@ -325,6 +325,17 @@ agents-service-v2 通过 `file:packages/gaas-shared` 引用**同步副本**；�
 | `tenants` / `tenant_integrations` | GAAS | agents 读配置 |
 | `schema_migrations` | GAAS `migrate.js` | agents 禁止并行建共享表 |
 
+**⚠️ 2026-08-06 实际发生过的违规（已修复，写下来防止再犯）**：矩阵写着 `pos_order_items` 唯一写入方是
+GAAS，但 agents-service-v2 的 `services/pos-bitable-sync.js` 一直在直写这两张表，而且拉的是**同一个飞书
+app（`PTWrbUdcbarCshst0QncMoY7nKe`）、同一组表**——即 GAAS 的 `pos_feishu_sync_cron`（每日 17:00）和
+V2 的 `pos_bitable_sync`（每日 06:30）是**两份完全重复的同步**，不只是"双写"。V2 那边的注释写着
+「直写DB而不经HTTP，避免跨服务认证与逻辑重复」，实际造成的正是跨服务重复。已删除 V2 侧的
+`syncPosOrders`/`syncPosOrderItems`，只保留 GAAS 完全不同步的 `member_consumption`。
+
+教训：**矩阵是纸面约定，没有闸门就会被"顺手直写更省事"绕过**，而且绕过后两边都能正常跑、
+数据也对得上（upsert 幂等），只有在对账"谁该管这张表"时才会暴露。新增跨服务写入前先查这张表；
+另一边确实需要写时，照 V2 的 `stored_value_sync` 那样走 HTTP 调对方接口（正确范式就在同一个文件旁边）。
+
 **2026-07 追加：什么时候可以拆存量代码，以及怎么安全拆**——"现在不拆存量代码"不等于"永远不拆"。
 2026-07-22 已经从 `index.js` 拆出过 `auth-routes.js`（登录/鉴权，~550行）和 `approval-routes.js`
 （审批列表/详情/已读/删除/流程配置，不含create/decide/return/resubmit那几个还留在index.js里的巨型逻辑），
