@@ -71,7 +71,7 @@ export async function notifyTraineeReport(pool, {
        )
         WHERE NOT EXISTS (
           SELECT 1 FROM hrms_user_notifications
-           WHERE lower(target_username) = lower($1) AND type = 'sales_sim_report' AND message = $3
+           WHERE target_username = $1 AND type = 'sales_sim_report' AND message = $3
              AND read_at IS NULL
         )`,
       [username, title, truncatedMessage, JSON.stringify({ session_id: sessionId, track }), sessionId]

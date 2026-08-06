@@ -354,7 +354,7 @@ export async function createTrainingUserNotification(targetUsername, title, mess
        SELECT $1, $2, $3, 'training_assignment', $4, NOW(), $5
         WHERE NOT EXISTS (
           SELECT 1 FROM hrms_user_notifications
-           WHERE lower(target_username) = lower($1) AND type = 'training_assignment' AND message = $3
+           WHERE target_username = $1 AND type = 'training_assignment' AND message = $3
              AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
         )`,
       [

@@ -56,12 +56,19 @@ export function createAppendHelpers({
       // 配合下面的 ON CONFLICT DO NOTHING —— 唯一性由数据库裁决，并发下必然只有一条落地。
       // 保留 WHERE NOT EXISTS 是因为它还多管一件唯一索引管不了的事：已读通知在 4 小时冷却期内
       // 不重复提醒（已读行不在部分索引里，只能靠这个子查询挡）。两者职责不同，都要留着。
+      //
+      // 2026-08-06（migration 184）：target_username 已改为 citext，比较天生忽略大小写，
+      // 所以这里写 `target_username = $1` 而不是 `lower(target_username) = lower($1)`。
+      // ⚠️ 这不只是"更简洁"——写成 lower($1) 会直接报错 42P08
+      // `inconsistent types deduced for parameter $1: text versus citext`：
+      // 同一个 $1 既作为 citext 列的插入值、又被 lower() 当 text 用，Postgres 推断不出类型，
+      // 整条语句失败（= 所有通知写不进去）。citext 列的参数不要再套 lower()。
       await pool.query(
         `INSERT INTO hrms_user_notifications (target_username, title, message, type, meta, created_at, tenant_id)
          SELECT $1,$2,$3,$4,$5,$6,$7
           WHERE NOT EXISTS (
             SELECT 1 FROM hrms_user_notifications
-             WHERE lower(target_username) = lower($1) AND type = $4 AND message = $3
+             WHERE target_username = $1 AND type = $4 AND message = $3
                AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
           )
          ON CONFLICT DO NOTHING`,

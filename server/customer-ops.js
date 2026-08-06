@@ -19,7 +19,15 @@ const log = childLogger({ domain: 'customer-ops', handler: 'service' });
 
 /** Listen-time ensure* stays here (not under domains/) — B5 freeze gate. */
 async function ensureCustomerOpsTables(pool) {
-  await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_diagnoses (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', store_name TEXT, source_filename TEXT, report_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
+  // 2026-08-06：本文件的用户名列（username / created_by）必须建成 CITEXT，与 migration 184
+  // 保持一致——否则同一个人会因为写入方大小写不一致被拆成两个身份。
+  // 这里需要显式确保扩展存在：本文件是 **listen-time 建表**，在"先跑 migration 再启动"的
+  // 环境（CI/新库）里，这几张表是在 184 跑完之后才被创建的，184 扫不到它们，
+  // 它们不会被自动转换——CI 实测正是 customer_ops_diagnoses.created_by /
+  // customer_segments.created_by 两列漏网打红了 username-citext-gate。
+  // 闸门：server/test/integration/username-citext-gate.test.mjs
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS citext`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_diagnoses (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', store_name TEXT, source_filename TEXT, report_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by CITEXT, created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_diag_tenant_created ON customer_ops_diagnoses (tenant_id, created_at DESC)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS customer_ops_profiles (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', diagnosis_id BIGINT REFERENCES customer_ops_diagnoses(id) ON DELETE CASCADE, customer_id TEXT, customer_key TEXT, phone TEXT, profile_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_profiles_diag ON customer_ops_profiles (tenant_id, diagnosis_id)`);
@@ -29,7 +37,7 @@ async function ensureCustomerOpsTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_ops_source_phone ON customer_ops_source_records (tenant_id, phone) WHERE phone IS NOT NULL AND phone <> ''`);
 
   // 模块2：自定义客群分层
-  await pool.query(`CREATE TABLE IF NOT EXISTS customer_segments (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', name TEXT NOT NULL, criteria_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS customer_segments (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', name TEXT NOT NULL, criteria_json JSONB NOT NULL DEFAULT '{}'::jsonb, created_by CITEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_segments_tenant ON customer_segments (tenant_id, created_at DESC)`);
 
   // 模块3：营销活动台账
@@ -38,7 +46,7 @@ async function ensureCustomerOpsTables(pool) {
   // 不会补上下面这些新字段——历史上这个缺口只在生产库上手动ALTER过、未进代码，
   // 新环境(比如全新客户/demo)首次启动就会在下一行CREATE INDEX时因缺列报错。
   // 这里显式补齐，保证无论老表(缺列)还是全新库(建表已含全部列)都能正常往下走。
-  await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaigns (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', title TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'offline', campaign_type TEXT DEFAULT '其他', status TEXT NOT NULL DEFAULT 'planned', planned_date DATE, planned_end_date DATE, store_ids JSONB DEFAULT '[]'::jsonb, target_audience TEXT DEFAULT '', target_count INT DEFAULT 0, content TEXT DEFAULT '', goal TEXT DEFAULT '', budget NUMERIC DEFAULT 0, reminder_date DATE, source TEXT DEFAULT 'manual', created_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS marketing_campaigns (id BIGSERIAL PRIMARY KEY, tenant_id VARCHAR(80) NOT NULL DEFAULT 'default', title TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'offline', campaign_type TEXT DEFAULT '其他', status TEXT NOT NULL DEFAULT 'planned', planned_date DATE, planned_end_date DATE, store_ids JSONB DEFAULT '[]'::jsonb, target_audience TEXT DEFAULT '', target_count INT DEFAULT 0, content TEXT DEFAULT '', goal TEXT DEFAULT '', budget NUMERIC DEFAULT 0, reminder_date DATE, source TEXT DEFAULT 'manual', created_by CITEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'offline'`);
   await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS campaign_type TEXT DEFAULT '其他'`);
   await pool.query(`ALTER TABLE marketing_campaigns ADD COLUMN IF NOT EXISTS planned_date DATE`);
@@ -71,7 +79,7 @@ async function ensureCustomerOpsTables(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_sessions_tenant_started ON training_sessions (tenant_id, started_at)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS training_certifications (id SERIAL PRIMARY KEY, session_id INTEGER NOT NULL DEFAULT 0, employee_username VARCHAR(100) NOT NULL, topic_id INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_training_certifications_tenant_created ON training_certifications (tenant_id, created_at)`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS ${SHARED_TABLES.AGENT_SCORES} (id SERIAL PRIMARY KEY, username TEXT, total_score NUMERIC DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS ${SHARED_TABLES.AGENT_SCORES} (id SERIAL PRIMARY KEY, username CITEXT, total_score NUMERIC DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), tenant_id VARCHAR(80) NOT NULL DEFAULT 'default')`);
   await pool.query(`ALTER TABLE ${SHARED_TABLES.AGENT_SCORES} ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(80) NOT NULL DEFAULT 'default'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_scores_tenant_created ON ${SHARED_TABLES.AGENT_SCORES} (tenant_id, created_at)`);
 }

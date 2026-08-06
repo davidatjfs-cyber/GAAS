@@ -113,7 +113,12 @@ test('appendNotifications：判重条件必须覆盖同用户+同类型+同文�
   assert.equal(calls.query.length, 1);
   const sql = String(calls.query[0][0]);
   assert.match(sql, /WHERE NOT EXISTS/);
-  assert.match(sql, /lower\(target_username\) = lower\(\$1\)/);
+  // 2026-08-06（migration 184）：target_username 已是 citext，比较天生忽略大小写，
+  // 所以判重条件写裸比较。**不能**改回 lower(target_username) = lower($1)：$1 同时是
+  // citext 列的插入值，套上 lower() 会让 Postgres 报 42P08（text versus citext）、
+  // 整条语句失败，等于所有通知写不进去。闸门见 test/citext-param-conflict-gate.test.mjs。
+  assert.match(sql, /WHERE target_username = \$1/);
+  assert.doesNotMatch(sql, /lower\(\s*\$1\s*\)/);
   assert.match(sql, /type = \$4/);
   assert.match(sql, /message = \$3/);
   assert.match(sql, /read_at IS NULL OR read_at > NOW\(\) - INTERVAL '4 hours'/);

@@ -91,7 +91,7 @@ test('hrms_user_notifications：同一条未读通知并发插入只落地一份
        SELECT $1,$2,$3,$4,$5,NOW(),'default'
         WHERE NOT EXISTS (
           SELECT 1 FROM hrms_user_notifications
-           WHERE lower(target_username) = lower($1) AND type = $4 AND message = $3
+           WHERE target_username = $1 AND type = $4 AND message = $3
              AND (read_at IS NULL OR read_at > NOW() - INTERVAL '4 hours')
         )
        ON CONFLICT DO NOTHING`,
