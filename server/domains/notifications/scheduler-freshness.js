@@ -3,6 +3,7 @@
  * Wave H13 peel from index.js.
  */
 import { childLogger } from '../../utils/logger.js';
+import { beatHeartbeatSimple } from '../health/monitor-beat.js';
 
 const log = childLogger({ domain: 'notifications', handler: 'freshness' });
 
@@ -25,18 +26,13 @@ async function hasSentTodayPersisted(pool, taskName, ymd) {
   }
 }
 
+// 2026-08-06：原先这里内联了一份自己的 UPSERT，只写 last_beat/run_count。migration 180 给
+// scheduler_heartbeat 加了 last_success_at 之后，这种绕过 beatHeartbeatSimple 的写法会让
+// last_beat 一直更新、last_success_at 永远停在回填时刻 —— 监控据此判定「在跑但一直没成功」，
+// 产生假告警（health_sla_reminder_daily / health_queue_digest_daily 上线当天就中招）。
+// 心跳只允许有一个写入方。
 async function markSentTodayPersisted(pool, taskName) {
-  try {
-    await pool.query(
-      `INSERT INTO scheduler_heartbeat (task_name, last_beat, run_count, tenant_id)
-       VALUES ($1, NOW(), 1, 'default')
-       ON CONFLICT (task_name)
-       DO UPDATE SET last_beat = NOW(), run_count = scheduler_heartbeat.run_count + 1`,
-      [taskName]
-    );
-  } catch (_e) {
-    /* ignore */
-  }
+  await beatHeartbeatSimple(pool, taskName);
 }
 
 export function createFreshnessMonitorScheduler({
