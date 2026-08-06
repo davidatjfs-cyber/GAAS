@@ -44,6 +44,7 @@
           {p:'reports',l:'分析报表'},
           {p:'training',l:'培训认证'},
           {p:'customer-twin-review',l:'培训卡审核'},
+          {p:'customer-twin-dish-test',l:'菜品测试'},
           {p:'kitchen',l:'厨房执行'},
           {p:'agents',l:'数据中心/智能助手'},
           {p:'forecast',l:'智能助手(预测)'},
@@ -771,6 +772,10 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 try { ctrEnsureContainer(); } catch (e) {}
             }
 
+            if (pageName === 'customer-twin-dish-test' && typeof cdtEnsureContainer === 'function') {
+                try { cdtEnsureContainer(); } catch (e) {}
+            }
+
             if (pageName === 'users') {
                 if (!isAdminUser()) {
                     showNotification('仅管理员可访问该模块', 'warning');
@@ -909,6 +914,13 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 }
             }
 
+            if (pageName === 'customer-twin-dish-test') {
+                if (!isAdminUser()) {
+                    showNotification('仅管理员可访问该模块', 'warning');
+                    pageName = getHomePageName();
+                }
+            }
+
             if (pageName === 'rewards') {
                 try {
                     const locked = !!(window.__REWARDS_FILTER_LOCK || __REWARDS_FILTER_LOCK);
@@ -1005,6 +1017,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         growth: '增长看板',
                         diagnosis: '经营诊断',
                         'customer-twin-review': '培训卡审核',
+                        'customer-twin-dish-test': '菜品测试',
                         'agent-tasks': 'Agent任务',
                         strategy: '门店营销策略',
                         flashcards: '自我测验',
@@ -1114,6 +1127,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     break;
                 case 'customer-twin-review':
                     loadCustomerTwinReviewPage();
+                    break;
+                case 'customer-twin-dish-test':
+                    loadDishTestPage();
                     break;
                 case 'files':
                     if (currentUser?.role !== 'admin') {
