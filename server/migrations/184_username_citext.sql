@@ -33,6 +33,48 @@
 
 CREATE EXTENSION IF NOT EXISTS citext;
 
+-- ── 前置：合并「同一个人被拆成两个身份」造成的重复行 ────────────────────────────
+-- 转 citext 后大小写不再区分，含用户名列的唯一约束会把这些行判定为重复而建不起来。
+-- 2026-08-07 生产实测：第一次执行就因 store_duty_bindings_username_store_key 失败并整体回滚
+-- （事务保护生效，库无损）。事后用「遍历所有含用户名列的唯一索引 + 按 lower() 分组查重复」
+-- 的方式系统排查，全库只有下面两处，都是同一个人（NNYXYF26/nnyxyf26、NNYXGY70/nnyxgy70、
+-- NNYXXB08/nnyxxb08）的重复记录——正是本 migration 要根治的病症本身。
+
+-- 1) user_reads：同一个人用两种大小写读了同一条内容。保留最早的 read_at
+--    （"第一次读到"才是事实；两条都代表已读，合并不改变任何人的已读状态）。
+UPDATE user_reads a
+   SET read_at = LEAST(a.read_at, (
+         SELECT MIN(b.read_at) FROM user_reads b
+          WHERE lower(b.username) = lower(a.username) AND b.module = a.module
+            AND b.item_key = a.item_key AND b.tenant_id = a.tenant_id))
+ WHERE EXISTS (SELECT 1 FROM user_reads b
+                WHERE lower(b.username) = lower(a.username) AND b.module = a.module
+                  AND b.item_key = a.item_key AND b.tenant_id = a.tenant_id
+                  AND b.username <> a.username);
+DELETE FROM user_reads a
+ USING user_reads b
+ WHERE lower(a.username) = lower(b.username) AND a.module = b.module
+   AND a.item_key = b.item_key AND a.tenant_id = b.tenant_id
+   AND a.username <> b.username
+   -- 保留与 users 表标准写法一致的那条；两条都不匹配时保留字典序靠前的，保证确定性
+   AND (b.username IN (SELECT username FROM users) OR
+        (a.username NOT IN (SELECT username FROM users) AND a.username > b.username));
+
+-- 2) store_duty_bindings：同一人在同一门店有两条绑定。
+--    2026-08-07 与用户确认后保留 users 表标准写法（大写）那条，理由：
+--      - 用户名与 users 表一致；
+--      - metadata 带职责标签（主负责 / 监管+sm_accountable），信息更完整；
+--      - 无 effective_to，不会在 2027 年到期后静默失去权限。
+--    权限零影响：实测两条在 is_primary_store / can_approve_hrms / can_view_employees
+--    上完全相同，且 loadActiveDutyRowsForUser 本来就用 lower(trim(username)) 匹配，
+--    也就是说这两条此前一直同时生效，合并后行为不变。
+DELETE FROM store_duty_bindings a
+ USING store_duty_bindings b
+ WHERE lower(a.username) = lower(b.username) AND lower(a.store) = lower(b.store)
+   AND a.tenant_id = b.tenant_id AND a.username <> b.username
+   AND (b.username IN (SELECT username FROM users) OR
+        (a.username NOT IN (SELECT username FROM users) AND a.username > b.username));
+
 DO $$
 DECLARE
   r record;
