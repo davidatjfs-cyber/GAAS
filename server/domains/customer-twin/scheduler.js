@@ -6,6 +6,7 @@
 
 import { childLogger } from '../../utils/logger.js';
 import { generateIncidentCards, countPendingTwinCards } from './incident-generator.js';
+import { syncDishData } from './feishu-dish-sync.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'scheduler' });
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
@@ -46,4 +47,31 @@ export function startCustomerTwinSchedulers(pool, sendOpsAlert) {
     }, next - now);
   };
   schedule();
+
+  // 菜品属性 + 新品研发记录每日同步（06:50，早于培训卡生成）
+  if (globalThis.__customerTwinDishSyncSchedulerStarted) return;
+  globalThis.__customerTwinDishSyncSchedulerStarted = true;
+  const scheduleDish = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(6, 50, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    safeSetTimeout(async () => {
+      try {
+        const result = await syncDishData(pool);
+        log.info({ msg: 'customer_twin_dish_sync_scheduled_done', result });
+      } catch (e) {
+        log.error({ msg: 'customer_twin_dish_sync_scheduled_failed', err: e?.message || String(e) });
+        if (typeof sendOpsAlert === 'function') {
+          sendOpsAlert(
+            `⚠️ 【菜品测试数据同步失败】${String(e?.message || e).slice(0, 400)}`,
+            { title: '菜品测试同步' }
+          ).catch(() => {});
+        }
+      } finally {
+        scheduleDish();
+      }
+    }, next - now);
+  };
+  scheduleDish();
 }
