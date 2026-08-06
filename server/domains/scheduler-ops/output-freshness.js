@@ -54,9 +54,12 @@ export const OUTPUT_FRESHNESS_ASSERTIONS = [
     key: 'pos_order_items',
     label: 'POS 销售明细',
     produces: 'GAAS POS 导入（pos_sales_check / pos_feishu_sync_cron）',
-    maxAgeHours: 48,
+    // 2026-08-06 用户确认：POS 明细实际按周更新，不是每日——48h 阈值对这条业务节奏来说
+    // 太紧，会在正常的周内间隔里误报。给 9 天（跟本文件其它"每周一次"断言口径一致），
+    // 真正断了一个完整周期以上才算异常。
+    maxAgeHours: 9 * 24,
     sql: `SELECT MAX(checkout_time) AS latest FROM pos_order_items`,
-    note: '营收类口径的唯一权威来源',
+    note: '营收类口径的唯一权威来源；按周更新，非每日',
   },
   {
     key: 'master_tasks',
