@@ -2,6 +2,7 @@
  * 活动计划 / 营销模板 / 门店排行（从 growth-phases Phase 3 外提）。
  */
 import { cleanText } from '../growth-phase-auth.js';
+import { storeNameToId } from '../../brands-config.js';
 
 function parseOccurredAt(value) {
   if (!value) return new Date();
@@ -60,9 +61,11 @@ export async function createCampaignPlanFromExperiment(pool, tenantId, {
   approver = 'admin', plannedStart = null, plannedEnd = null,
 }) {
   const fields = planFields && typeof planFields === 'object' ? planFields : {};
+  // 门店名 → growth 门店编码（如 51866138/64822111），与增长看板门店筛选/活动计划口径一致
+  const storeId = storeNameToId(store) || String(store || '').slice(0, 128);
   const plan = await upsertCampaignPlan(pool, tenantId, {
     plan_id: `exp:${String(code || '').slice(0, 60)}:${String(variantCode).slice(0, 10)}`,
-    store_id: String(store || '').slice(0, 128),
+    store_id: storeId,
     campaign_id: String(code || '').slice(0, 128),
     title: String(fields['策略名称'] || title || '营销活动方案').slice(0, 500),
     channel: String(fields['投放渠道'] || 'wecom').slice(0, 80),
