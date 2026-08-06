@@ -4969,11 +4969,6 @@ th { background: #F2EAEE; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
             }
-            // 菜品测试：仅系统管理员可见（硬边界）
-            if (page === 'customer-twin-dish-test') {
-                const r = String(role == null ? currentUser?.role : role || '').trim();
-                return r === ROLES.ADMIN;
-            }
             if (page === 'strategy') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.PRODUCTION_MANAGER;

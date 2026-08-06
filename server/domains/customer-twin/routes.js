@@ -14,7 +14,6 @@ import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js'
 import { PERSONA_KEYS } from './persona-schema.js';
 import { createCustomerTwinAdminRequired } from './admin-guard.js';
 import { syncDishData } from './feishu-dish-sync.js';
-import { listDishOptions, runDishTest } from './dish-test.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -120,26 +119,4 @@ export function registerCustomerTwinRoutes(ctx) {
     }
   });
 
-  app.get('/api/customer-twin/dish-test/options', twinAdminRequired, async (req, res) => {
-    try {
-      const brand = String(req.query?.brand || '').trim();
-      res.json({ ok: true, dishes: await listDishOptions(pool, brand) });
-    } catch (e) {
-      log.error({ msg: 'twin_dish_options', err: e?.message || e });
-      res.status(500).json({ ok: false, error: 'server_error' });
-    }
-  });
-
-  app.post('/api/customer-twin/dish-test/run', twinAdminRequired, async (req, res) => {
-    try {
-      const brand = String(req.body?.brand || '').trim();
-      const dishName = String(req.body?.dish_name || '').trim();
-      if (!brand || !dishName) return res.status(400).json({ ok: false, error: 'missing_brand_or_dish' });
-      const result = await runDishTest(pool, { brand, dishName });
-      res.status(result.ok ? 200 : 404).json(result);
-    } catch (e) {
-      log.error({ msg: 'twin_dish_test_run', err: e?.message || e });
-      res.status(500).json({ ok: false, error: 'server_error' });
-    }
-  });
 }
