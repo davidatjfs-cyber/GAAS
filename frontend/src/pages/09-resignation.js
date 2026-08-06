@@ -965,6 +965,7 @@
                     level: (n.meta && n.meta.priority === 'A') ? 'urgent' : 'system',
                     meta: n.meta || {},
                     readAt: n.readAt || null,
+                    type: String(n.type || ''),
                     _src: 'db_notification',
                     _id: 'db-' + n.id,
                     id: String(n.id || '')
@@ -1009,6 +1010,9 @@
                     return !rb[myUsername];
                 }
                 if (a._src === 'db_notification') {
+                    // 默认不拦截：只有 FORCE_ACK_NOTIFICATION_TYPES 里显式登记过的类型才全屏强制确认，
+                    // 理由见该常量上方注释（这是把黑名单反转成白名单的关键一行，别改回 !== 判断）。
+                    if (!FORCE_ACK_NOTIFICATION_TYPES.has(String(a.type || ''))) return false;
                     return !(a.readAt != null && String(a.readAt).trim() !== '');
                 }
                 return false;
@@ -1139,6 +1143,29 @@
         // 重要公告强制确认队列：一个一个弹，点"我已阅读"才关掉当前这个并弹下一个
         // 强制确认上线时间：只有这个时间之后发布的公告才会强制弹窗，历史公告不受影响
         const ANNOUNCEMENT_FORCE_ACK_SINCE = '2026-06-26T00:00:00.000Z';
+
+        // 2026-08-06：有资格「全屏强制确认」的通知类型白名单。**默认不拦截**——不在这个列表里的
+        // 类型一律只进档案页通知列表（带红点），不会打断用户。
+        //
+        // 为什么是白名单而不是黑名单：这个弹窗从 7 月起反复"修好又复发"，5 周内 118 个相关提交、
+        // 4 个声称"根因/永久修复"。复盘下来每一轮都是同一个类别的修法——在观察到问题的地方补一条
+        // 排除规则。但只要默认值是"所有通知都能全屏拦人"，下一个新增的通知类型就会自动继承拦截权，
+        // 而加它的人根本不知道有这么一份黑名单要同步维护，于是必然再次复发。
+        // 反转默认值之后，新类型天生无害：想要打断用户必须显式登记到这里，是一个需要主动做的决定，
+        // 不再是"忘了排除"的默认后果。
+        //
+        // 入选标准（严格）：这条通知如果被漏看，会对当事人造成实际损失或合规问题。
+        //  - 备案类：对本人的负面记录，管理上需要"已知晓"回执
+        //  - 审批结果类：直接影响个人切身利益（离职/晋升/入职），不能漏看
+        // 运维告警（system_alert）、提醒类（生日/排班/训练报告）、结果通知（积分）一律不入选：
+        // 它们由 cron 持续产生、量大、且历史上多次误报，逐条全屏拦截只会把真正重要的淹没掉。
+        const FORCE_ACK_NOTIFICATION_TYPES = new Set([
+            'attitude_filing',            // 工作态度备案
+            'execution_rating_daily',     // 工作执行力备案
+            'offboarding_result',         // 离职审批结果
+            'promotion_result',           // 晋升审批结果
+            'onboarding_result',          // 入职审批结果
+        ]);
         let __ackAnnouncementQueue = [];
         function formatAckAnnouncementHtml(item) {
             const raw = String(item?.content || '').trim();

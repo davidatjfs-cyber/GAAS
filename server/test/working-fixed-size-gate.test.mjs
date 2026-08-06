@@ -347,8 +347,14 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 待审建议/推送池/门店回填/门店画像四区块），并把业务确认的真实渠道
  * （大众点评/小红书/企微/抖音）接入增长页；JS 走 frontend/src/pages，页面结构区在
  * working-fixed.html body，均未堆内联主 script 业务逻辑。
+ * 2026-08-06 第六十八次上调（72727→72754）：强制确认弹窗由「黑名单」反转为「白名单」
+ * （FORCE_ACK_NOTIFICATION_TYPES，默认不拦截，只有备案类/审批结果类才全屏）。净新增 27 行里
+ * 判定逻辑只有 6 行，其余全是成因注释——记录这个弹窗为何在 5 周内复发 4 次（118 个相关提交、
+ * 4 次声称"根因修复"），以及为什么黑名单形态必然复发。注释写在拆分源
+ * frontend/src/pages/09-resignation.js 里，bundle 后原样带进主 script，非内联新写的业务代码。
+ * 闸门 server/test/forced-ack-whitelist-gate.test.mjs 防止改回黑名单写法。
  */
-const MAX_LINES = 72727;
+const MAX_LINES = 72754;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
