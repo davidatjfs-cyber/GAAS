@@ -146,3 +146,22 @@ test('心跳表里的一次性去重标记不会被当成定时任务', () => {
   assert.equal(r.tasks.length, 1);
   assert.equal(r.ok, true);
 });
+
+test('心跳只允许一个写入方：不得再出现绕过 beatHeartbeat 的内联 UPSERT', async () => {
+  // 2026-08-06 事故：tenant-health-ops-scheduler / scheduler-freshness 各自内联了一份
+  // 只写 last_beat/run_count 的 UPSERT。migration 180 加 last_success_at 后，这类写法会让
+  // last_beat 一直更新、last_success_at 永远不动 → 被误判「在跑但一直没成功」。
+  const { readFileSync } = await import('node:fs');
+  const { execSync } = await import('node:child_process');
+  const out = execSync(
+    "grep -rln 'INSERT INTO scheduler_heartbeat' server --include='*.js' || true",
+    { cwd: new URL('../../../..', import.meta.url).pathname, encoding: 'utf8' }
+  ).trim();
+  const files = out ? out.split('\n').filter((f) => !f.includes('__tests__')) : [];
+  assert.deepEqual(
+    files,
+    ['server/domains/health/monitor-beat.js'],
+    `心跳 UPSERT 只应存在于 monitor-beat.js，实际还出现在：${files.join(', ')}`
+  );
+  assert.ok(readFileSync(new URL('../monitor-beat.js', import.meta.url), 'utf8').includes('last_success_at'));
+});
