@@ -522,3 +522,20 @@ HTML/CSS 改动会留下，只有 JS 没了，所以现象非常迷惑：功能�
 4. 验证：shell 返回 `Cache-Control: no-cache`+ETag；`app.<hash>.js/.css` 返回 immutable。
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+### ⚠️ 用户名一律大小写不敏感（citext），新建列不要用 text/varchar
+
+`users.username` 及所有引用它的列（`username` / `target_username` / `assignee_username` /
+`created_by`）在 2026-08-06 的 migration 184 里全部改成了 **citext**，共 96 列。
+
+- **语义**：大小写不同的用户名就是同一个账号。`users.username` 的唯一索引因此变成大小写不敏感，
+  **建不出 `Foo` 和 `foo` 两个账号**。
+- **为什么不是逐个补 `lower()`**：改造前代码里 120 处记得写 `lower(username)`、94 处没写——
+  典型的「一半人记得的约定」。补完这 94 处，下一个新写的 SQL 照样会漏。改成列的类型属性后，
+  那 94 处裸 `username = $1` **自动正确**，新代码也不需要记得写 `lower()`。
+- **新建表/加列时**：用户名列直接用 `citext`。闸门
+  `server/test/integration/username-citext-gate.test.mjs` 会扫描所有基表，
+  发现 text/varchar 的用户名列直接打红 CI。
+- **例外**：`user_login_log.username` 虽然也转了 citext（比较忽略大小写），但它存的值
+  **保留用户当时输入的原文**，migration 的归一化步骤显式跳过它——那是审计事实，不能改写。
+- citext 只改变**比较**语义，不改变存储值；已有的 `lower(username)` 写法继续有效，不需要清理。
