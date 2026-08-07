@@ -2338,7 +2338,7 @@
                             + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
                             + '<div style="flex:1;min-width:0;">'
                             + '<span style="display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(209,143,160,0.18);color:#D18FA0;font-weight:700;margin-right:6px;vertical-align:middle;">🧭 PLLM策略实验</span>'
-                            + (anomaly ? '<span style="font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(207,161,74,0.15);color:#CFA14A;font-weight:600;margin-right:6px;vertical-align:middle;">' + escapeHtml(anomaly) + '</span>' : '')
+                            + (anomaly ? '<span style="font-size:10px;padding:1px 7px;border-radius:999px;background:rgba(207,161,74,0.15);color:#CFA14A;font-weight:600;margin-right:6px;vertical-align:middle;">' + escapeHtml(typeof hrmsAnomalyLabel === 'function' ? hrmsAnomalyLabel(anomaly) : anomaly) + '</span>' : '')
                             + '<span style="font-weight:700;color:#fff;font-size:14px;">' + escapeHtml(x.title || '-') + '</span>'
                             + '<span style="margin-left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(207,161,74,0.15);color:#CFA14A;font-weight:600;">⚡ 待审批</span>'
                             + '</div>'
@@ -3005,14 +3005,29 @@
             if (!host) return;
             host.innerHTML = '<div class="rep-pay-empty">加载中…</div>';
             try {
-                var r = await fetch('/api/workspace/marketing-suggestions', { headers: growthAuthHeaders() });
+                // 统一审核队列：策略实验（每日任务/异常派工/PLLM）+ growth_actions(proposed) 聚合
+                var r = await fetch('/api/marketing/review-queue', { headers: growthAuthHeaders() });
                 var d = await r.json();
                 var items = Array.isArray(d?.items) ? d.items : [];
-                if (!items.length) { host.innerHTML = '<div class="rep-pay-empty">暂无待审核营销建议（每天 09:30 生成）</div>'; return; }
+                if (!items.length) { host.innerHTML = '<div class="rep-pay-empty">暂无待审核营销建议（每天 09:30 生成，规则引擎/AI建议也会进这个队列）</div>'; return; }
                 host.innerHTML = items.map(function (it) {
-                    var fb = it.feedback ? ('近30天本店审核：采纳 ' + it.feedback.approved + ' / 拒绝 ' + it.feedback.rejected +
-                        (it.feedback.topReasons && it.feedback.topReasons.length ? ' · ' + it.feedback.topReasons.map(function (t) { return t.label + (t.count > 1 ? '×' + t.count : ''); }).join('、') : '')) : '';
-                    var vs = (it.variants || []).map(function (v) {
+                    if (it.kind === 'growth_action') {
+                        var storeName = (window.__GROWTH_STORE_MAP && __GROWTH_STORE_MAP[it.store]) || it.store || '';
+                        var gaOpts = wsMarketingAssigneeOptions(storeName);
+                        return '<div style="border:1px solid rgba(134,201,162,0.16);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(0,0,0,0.18);">'
+                            + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div style="font-weight:800;color:#fff;font-size:14px;">' + escHtml((storeName || '') + ' — ' + (it.title || '')) + '</div>'
+                            + '<span style="font-size:11px;color:#86C9A2;">' + escHtml(it.sourceLabel || 'AI建议') + (it.channelLabel ? ' · ' + escHtml(it.channelLabel) : '') + '</span></div>'
+                            + '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.55;color:rgba(242,234,238,0.82);background:rgba(0,0,0,.2);border-radius:8px;padding:8px;margin:6px 0;max-height:200px;overflow:auto;">' + escHtml(it.detail || '') + '</pre>'
+                            + (gaOpts.empty
+                                ? '<div style="font-size:12px;color:#EDA1AC;margin-bottom:8px;">本店未配置店长/前厅主管，无法派发</div>'
+                                : '<div style="font-size:12px;margin:8px 0;">责任人：<select data-mkt-ga-assignee="' + escHtml(it.actionKey || '') + '" style="min-width:180px;padding:7px 10px;border-radius:8px;border:1px solid rgba(242,234,238,0.15);background:rgba(0,0,0,0.35);color:var(--rep-text);">' + gaOpts.html + '</select></div>')
+                            + '<div style="display:flex;gap:8px;margin-top:8px;"><button data-click="mktReviewApproveAction" data-arg="' + escHtml(it.actionKey || '') + '" data-arg-self style="padding:8px 14px;border:none;border-radius:9px;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px;font-weight:700;">通过·派发执行</button>'
+                            + '<button data-click="mktReviewIgnoreAction" data-arg="' + escHtml(it.actionKey || '') + '" style="padding:8px 14px;border:1px solid rgba(229,139,152,0.5);border-radius:9px;background:transparent;color:#EDA1AC;cursor:pointer;font-size:13px;">不适合·忽略</button></div>'
+                            + '</div>';
+                    }
+                    var fb = it.payload && it.payload.feedback ? ('近30天本店审核：采纳 ' + it.payload.feedback.approved + ' / 拒绝 ' + it.payload.feedback.rejected +
+                        (it.payload.feedback.topReasons && it.payload.feedback.topReasons.length ? ' · ' + it.payload.feedback.topReasons.map(function (t) { return t.label + (t.count > 1 ? '×' + t.count : ''); }).join('、') : '')) : '';
+                    var vs = (it.payload && it.payload.variants || []).map(function (v) {
                         var opts = wsMarketingAssigneeOptions(v.store);
                         return '<div style="border:1px solid rgba(209,143,160,0.18);border-radius:10px;padding:10px;margin:8px 0;background:rgba(209,143,160,0.04);">'
                             + '<div style="font-weight:700;color:#fff;">方案' + escHtml(v.variantCode || 'A') + (v.label ? ' — ' + escHtml(v.label) : '') + '（' + escHtml(v.store || '') + '）</div>'
@@ -3024,7 +3039,7 @@
                             + '</div>';
                     }).join('');
                     return '<div style="border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(0,0,0,0.18);">'
-                        + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div style="font-weight:800;color:#fff;font-size:14px;">' + escHtml((it.store || '') + ' — ' + (it.title || '')) + '</div><span style="font-size:11px;color:#EABBC5;">' + escHtml(it.anomalyType || '') + '</span></div>'
+                        + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div style="font-weight:800;color:#fff;font-size:14px;">' + escHtml((it.store || '') + ' — ' + (it.title || '')) + '</div><span style="font-size:11px;color:#EABBC5;">' + escHtml(it.sourceLabel || '') + (it.anomalyLabel ? ' · ' + escHtml(it.anomalyLabel) : '') + '</span></div>'
                         + (fb ? '<div style="font-size:11px;opacity:.65;margin:4px 0;">' + escHtml(fb) + '</div>' : '')
                         + vs
                         + '<div style="display:flex;gap:8px;margin-top:8px;"><button data-click="mktReviewApprove" data-arg="' + escHtml(it.actionKey || '') + '" data-arg-self style="padding:8px 14px;border:none;border-radius:9px;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px;font-weight:700;">通过·进入推送池</button>'
@@ -3067,6 +3082,41 @@
                 var d = await r.json();
                 if (!d.ok) throw new Error(d.error || 'reject_failed');
                 showNotification('已拒绝，原因已回流给 AI', 'info');
+                loadGrowthMarketingReview();
+            } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function mktReviewApproveAction(actionKey, btn) {
+            if (!actionKey) return;
+            var card = btn && btn.closest ? btn.closest('div[style*="border"]') : null;
+            var sel = card ? card.querySelector('[data-mkt-ga-assignee]') : null;
+            if (!sel) { showNotification('请先选择责任人', 'warning'); return; }
+            if (!confirm('通过该 AI 营销建议？\n\n将派发给所选责任人并生成任务，由门店人工按方案执行并回填结果。')) return;
+            try {
+                var r = await fetch('/api/growth/actions/' + encodeURIComponent(actionKey) + '/assign-and-execute', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ assigneeUsername: sel.value })
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'assign_failed');
+                showNotification('已派发执行，任务进入责任人待办', 'success');
+                loadGrowthMarketingReview();
+            } catch (e) { showNotification('派发失败：' + (e?.message || e), 'error'); }
+        }
+
+        async function mktReviewIgnoreAction(actionKey) {
+            if (!actionKey) return;
+            var reason = typeof hrmsAskMarketingRejectReason === 'function' ? await hrmsAskMarketingRejectReason() : null;
+            if (!reason) return;
+            var reasonText = reason.primary + (reason.note ? '：' + reason.note : '');
+            try {
+                var r = await fetch('/api/growth/actions/' + encodeURIComponent(actionKey) + '/ignore', {
+                    method: 'POST', headers: Object.assign({}, growthAuthHeaders(), { 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ reason: reasonText })
+                });
+                var d = await r.json();
+                if (!d.ok) throw new Error(d.error || 'ignore_failed');
+                showNotification('已忽略，原因已记录', 'info');
                 loadGrowthMarketingReview();
             } catch (e) { showNotification('操作失败：' + (e?.message || e), 'error'); }
         }

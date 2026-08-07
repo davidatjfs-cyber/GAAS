@@ -4,7 +4,7 @@
 import { childLogger } from '../../utils/logger.js';
 import { getWorkspaceHome, promoteDishToStores, respondToTask, confirmTaskResponse, getPendingConfirmations, ackTask, resolveFoodSafetyTask, getMyRecentlyResolvedTasks } from './service.js';
 import { getBossOverview, getMonthlyTargetActuals } from './overview.js';
-import { getMarketingSuggestions } from './marketing-suggestions.js';
+import { getMarketingSuggestions, getMarketingReviewQueue } from './marketing-suggestions.js';
 import { getBadReviewFeed } from './bad-review-feed.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'routes' });
@@ -121,6 +121,21 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
       res.json({ ok: true, items });
     } catch (e) {
       log.error({ msg: 'workspace_marketing_suggestions_failed', request_id: req.requestId, err: e?.message });
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // 统一营销审核队列（2026-08-07）：策略实验待审 + growth_actions(proposed) 聚合到一个端口
+  app.get('/api/marketing/review-queue', authRequired, async (req, res) => {
+    const role = String(req.user?.role || '').trim();
+    if (!['admin', 'hq_manager'].includes(role)) return res.status(403).json({ error: 'forbidden' });
+    const tenantId = resolveTenantIdDefault(req.tenantId);
+    try {
+      const storeFilter = resolveOverviewStoreFilter(req);
+      const items = await getMarketingReviewQueue(pool, tenantId, storeFilter);
+      res.json({ ok: true, items });
+    } catch (e) {
+      log.error({ msg: 'marketing_review_queue_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });
     }
   });

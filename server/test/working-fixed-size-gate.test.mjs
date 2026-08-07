@@ -353,8 +353,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 4 次声称"根因修复"），以及为什么黑名单形态必然复发。注释写在拆分源
  * frontend/src/pages/09-resignation.js 里，bundle 后原样带进主 script，非内联新写的业务代码。
  * 闸门 server/test/forced-ack-whitelist-gate.test.mjs 防止改回黑名单写法。
+ * 2026-08-07 第六十九次上调（72754→72823）：活动审核改为统一审核队列（策略实验 +
+ * growth_actions 聚合一个端口），异常类型/来源全部中文展示，AI建议纳入审核，
+ * 支持动作类建议「通过·派发执行/不适合·忽略」；JS 走 frontend/src/pages。
  */
-const MAX_LINES = 72754;
+const MAX_LINES = 72823;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

@@ -18,6 +18,27 @@ const REJECT_LABELS = {
   cannot_execute: '无法执行', copy_quality: '文案质量差', other: '其他',
 };
 
+const ANOMALY_LABELS = {
+  slot_decline: '时段营收下滑', category_decline: '品类营收下滑', overall_decline: '整体营收下滑',
+  traffic_decline: '客流下滑', bad_review_product: '差评产品', bad_review_service: '差评服务',
+  rising_category_opportunity: '上升品类机会', diner_mix_opportunity: '客群结构机会',
+  marketing: '营销机会', churn_risk: '流失风险', unknown: '经营信号',
+};
+
+const SOURCE_LABELS = {
+  marketing_job: '每日营销建议', master_dispatcher: '营销异常派工', pllm: 'PLLM策略',
+  rule_engine: '自动营销规则', campaign_autopilot: '活动自动生成', agent_v2: 'AI运营建议',
+  agent_collaboration: '智能体协作', admin: '手工/活动激活', marketing_planner: '营销策划',
+};
+
+export function anomalyLabel(code) {
+  return ANOMALY_LABELS[String(code || '')] || String(code || 'unknown');
+}
+
+export function marketingSourceLabel(source) {
+  return SOURCE_LABELS[String(source || '')] || String(source || 'unknown');
+}
+
 /** 门店近 30 天审核反馈摘要（采纳/拒绝/主要拒绝原因），供审核卡片展示 */
 async function loadStoreFeedbackSummary(pool, tenantId, stores) {
   const summary = new Map();
@@ -71,7 +92,7 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
       whereStore = ` AND v.store = ANY($${params.length})`;
     }
     const r = await pool.query(
-      `SELECT e.experiment_code, e.title, e.goal, e.anomaly_type, e.created_at,
+      `SELECT e.experiment_code, e.title, e.goal, e.anomaly_type, e.created_at, e.created_by,
               json_agg(json_build_object(
                 'variantCode', v.variant_code, 'label', v.label,
                 'action', v.action, 'executionGuide', v.execution_guide, 'store', v.store
@@ -124,6 +145,9 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
         title: row.title,
         goal: row.goal,
         anomalyType: row.anomaly_type,
+        anomalyLabel: anomalyLabel(row.anomaly_type),
+        createdBy: row.created_by || 'unknown',
+        sourceLabel: marketingSourceLabel(row.created_by),
         createdAt: row.created_at,
         variants: row.variants || [],
         feedback: fb,
@@ -133,4 +157,73 @@ export async function getMarketingSuggestions(pool, tenantId, storeFilter = [], 
     log.error({ msg: 'marketing_suggestions_failed', err: e?.message || String(e) });
     return [];
   }
+}
+
+/**
+ * 统一营销审核队列（2026-08-07）：所有营销方案生产口的待审输出聚合到一个接口。
+ * 策略实验侧：每日营销任务 marketing_job / 营销异常派工 master_dispatcher / PLLM 桥接；
+ * 动作侧：规则引擎 rule_engine / campaign-autopilot / AI运营建议 agent_v2 / 智能体协作等
+ * 写入的 growth_actions(proposed)。前端审核模块只认这一个端口。
+ */
+export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) {
+  const strategyItems = await getMarketingSuggestions(pool, tenantId, storeFilter);
+  const strategy = strategyItems.map((it) => ({
+    kind: 'strategy_experiment',
+    source: it.createdBy,
+    sourceLabel: it.sourceLabel,
+    actionKey: it.actionKey,
+    store: it.store,
+    title: it.title,
+    detail: it.goal || '',
+    anomalyType: it.anomalyType,
+    anomalyLabel: it.anomalyLabel,
+    channel: null,
+    channelLabel: null,
+    createdAt: it.createdAt,
+    status: 'pending_approval',
+    payload: { variants: it.variants, feedback: it.feedback },
+  }));
+  let actions = [];
+  try {
+    const params = [tenantId];
+    let whereStore = '';
+    if (Array.isArray(storeFilter) && storeFilter.length) {
+      const aliasList = [...new Set(storeFilter.flatMap((s) => expandAgentStoreLabels(s)))];
+      params.push(aliasList);
+      whereStore = ` AND store_id = ANY($${params.length})`;
+    }
+    const r = await pool.query(
+      `SELECT action_key, action_type, status, store_id, title, detail, payload, created_by, created_at
+         FROM growth_actions
+        WHERE tenant_id = $1 AND status = 'proposed'${whereStore}
+        ORDER BY created_at DESC LIMIT 200`,
+      params
+    );
+    actions = (r.rows || []).map((row) => {
+      const payload = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+      const channel = String(payload.channel || '').trim();
+      return {
+        kind: 'growth_action',
+        source: row.created_by || 'unknown',
+        sourceLabel: marketingSourceLabel(row.created_by),
+        actionKey: row.action_key,
+        store: row.store_id || '',
+        title: row.title || '',
+        detail: row.detail || '',
+        anomalyType: null,
+        anomalyLabel: null,
+        channel,
+        channelLabel: channel,
+        createdAt: row.created_at,
+        status: row.status || 'proposed',
+        payload: payload,
+      };
+    });
+  } catch (e) {
+    log.warn({ msg: 'load_review_queue_actions_failed', err: e?.message });
+  }
+  const items = [...strategy, ...actions].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  );
+  return items;
 }
