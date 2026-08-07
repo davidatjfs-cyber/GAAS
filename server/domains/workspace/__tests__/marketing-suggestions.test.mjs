@@ -92,18 +92,25 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
         }] };
       }
       if (/FROM growth_actions/.test(sql)) {
-        return { rows: [
+        const rows = [
           {
             action_key: 'rule:1', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
-            title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback', customer_id: '836' },
+            title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback' },
             created_by: 'rule_engine', created_at: '2026-08-07T02:00',
           },
           {
             action_key: 'rule:1-old', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
-            title: '沉睡客户召回（旧周期残留）', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback', customer_id: '836' },
+            title: '沉睡客户召回（旧周期残留）', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback' },
             created_by: 'rule_engine', created_at: '2026-08-06T02:00',
           },
-        ] };
+          {
+            action_key: 'rule:single-phone', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
+            title: '单客户短信建议', detail: 'd', payload: { channel: 'sms', rule_key: 'dormant_vip_winback', customer_id: '836' },
+            created_by: 'rule_engine', created_at: '2026-08-07T03:00',
+          },
+        ];
+        // 与 SQL 过滤语义一致：单客户级动作不进审核队列
+        return { rows: rows.filter((r) => !(r.payload && r.payload.customer_id)) };
       }
       return { rows: [] };
     },
@@ -112,6 +119,7 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
   const actionsCall = calls.find((c) => /FROM growth_actions/.test(c.sql));
   assert.ok(actionsCall, '应查询 growth_actions');
   assert.match(actionsCall.sql, /30 days/, '待审动作只取近30天，历史僵尸建议不回流');
+  assert.match(actionsCall.sql, /customer_id/, '单客户级动作（每方案只针对一个手机号）不应进审核队列');
   assert.equal(items.length, 2, '同规则同客户的旧周期残留应被去重，只剩最新一条');
   const exp = items.find((x) => x.kind === 'strategy_experiment');
   const action = items.find((x) => x.kind === 'growth_action');
@@ -121,6 +129,7 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
   assert.ok(action);
   assert.equal(action.sourceLabel, '自动营销规则');
   assert.equal(action.payload.channel, 'wecom');
+  assert.equal(action.channelLabel, '企业微信', '渠道码应显示中文');
   assert.equal(action.actionKey, 'rule:1');
   assert.equal(marketingSourceLabel('agent_v2'), 'AI运营建议');
   // 队列按创建时间倒序：growth_action 更新，排前面

@@ -121,7 +121,8 @@ test('runTouchRuleEngine: per-candidate path creates proposed action', async () 
         rows: [{
           rule_key: 'vip_gift',
           enabled: true,
-          approved_at: null,
+          approved_at: new Date(),
+          approved_by: 'admin',
           auto_execute: true,
           criteria: { lifecycle_stage: 'active', value_tier: 'vip' },
           action_payload: {},
@@ -171,6 +172,45 @@ test('runTouchRuleEngine: per-candidate path creates proposed action', async () 
   assert.equal(result.action_keys.length, 1);
 });
 
+test('runTouchRuleEngine: 未审核规则不再生成单客户待审建议（只针对一个手机号的方案是噪音）', async () => {
+  let actionInserted = false;
+  const pool = mockPool((sql) => {
+    if (sql.includes('MAX(biz_date)')) return { rows: [{ latest: '2026-07-26', lag_days: 0 }] };
+    if (sql.includes('growth_touch_rules WHERE enabled')) {
+      return {
+        rows: [{
+          rule_key: 'unapproved_rule',
+          enabled: true,
+          approved_at: null,
+          auto_execute: true,
+          criteria: { lifecycle_stage: 'dormant' },
+          action_payload: {},
+          action_type: 'send_message',
+          name: '未审核规则',
+        }],
+      };
+    }
+    if (sql.includes('growth_customer_profiles cp')) {
+      return {
+        rows: [{
+          customer_id: 7, store_id: 'store-a', phone: '13800138001', lifecycle_stage: 'dormant',
+          value_tier: 'vip', pos_order_count: 5, days_since_last_visit: 90, visit_interval_days: 14,
+          last_visit_at: '2026-04-01', customer_name: '沉睡VIP', external_userid: null,
+          openid: '', favorite_dishes: [],
+        }],
+      };
+    }
+    if (sql.includes('INSERT INTO growth_actions')) {
+      actionInserted = true;
+      return { rows: [] };
+    }
+    return { rows: [] };
+  });
+  const result = await runTouchRuleEngine(pool, {}, baseDeps({ isAliyunSmsConfigured: () => true }));
+  assert.equal(result.created, 0);
+  assert.equal(actionInserted, false, '未审核规则不应生成单客户待审动作');
+});
+
 test('runTouchRuleEngine: dormant winback inserts churn alert', async () => {
   let churnAlertInserted = false;
   const pool = mockPool((sql) => {
@@ -180,7 +220,8 @@ test('runTouchRuleEngine: dormant winback inserts churn alert', async () => {
         rows: [{
           rule_key: 'dormant_vip_winback',
           enabled: true,
-          approved_at: null,
+          approved_at: new Date(),
+          approved_by: 'admin',
           auto_execute: true,
           criteria: { lifecycle_stage: 'dormant', value_tier: 'vip' },
           action_payload: {},
