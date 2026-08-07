@@ -2,10 +2,10 @@
  * 顾客孪生·岗位教练知识库导入准备（dry-run）
  * 把 /Users/xieding/GAAS知识库内容 下的手册按章节拆分，打技能标签，
  * 输出拆分报告（默认不写数据库；--write 才写 knowledge_base）。
- * 用法：node scripts/customer-twin-kb-import.mjs [--dir=路径] [--write]
+ * 用法：node scripts/customer-twin-kb-import.mjs [--dir=路径] [--write] [--limit=N]
  */
 
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DEFAULT_DIR = '/Users/xieding/GAAS知识库内容';
@@ -70,14 +70,16 @@ function parseArgs() {
   const args = process.argv.slice(2);
   let dir = DEFAULT_DIR;
   let write = false;
+  let limit = 0;
   for (const a of args) {
     if (a.startsWith('--dir=')) dir = a.slice(6);
     if (a === '--write') write = true;
+    if (a.startsWith('--limit=')) limit = Number(a.slice(8)) || 0;
   }
-  return { dir, write };
+  return { dir, write, limit };
 }
 
-const { dir, write } = parseArgs();
+const { dir, write, limit } = parseArgs();
 const files = readdirSync(dir).filter((f) => f.endsWith('.md')).sort();
 const records = [];
 const report = { files: [] };
@@ -123,10 +125,49 @@ console.log(JSON.stringify({
   skill_coverage: report.skill_coverage,
 }, null, 1));
 
-writeFileSync(join(process.cwd(), 'docs', 'customer-twin-kb-import-dryrun.json'), JSON.stringify(report, null, 2) + '\n');
-console.log('dry-run 报告已写入 docs/customer-twin-kb-import-dryrun.json');
+const docsDir = join(process.cwd(), 'docs');
+if (existsSync(docsDir)) {
+  writeFileSync(join(docsDir, 'customer-twin-kb-import-dryrun.json'), JSON.stringify(report, null, 2) + '\n');
+  console.log('dry-run 报告已写入 docs/customer-twin-kb-import-dryrun.json');
+} else {
+  console.log('（未找到 docs 目录，跳过 dry-run 报告落盘）');
+}
 
 if (write) {
-  console.error('--write 尚未实现（待确认导入目标后接入 knowledge_base）');
-  process.exit(2);
+  const { default: pg } = await import('pg');
+  if (!process.env.DATABASE_URL) {
+    console.error('缺少 DATABASE_URL');
+    process.exit(2);
+  }
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const batch = limit > 0 ? records.slice(0, limit) : records;
+  let inserted = 0;
+  let updated = 0;
+  for (const rec of batch) {
+    const exists = await pool.query(
+      'SELECT id FROM knowledge_base WHERE title = $1 LIMIT 1',
+      [rec.title]
+    );
+    if (exists.rows.length) {
+      await pool.query(
+        `UPDATE knowledge_base
+            SET content = $2, category = '岗位教练', tags = $3::text[],
+                audience = '{"type":"all"}'::jsonb, enabled = TRUE, updated_at = NOW()
+          WHERE id = $1`,
+        [exists.rows[0].id, rec.content, rec.skills]
+      );
+      updated += 1;
+    } else {
+      await pool.query(
+        `INSERT INTO knowledge_base
+           (title, content, category, tags, enabled, audience, version, tenant_id)
+         VALUES ($1, $2, '岗位教练', $3::text[], TRUE, '{"type":"all"}'::jsonb, '1', 'default')`,
+        [rec.title, rec.content, rec.skills]
+      );
+      inserted += 1;
+    }
+  }
+  await pool.end();
+  console.log(JSON.stringify({ write: true, batch: batch.length, inserted, updated }));
+  process.exit(0);
 }
