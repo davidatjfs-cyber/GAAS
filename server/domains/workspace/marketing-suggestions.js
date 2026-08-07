@@ -195,7 +195,8 @@ export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) 
     const r = await pool.query(
       `SELECT action_key, action_type, status, store_id, title, detail, payload, created_by, created_at
          FROM growth_actions
-        WHERE tenant_id = $1 AND status = 'proposed'${whereStore}
+        WHERE tenant_id = $1 AND status = 'proposed'
+          AND created_at >= NOW() - interval '30 days'${whereStore}
         ORDER BY created_at DESC LIMIT 200`,
       params
     );
