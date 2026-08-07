@@ -250,6 +250,20 @@ export function nextDiagnosticQuestion(extracted = {}) {
   return null;
 }
 
+/**
+ * 诊断就绪判定：有门店数，且(已说出痛点 或 已有城市且意向≥20)。
+ * 原实现要求收满全部槽位(含手机号/决策人)才交付诊断，真实会话里客户很少答满，
+ * 导致 diagnosis_delivered 永远不落地、培育机制跟着空转——这里放宽为"核心信息够用即可出诊断"。
+ */
+export function isDiagnosisReady(extracted = {}, intentScore = 0) {
+  if (extracted?.diagnosis_delivered) return true;
+  const store = Number(extracted?.store_count || 0);
+  if (!(store > 0)) return false;
+  if (extracted?.pain_point) return true;
+  if (extracted?.city && (intentScore || 0) >= 20) return true;
+  return false;
+}
+
 export function shouldTakeover({ text, extracted, intentScore, controller }) {
   if (controller === 'human' || controller === 'waiting_human') return { takeover: false, reason: 'already_human' };
   const t = String(text || '');
@@ -272,7 +286,8 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
     if (uncertainSlot) markSlotUncertain(slots, uncertainSlot);
   }
   const events = detectEvents(userText);
-  const nextQ = nextDiagnosticQuestion(slots);
+  // 诊断已交付后不再继续收集槽位（避免"已给结论还追问手机号"），把对话引向演示/试跑动作。
+  let nextQ = slots.diagnosis_delivered ? null : nextDiagnosticQuestion(slots);
   const takeover = shouldTakeover({ text: userText, extracted: slots, intentScore, controller });
   const knowledge = knowledgeForPain(slots.pain_point || userText, knowledgeItems);
 
@@ -280,11 +295,12 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
   let diagnosis = null;
   if (takeover.takeover) mode = 'handoff';
   else if (uncertainSlot) mode = 'clarify_unknown';
-  else if (!nextQ && !slots.diagnosis_delivered) {
-    // 9个槽位全部收集完毕后，给出一次经营诊断结论，而不是继续问下一题或直接结束
+  else if (!slots.diagnosis_delivered && isDiagnosisReady(slots, intentScore)) {
+    // 核心信息够用后立即给出经营诊断结论，而不是继续追问剩余槽位
     mode = 'diagnosis_complete';
     diagnosis = diagnoseLead(slots);
     slots.diagnosis_delivered = true;
+    nextQ = null;
   } else if (/你们|系统|功能|什么|怎么|能否|可以|适合|有哪些|介绍一下|讲讲|说说|是什么|怎么做/.test(String(userText || '')) && slots.pain_point) mode = 'value_match';
   else if (/你们|系统|功能|什么|介绍|产品|方案|服务|是什么|怎么收费|适合谁|有啥用/.test(String(userText || ''))) mode = 'introduce';
 
@@ -299,6 +315,8 @@ export function buildStrategyPlan({ userText, extracted, history = [], intentSco
     takeover,
     allow_price_talk: !takeover.takeover && !/折扣|便宜点|优惠|便宜|降价|少点|优惠吗|最低价|特价/.test(String(userText || '')),
     history_turns: history.length,
+    // 诊断交付且意向达到中意向(≥40)时，回复必须落到"安排针对性演示/试跑"的动作上
+    offer_demo: mode === 'diagnosis_complete' && (intentScore || 0) >= 40,
   };
 }
 

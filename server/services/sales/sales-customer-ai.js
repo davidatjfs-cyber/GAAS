@@ -176,6 +176,17 @@ function buildProfileFactReply({ userText, previousExtracted = {}, plan, history
   if (changed('cuisine')) facts.push(`主要做${current.cuisine}`);
   if (changed('pain_point')) facts.push(`重点关注${current.pain_point}`);
   if (!facts.length) return null;
+  // 客户一句话把核心信息给齐并触发诊断就绪时，profile_fact_guard 不能只回一句"我记下了"，
+  // 必须把诊断结论和转化动作一并交付（否则 diagnosis_delivered 已置真，后续轮次不会再出诊断）。
+  if (plan.mode === 'diagnosis_complete' && plan.diagnosis) {
+    const d = plan.diagnosis;
+    const causes = (d.root_causes || []).slice(0, 2).join('；');
+    const modules = (d.recommended_modules || []).slice(0, 3).join('、');
+    const cta = plan.offer_demo
+      ? '我可以为您安排一次30分钟的针对性演示，演示内容会直接按您目前的门店情况准备，而不是泛泛介绍。'
+      : '后续您需要了解客户复购、员工管理或多店经营时，可以直接继续问我。';
+    return `${facts.join('，')}，我记下了。根据您目前的情况，核心问题是「${d.surface_problem}」，背后原因可能是：${causes}。建议先帮您解决：${modules}。${cta}`;
+  }
   return `${facts.join('，')}，我记下了。${nextQuestion || ''}`;
 }
 
@@ -496,15 +507,18 @@ async function generateWithLlm(plan, userText, history, knowledgeItems, intentSc
   if (typeof _callLLM !== 'function') return null;
   const items = Array.isArray(knowledgeItems) && knowledgeItems.length ? knowledgeItems : PUBLIC_KNOWLEDGE;
   const knowledgeBlurb = items.map((k) => `- ${k.title}：${k.body}`).join('\n');
-  const diagnosisBlurb = plan.mode === 'diagnosis_complete' && plan.diagnosis
-    ? `\n【本轮必须先给出经营诊断结论，再引导下一步】
+const diagnosisBlurb = plan.mode === 'diagnosis_complete' && plan.diagnosis
+  ? `\n【本轮必须先给出经营诊断结论，再引导下一步】
 核心问题=${plan.diagnosis.surface_problem}
 背后原因=${(plan.diagnosis.root_causes || []).slice(0, 2).join('；')}
 建议优先解决=${(plan.diagnosis.recommended_modules || []).slice(0, 3).join('、')}
 ${plan.caseBlurb ? `可引用的同类客户案例=${plan.caseBlurb}\n` : ''}诊断后的转化动作（必须作为结尾）=${diagnosisCta(intentScore)}
 `
-    : '';
-  const system = `${SALES_PERSONA.system_role}
+  : '';
+const beijingNow = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+const system = `${SALES_PERSONA.system_role}
+
+【当前时间】现在是北京时间 ${beijingNow}。客户问现在几点/今天几号等时间问题时，必须按这个时间如实回答，严禁凭印象编造。
 
 【可引用的公开知识】
 ${knowledgeBlurb}

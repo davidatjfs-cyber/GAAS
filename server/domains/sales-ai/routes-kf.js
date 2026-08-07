@@ -1,4 +1,4 @@
-import { handleInboundMessage } from '../../services/sales/sales-session.js';
+import { handleInboundMessage, syncAgentClientMessage } from '../../services/sales/sales-session.js';
 import {
   kfConfigured,
   kfEnv,
@@ -68,7 +68,12 @@ export function registerSalesAiKfRoutes(ctx) {
         }
       }
       token = token || String(req.body?.Token || req.query?.token || '');
-      await processKfCallbackEvent(pool, { token, openKfid }, (payload) => handleInboundMessage(pool, payload), { notify: sendOpsAlert });
+      await processKfCallbackEvent(
+        pool,
+        { token, openKfid },
+        (payload) => handleInboundMessage(pool, payload),
+        { notify: sendOpsAlert, handleAgentMessage: (payload) => syncAgentClientMessage(pool, payload) }
+      );
     } catch (e) {
       log.error({ msg: 'sales_kf_callback_handle_failed', err: e?.message || e });
     }
