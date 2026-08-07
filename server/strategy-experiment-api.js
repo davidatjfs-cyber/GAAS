@@ -234,6 +234,9 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
 
       const agentsUrl = process.env.AGENTS_SERVICE_URL || 'http://127.0.0.1:3101';
       try {
+        // 2026-08-07 严重修复：之前 approve 用了 axios 却没 import，代理每次都抛
+        // "axios is not defined" 走本地兜底，导致飞书执行卡片从未下发责任人。
+        const { default: axios } = await import('axios');
         const resp = await axios.post(`${agentsUrl}/api/strategy/experiments/${req.params.code}/approve`, { storeAssignments, ...(accepted ? { acceptedVariantCodes: accepted } : {}) }, {
           headers: agentsOutboundHeaders(req, {
             Authorization: req.headers.authorization || '',
