@@ -108,9 +108,19 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
             title: '单客户短信建议', detail: 'd', payload: { channel: 'sms', rule_key: 'dormant_vip_winback', customer_id: '836' },
             created_by: 'rule_engine', created_at: '2026-08-07T03:00',
           },
+          {
+            action_key: 'auto:precise-broadcast', action_type: 'send_message', status: 'proposed', store_id: '51866138',
+            title: '精准人群配公域渠道', detail: 'd',
+            payload: { channel: 'xiaohongshu', target_audience: '21-45天未到访、消费≥5次的客户' },
+            created_by: 'agent_v2', created_at: '2026-08-08T00:30',
+          },
         ];
         // 与 SQL 过滤语义一致：单客户级动作不进审核队列
-        return { rows: rows.filter((r) => !(r.payload && r.payload.customer_id)) };
+        // 2026-08-08：精准人群 + 广播渠道（小红书/企微/点评）也不进审核队列
+        return { rows: rows.filter((r) => {
+          if (r.payload && r.payload.customer_id) return false;
+          return true;
+        }) };
       }
       return { rows: [] };
     },
@@ -120,7 +130,9 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
   assert.ok(actionsCall, '应查询 growth_actions');
   assert.match(actionsCall.sql, /30 days/, '待审动作只取近30天，历史僵尸建议不回流');
   assert.match(actionsCall.sql, /customer_id/, '单客户级动作（每方案只针对一个手机号）不应进审核队列');
+  // 代码级过滤：精准人群+公域渠道（xiaohongshu）由真实 filter 逻辑排除
   assert.equal(items.length, 2, '同规则同客户的旧周期残留应被去重，只剩最新一条');
+  assert.ok(!items.some((it) => it.actionKey === 'auto:precise-broadcast'), '精准人群+公域渠道不应进审核队列');
   const exp = items.find((x) => x.kind === 'strategy_experiment');
   const action = items.find((x) => x.kind === 'growth_action');
   assert.ok(exp);
