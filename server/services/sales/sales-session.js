@@ -34,7 +34,7 @@ import {
 } from './sales-ops.js';
 import { buildSalesDecision, buildCustomerAiGuidance, normalizeCustomerAiEvent } from './sales-collaboration.js';
 import { checkLeadCompleteness, STAGES_REQUIRING_COMPLETE_INFO } from './sales-lead-completeness.js';
-import { kfConfigured, sendKfConsultantCard } from './sales-kf.js';
+import { kfConfigured, sendKfConsultantCard, listKfServicers, handoffKfToHumanQueue } from './sales-kf.js';
 import { sendContentAssetToLead } from './sales-content-delivery.js';
 
 let _notify = null;
@@ -573,6 +573,11 @@ export async function finalizeAiInboundTurn(pool, ctx) {
 if (takeover) {
   await pool.query(`UPDATE sales_conversations SET controller='waiting_human', updated_at=NOW() WHERE id=$1`, [conv.id]);
   await ensureFollowupTask(pool, lead.id, '高意向客户待接管', advice, 0.2, handoffRep);
+  // 高意向后沉默即流失：无论是否有 conversion 任务，转人工都必须挂上 SLA 截止时间，
+  // 让已有的 runSalesSlaScan 到点报警，不再出现"已转人工但 sla_due_at 全空"的静默黑洞。
+  await refreshConversionSla(pool, { leadId: lead.id, dueHours: 2, controller: 'waiting_human' }).catch((e) => {
+    log.warn({ msg: 'handoff_sla_refresh_failed', lead_id: lead.id, err: e?.message || e });
+  });
   await addEvent(pool, lead.id, {
     event_type: 'HANDOFF_REQUESTED',
     summary: turn.plan.takeover.reason,
@@ -586,6 +591,26 @@ if (takeover) {
   if (handoffLead.assigned_to !== handoffRep) {
     await pool.query(`UPDATE sales_leads SET assigned_to=$2,assigned_at=NOW(),updated_at=NOW() WHERE id=$1`, [lead.id, handoffRep]);
     handoffLead = { ...handoffLead, assigned_to: handoffRep };
+  }
+  // 企微会话状态 1→2（待接入池）：仅当已配置接待人员时执行，避免把会话转进一个没人
+  // 的队列反而让 AI 后续无法继续发送（state=2 时 send_msg 会被企微拒绝）。未配置
+  // 接待人员时维持 state=1 + 顾问二维码路径（consultant_qr），由 AI 继续接待。
+  if (handoffLead.open_kfid && handoffLead.external_userid) {
+    try {
+      const servicers = await listKfServicers({ openKfid: handoffLead.open_kfid });
+      if (servicers.length) {
+        await handoffKfToHumanQueue({ openKfid: handoffLead.open_kfid, externalUserid: handoffLead.external_userid });
+        await addEvent(pool, lead.id, {
+          event_type: 'KF_SESSION_QUEUED_FOR_HUMAN',
+          summary: `企微会话已转入待接入池（接待人员 ${servicers.length} 人）`,
+          priority: 'high',
+          recommended_action: 'takeover',
+          payload: { servicers: servicers.length },
+        });
+      }
+    } catch (e) {
+      log.warn({ msg: 'kf_transfer_to_queue_failed', lead_id: lead.id, err: e?.message || e });
+    }
   }
   // 客户AI完成人格化接待与判断后，明确把客户交给具名顾问；不让销售继续假扮AI客服。
   const qrUrl = String(process.env.WECOM_SALES_CONSULTANT_QR_URL || '').trim();
@@ -726,6 +751,120 @@ export async function releaseToAi(pool, leadId) {
   await pool.query(`UPDATE sales_leads SET controller='ai', updated_at=NOW() WHERE id=$1`, [leadId]);
   await pool.query(`UPDATE sales_conversations SET controller='ai', updated_at=NOW() WHERE lead_id=$1 AND status='open'`, [leadId]);
   return { ok: true };
+}
+
+/**
+ * 企微客服「真人客户端消息回传」：接待人员在企业微信客户端发送的消息/会话状态变更事件，
+ * 同步进 CRM 留痕；一旦真人接入或回复，自动把会话控制器切为 human 并记录接管时间，
+ * 让 AI 停止抢答。幂等：按 msg_id 去重。
+ */
+export async function syncAgentClientMessage(pool, {
+  eventType = 'agent_message',
+  openKfid = 'sandbox',
+  externalUserid,
+  msgId,
+  text,
+  msgtype = 'text',
+  servicerUserid = '',
+  changeType = 0,
+  failMsgId = '',
+  failType = 0,
+} = {}) {
+  await ensureSalesTables(pool);
+  const eid = String(externalUserid || '').trim();
+  if (!eid) return { ok: true, recorded: false, reason: 'missing_external_userid' };
+  const lead = await upsertLead(pool, { openKfid, externalUserid: eid, sourceChannel: 'wecom_kf' });
+  const conv = await upsertConversation(pool, { openKfid, externalUserid: eid, leadId: lead.id });
+
+  if (eventType === 'agent_message') {
+    const content = String(text || '').trim();
+    if (!content) return { ok: true, recorded: false, reason: 'empty_agent_message' };
+    const msg = await addMessage(pool, {
+      conversationId: conv.id,
+      leadId: lead.id,
+      direction: 'outbound',
+      sender: 'human',
+      content,
+      msgId: msgId || null,
+      meta: { source: 'wecom_kf_agent', msgtype, servicer_userid: servicerUserid || null },
+    });
+    if (!msg?.inserted) return { ok: true, recorded: false, reason: 'duplicate_message' };
+    const wasHuman = lead.controller === 'human';
+    await pool.query(
+      `UPDATE sales_leads
+          SET controller='human', last_human_at=NOW(), first_human_response_at=COALESCE(first_human_response_at, NOW()),
+              sla_status='met', handoff_at=COALESCE(handoff_at, NOW()), updated_at=NOW()
+        WHERE id=$1`,
+      [lead.id]
+    );
+    await pool.query(`UPDATE sales_conversations SET controller='human', updated_at=NOW() WHERE id=$1`, [conv.id]);
+    if (!wasHuman) {
+      await addEvent(pool, lead.id, {
+        event_type: 'HUMAN_TAKEOVER',
+        summary: `接待人员在企微客户端回复，自动识别为人工接管${servicerUserid ? `（${servicerUserid}）` : ''}`,
+        priority: 'high',
+        recommended_action: 'continue_human',
+        payload: { source: 'wecom_kf_agent', servicer_userid: servicerUserid || null },
+      });
+    }
+    return { ok: true, recorded: true, lead_id: lead.id };
+  }
+
+  if (eventType === 'session_status_change') {
+    if (changeType === 1 || changeType === 4) {
+      // 接待人员从接待池接入/重新接入会话 → 视为真人接管
+      const wasHuman = lead.controller === 'human';
+      await pool.query(
+        `UPDATE sales_leads
+            SET controller='human', last_human_at=NOW(), first_human_response_at=COALESCE(first_human_response_at, NOW()),
+                sla_status='met', handoff_at=COALESCE(handoff_at, NOW()), updated_at=NOW()
+          WHERE id=$1`,
+        [lead.id]
+      );
+      await pool.query(`UPDATE sales_conversations SET controller='human', updated_at=NOW() WHERE id=$1`, [conv.id]);
+      if (!wasHuman) {
+        await addEvent(pool, lead.id, {
+          event_type: 'HUMAN_TAKEOVER',
+          summary: `会话状态变更：接待人员接入（change_type=${changeType}${servicerUserid ? `，${servicerUserid}` : ''}）`,
+          priority: 'high',
+          recommended_action: 'continue_human',
+          payload: { source: 'wecom_session_status_change', change_type: changeType, servicer_userid: servicerUserid || null },
+        });
+      }
+    } else if (changeType === 3) {
+      await pool.query(`UPDATE sales_conversations SET status='closed', updated_at=NOW() WHERE id=$1`, [conv.id]);
+      await addEvent(pool, lead.id, {
+        event_type: 'SESSION_ENDED_BY_AGENT',
+        summary: '接待人员在企微客户端结束会话',
+        priority: 'normal',
+        recommended_action: 'review_followup',
+        payload: { source: 'wecom_session_status_change', change_type: 3 },
+      });
+    } else {
+      await addEvent(pool, lead.id, {
+        event_type: 'SESSION_TRANSFERRED_BY_AGENT',
+        summary: `会话状态变更：转接（change_type=${changeType}${servicerUserid ? `，新接待${servicerUserid}` : ''}）`,
+        priority: 'normal',
+        recommended_action: 'continue_human',
+        payload: { source: 'wecom_session_status_change', change_type: changeType, servicer_userid: servicerUserid || null },
+      });
+    }
+    return { ok: true, recorded: true, lead_id: lead.id };
+  }
+
+  if (eventType === 'msg_send_fail') {
+    await addEvent(pool, lead.id, {
+      event_type: 'WECOM_MSG_SEND_FAIL',
+      summary: `企微外发失败（fail_type=${failType}）${failMsgId ? `，msgid=${failMsgId}` : ''}`,
+      evidence: `fail_msgid=${failMsgId || ''}`,
+      priority: 'high',
+      recommended_action: 'review_delivery',
+      payload: { fail_type: failType, fail_msgid: failMsgId || null },
+    });
+    return { ok: true, recorded: true, lead_id: lead.id };
+  }
+
+  return { ok: true, recorded: false, reason: 'unsupported_event' };
 }
 
 export async function getLeadDetail(pool, leadId) {

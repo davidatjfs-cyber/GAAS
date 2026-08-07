@@ -131,6 +131,46 @@ export async function claimKfServiceState({ openKfid, externalUserid }) {
   return data;
 }
 
+/** 获取客服账号下已配置的接待人员（用于判断转人工时是否真的有人可接） */
+export async function listKfServicers({ openKfid } = {}) {
+  const accessToken = await getAccessToken();
+  const resp = await _fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/servicer/list?access_token=${encodeURIComponent(accessToken)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ open_kfid: openKfid }) }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_servicer_list_failed');
+  return Array.isArray(data.servicer_list) ? data.servicer_list : [];
+}
+
+/**
+ * 变更企微客服会话状态（状态流转只能由 API 驱动，见官方「分配客服会话」）。
+ * serviceState: 2=待接入池排队等待真人接待；3=指定接待人员人工接待。
+ * 官方约束：state=3 时 servicer_userid 必填，且接待人员必须已在企业微信激活（否则 95014）。
+ */
+export async function transKfServiceState({ openKfid, externalUserid, serviceState, servicerUserid } = {}) {
+  const accessToken = await getAccessToken();
+  const body = { open_kfid: openKfid, external_userid: externalUserid, service_state: Number(serviceState) };
+  if (servicerUserid) body.servicer_userid = String(servicerUserid);
+  const resp = await _fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/kf/service_state/trans?access_token=${encodeURIComponent(accessToken)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
+  const data = await resp.json();
+  if (Number(data?.errcode) !== 0) throw new Error(data?.errmsg || 'kf_service_state_trans_failed');
+  return data;
+}
+
+/** 智能助手(1) → 待接入池(2)：会话进入人工队列，接待人员可在企微客户端接入 */
+export async function handoffKfToHumanQueue({ openKfid, externalUserid } = {}) {
+  return transKfServiceState({ openKfid, externalUserid, serviceState: 2 });
+}
+
+/** 智能助手(1) → 人工接待(3)：直接指定接待人员（须已激活且处于接待中） */
+export async function handoffKfToServicer({ openKfid, externalUserid, servicerUserid } = {}) {
+  return transKfServiceState({ openKfid, externalUserid, serviceState: 3, servicerUserid });
+}
+
 export async function sendKfText({ openKfid, externalUserid, content }) {
   await claimKfServiceState({ openKfid, externalUserid });
   const accessToken = await getAccessToken();
@@ -267,7 +307,7 @@ export async function recordKfDelivery(pool, turn, { status, channel = 'text', r
 /**
  * 处理 kf 回调：拉消息 → 交给 session → 自动回复
  */
-export async function processKfCallbackEvent(pool, { token, openKfid }, handleInbound, { notify = null } = {}) {
+export async function processKfCallbackEvent(pool, { token, openKfid }, handleInbound, { notify = null, handleAgentMessage = null } = {}) {
   const env = kfEnv();
   const kfId = openKfid || env.openKfid;
   let cursor = '';
@@ -291,7 +331,8 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
 
   for (const m of msgs) {
     if (String(m.msgtype) === 'event') {
-      if (String(m.event?.event_type) === 'enter_session') {
+      const eventType = String(m.event?.event_type || '');
+      if (eventType === 'enter_session') {
         const externalUserid = String(m.external_userid || m.event?.external_userid || '').trim();
         const turn = await handleInbound({
           welcome: true,
@@ -312,7 +353,46 @@ export async function processKfCallbackEvent(pool, { token, openKfid }, handleIn
           }
         }
         results.push(turn);
+      } else if (eventType === 'session_status_change' && typeof handleAgentMessage === 'function') {
+        // 接待人员在企业微信客户端操作触发：1=接入会话 2=转接 3=结束 4=重新接入。
+        // 同步进 CRM，人工一旦在客户端回复/接入，GAAS 停止 AI 抢答并记录接管。
+        const externalUserid = String(m.external_userid || m.event?.external_userid || '').trim();
+        if (externalUserid) {
+          await handleAgentMessage({
+            eventType,
+            openKfid: String(m.open_kfid || kfId),
+            externalUserid,
+            changeType: Number(m.event?.change_type || 0),
+            servicerUserid: String(m.event?.new_servicer_userid || m.event?.old_servicer_userid || '').trim(),
+          }).catch((e) => log.warn({ msg: 'sales_kf_session_status_sync_failed', err: e?.message || e }));
+        }
+      } else if (eventType === 'msg_send_fail' && typeof handleAgentMessage === 'function') {
+        const externalUserid = String(m.external_userid || m.event?.external_userid || '').trim();
+        if (externalUserid) {
+          await handleAgentMessage({
+            eventType,
+            openKfid: String(m.open_kfid || kfId),
+            externalUserid,
+            failMsgId: String(m.event?.fail_msgid || ''),
+            failType: Number(m.event?.fail_type || 0),
+          }).catch(() => null);
+        }
       }
+      continue;
+    }
+    const origin = Number(m.origin || 0);
+    // origin=5：接待人员在企业微信客户端发送的消息（API 发的消息不会被 sync_msg 回读，
+    // 不需要担心和 GAAS 外发重复）。回传 CRM 留痕并自动识别人工接管，不触发 AI 回复。
+    if (origin === 5 && typeof handleAgentMessage === 'function') {
+      await handleAgentMessage({
+        eventType: 'agent_message',
+        openKfid: String(m.open_kfid || kfId),
+        externalUserid: String(m.external_userid || '').trim(),
+        msgId: String(m.msgid || '').trim() || null,
+        text: String(m?.text?.content || '').trim(),
+        msgtype: String(m.msgtype || ''),
+        servicerUserid: String(m.servicer_userid || '').trim(),
+      }).catch((e) => log.warn({ msg: 'sales_kf_agent_message_sync_failed', err: e?.message || e }));
       continue;
     }
     let text = '';

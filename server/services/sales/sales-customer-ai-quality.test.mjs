@@ -239,7 +239,9 @@ test('客户只是提供画像事实时，不得突然自我介绍或过早索�
   assert.match(turn.reply, /北京、上海/);
   assert.match(turn.reply, /营业额下降/);
   assert.doesNotMatch(turn.reply, /我叫|手机号/);
-  assert.match(turn.reply, /POS/);
+  // P1：核心信息够用后直接交付诊断结论+转化动作，不再追问收银系统或手机号
+  assert.match(turn.reply, /核心问题/);
+  assert.doesNotMatch(turn.reply, /POS/);
   setSalesCustomerAiLlm(null);
 });
 
