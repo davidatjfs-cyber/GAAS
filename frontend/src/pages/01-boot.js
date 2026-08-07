@@ -95,6 +95,7 @@ var HRMS_MARKETING_ANOMALY_LABELS = {
     slot_decline: '时段营收下滑', category_decline: '品类营收下滑', overall_decline: '整体营收下滑',
     traffic_decline: '客流下滑', bad_review_product: '差评产品', bad_review_service: '差评服务',
     rising_category_opportunity: '上升品类机会', diner_mix_opportunity: '客群结构机会',
+    repurchase_sms: '短信复购储值', brand_content: '品宣传播', delivery: '外卖专项',
     marketing: '营销机会', churn_risk: '流失风险',
 };
 function hrmsAnomalyLabel(code) {
