@@ -143,14 +143,14 @@ export function registerWorkspaceRoutes(app, authRequired, deps) {
   app.get('/api/workspace/bad-reviews', authRequired, async (req, res) => {
     const tenantId = resolveTenantIdDefault(req.tenantId);
     try {
-      const items = await getBadReviewFeed(pool, tenantId, {
+      const feed = await getBadReviewFeed(pool, tenantId, {
         store: String(req.query?.store || '').trim(),
         startDate: String(req.query?.startDate || '').trim(),
         endDate: String(req.query?.endDate || '').trim(),
         storeFilter: resolveOverviewStoreFilter(req),
         sourceType: String(req.query?.sourceType || '').trim(),
       });
-      res.json({ ok: true, items });
+      res.json({ ok: true, items: feed.items, total: feed.total });
     } catch (e) {
       log.error({ msg: 'workspace_bad_reviews_failed', request_id: req.requestId, err: e?.message });
       res.status(500).json({ error: 'server_error' });

@@ -138,6 +138,7 @@ function wsInjectStyles() {
         '.ws-br-item{background:var(--ws-card);border:1px solid var(--ws-line);border-radius:10px;padding:10px 12px;scroll-snap-align:start;}' +
         '.ws-br-item__meta{font-size:11px;color:var(--ws-ink2);margin-bottom:4px;}' +
         '.ws-br-item__content{font-size:13px;line-height:1.6;}' +
+        '.ws-br-count{font-size:11px;color:var(--ws-ink2);padding:2px 2px 0;}' +
         '.ws-lights-list{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--ws-line);}' +
         '.ws-light-row{display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--ws-line);}' +
         '.ws-light-dot{width:8px;height:8px;border-radius:50%;flex:none;}' +
@@ -1130,13 +1131,20 @@ async function wsLoadBadReviews(container) {
     if (start) qs.set('startDate', start);
     if (end) qs.set('endDate', end);
     if (sourceType) qs.set('sourceType', sourceType);
+    // 2026-08-07：差评接口默认只回30条、近30天284条负面只显示30条，用户反馈"数据量太少"。
+    // 这里显式要更大的列表，并把接口返回的真实总量显示出来，不再静默截断。
+    qs.set('limit', '500');
     const list = container.querySelector('#ws-br-feed');
     if (list) list.innerHTML = '<div class="ws-loading">加载中...</div>';
     const data = await wsFetchJson('/api/workspace/bad-reviews?' + qs.toString());
     const items = Array.isArray(data?.items) ? data.items : [];
+    const total = Number(data?.total || items.length);
     if (!list) return;
     if (!items.length) { list.innerHTML = '<div class="ws-empty">这个范围内没有差评记录</div>'; return; }
-    list.innerHTML = items.map((it) => (
+    const countLine = total > items.length
+        ? '<div class="ws-br-count">共 ' + total + ' 条（当前显示最近 ' + items.length + ' 条，可缩小日期范围查看）</div>'
+        : '<div class="ws-br-count">共 ' + total + ' 条</div>';
+    list.innerHTML = countLine + items.map((it) => (
         '<div class="ws-br-item">' +
         '<div class="ws-br-item__meta">' + wsEsc(it.store || '') + ' · ' + wsEsc(String(it.date || '').slice(0, 10)) + (it.time ? ' ' + wsEsc(String(it.time).slice(0, 5)) : '') + ' · ' + wsEsc(it.source) + '</div>' +
         '<div class="ws-br-item__content">' + wsEsc(it.content || '（无文字内容）') + '</div>' +
