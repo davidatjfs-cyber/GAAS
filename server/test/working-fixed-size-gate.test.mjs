@@ -361,8 +361,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-07 第七十一次上调（72841→72849）：差评展示修复——接口默认只回 30 条导致
  * "数据量太少"，前端显式请求 limit=500 并展示接口返回的真实总量（共N条），
  * JS 走 frontend/src/pages/15-workspace.js（bundle 后净增 8 行）。
+ * 2026-08-07 第七十二次上调（72849→72869）：营销审核加动作阶段筛选
+ * （时段下滑/复购储值/品宣/外卖/AI建议），JS 走 frontend/src/pages/13-growth.js。
  */
-const MAX_LINES = 72849;
+const MAX_LINES = 72869;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

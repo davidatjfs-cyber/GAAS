@@ -3008,7 +3008,14 @@
                 // 统一审核队列：策略实验（每日任务/异常派工/PLLM）+ growth_actions(proposed) 聚合
                 var r = await fetch('/api/marketing/review-queue', { headers: growthAuthHeaders() });
                 var d = await r.json();
+                var stageFilter = document.getElementById('mkt-review-stage-filter')?.value || '';
                 var items = Array.isArray(d?.items) ? d.items : [];
+                if (stageFilter) {
+                    items = items.filter(function (it) {
+                        if (stageFilter === 'growth_action') return it.kind === 'growth_action';
+                        return it.anomalyType === stageFilter;
+                    });
+                }
                 if (!items.length) { host.innerHTML = '<div class="rep-pay-empty">暂无待审核营销建议（每天 09:30 生成，规则引擎/AI建议也会进这个队列）</div>'; return; }
                 host.innerHTML = items.map(function (it) {
                     if (it.kind === 'growth_action') {
