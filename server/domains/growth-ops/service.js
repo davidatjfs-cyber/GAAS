@@ -157,7 +157,18 @@ export async function triggerRepurchase(ctx, tenantId, body) {
     );
     let createdCount = 0;
     for (const row of r.rows) {
-      const actionKey = `repurchase:${row.customer_id}:${Date.now()}`;
+      // 2026-08-07 核心修复：改成「客户+当天」确定性 key，同日重复触发 ON CONFLICT
+      // DO NOTHING 天然去重；再补开放状态预检，避免跨天重复堆积待审池。
+      const todayYmd = new Date().toLocaleString('en-CA', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+      const actionKey = `repurchase:${row.customer_id}:${todayYmd}`;
+      const openSameCustomer = await ctx.pool.query(
+        `SELECT 1 FROM growth_actions
+          WHERE tenant_id = $1 AND status IN ('proposed','assigned','executing')
+            AND payload->>'customer_id' = $2
+          LIMIT 1`,
+        [tenantId, String(row.customer_id || '')]
+      );
+      if (openSameCustomer.rows.length) continue;
       const useCoupon = Number(row.response_to_discount) > 0.4;
       await ctx.pool.query(
         `INSERT INTO growth_actions (action_key, action_type, status, store_id, title, detail, payload, created_by, tenant_id)

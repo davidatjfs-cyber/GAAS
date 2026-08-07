@@ -92,17 +92,24 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
         }] };
       }
       if (/FROM growth_actions/.test(sql)) {
-        return { rows: [{
-          action_key: 'rule:1', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
-          title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom' }, created_by: 'rule_engine',
-          created_at: '2026-08-07T02:00',
-        }] };
+        return { rows: [
+          {
+            action_key: 'rule:1', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
+            title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback', customer_id: '836' },
+            created_by: 'rule_engine', created_at: '2026-08-07T02:00',
+          },
+          {
+            action_key: 'rule:1-old', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
+            title: '沉睡客户召回（旧周期残留）', detail: 'd', payload: { channel: 'wecom', rule_key: 'dormant_vip_winback', customer_id: '836' },
+            created_by: 'rule_engine', created_at: '2026-08-06T02:00',
+          },
+        ] };
       }
       return { rows: [] };
     },
   };
   const items = await getMarketingReviewQueue(pool, 'default', []);
-  assert.equal(items.length, 2);
+  assert.equal(items.length, 2, '同规则同客户的旧周期残留应被去重，只剩最新一条');
   const exp = items.find((x) => x.kind === 'strategy_experiment');
   const action = items.find((x) => x.kind === 'growth_action');
   assert.ok(exp);
@@ -111,6 +118,7 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
   assert.ok(action);
   assert.equal(action.sourceLabel, '自动营销规则');
   assert.equal(action.payload.channel, 'wecom');
+  assert.equal(action.actionKey, 'rule:1');
   assert.equal(marketingSourceLabel('agent_v2'), 'AI运营建议');
   // 队列按创建时间倒序：growth_action 更新，排前面
   assert.equal(items[0].kind, 'growth_action');

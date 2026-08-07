@@ -219,6 +219,19 @@ export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) 
         payload: payload,
       };
     });
+    // 2026-08-07 核心修复：同一「来源+规则/策略+客户/门店」只保留最新一条待审，
+    // 历史周期残留的同客户重复建议不再把审核队列/任务栏撑满。
+    const latestByFingerprint = new Map();
+    for (const a of actions) {
+      const fp = a.source === 'rule_engine'
+        ? `${a.source}|${a.payload.rule_key || ''}|${a.payload.customer_id || ''}`
+        : `${a.source}|${a.payload.strategy_key || a.payload.action_type_structured || a.payload.campaign_key || a.actionKey || ''}|${a.payload.customer_id || a.store}`;
+      const prev = latestByFingerprint.get(fp);
+      if (!prev || new Date(a.createdAt || 0) > new Date(prev.createdAt || 0)) {
+        latestByFingerprint.set(fp, a);
+      }
+    }
+    actions = [...latestByFingerprint.values()];
   } catch (e) {
     log.warn({ msg: 'load_review_queue_actions_failed', err: e?.message });
   }

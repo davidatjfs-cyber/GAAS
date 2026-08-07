@@ -95,6 +95,16 @@ export async function runTouchRuleEngine(pool, options = {}, deps) {
       continue;
     }
     for (const row of candidates) {
+      // 2026-08-07 核心修复：同规则同客户已有待审/已分配/执行中的动作时，不再生成新
+      // 动作（周期键变化会导致旧记录永远留在 proposed，审核队列越堆越多）。
+      const openSameCustomer = await pool.query(
+        `SELECT 1 FROM growth_actions
+          WHERE tenant_id = $1 AND status IN ('proposed','assigned','executing')
+            AND payload->>'rule_key' = $2 AND payload->>'customer_id' = $3
+          LIMIT 1`,
+        [ruleEngineTenantId, rule.rule_key, String(row.customer_id || '')]
+      );
+      if (openSameCustomer.rows.length) continue;
       const rowPhone = cleanPhone(row.phone);
       const ruleChannel = cleanText((rule.action_payload && rule.action_payload.channel) || '', 40);
       let channel = null;
