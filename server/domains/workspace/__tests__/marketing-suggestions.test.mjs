@@ -109,6 +109,9 @@ test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合�
     },
   };
   const items = await getMarketingReviewQueue(pool, 'default', []);
+  const actionsCall = calls.find((c) => /FROM growth_actions/.test(c.sql));
+  assert.ok(actionsCall, '应查询 growth_actions');
+  assert.match(actionsCall.sql, /30 days/, '待审动作只取近30天，历史僵尸建议不回流');
   assert.equal(items.length, 2, '同规则同客户的旧周期残留应被去重，只剩最新一条');
   const exp = items.find((x) => x.kind === 'strategy_experiment');
   const action = items.find((x) => x.kind === 'growth_action');
