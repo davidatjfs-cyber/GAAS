@@ -32,6 +32,10 @@ const SOURCE_LABELS = {
   agent_collaboration: '智能体协作', admin: '手工/活动激活', marketing_planner: '营销策划',
 };
 
+/** 与 agents marketing-feedback.js 同口径：精准人群 + 广播渠道 一律不进审核队列 */
+const PRECISE_AUDIENCE_RE = /首购|未复购|未回购|沉睡|流失|复购|召回|唤醒|会员|充值|储值|精准|标签|高价值|临界|生日|积分|新客|老客|VIP|活跃|低频|高频|未到访|未到店|未消费|未光顾|近?\d{1,3}\s*天(?:未|没)|消费.{0,10}(?:大于|超过|≥|>=|>|满)\s*\d+|\d+\s*次(?:以上)?(?:到店|消费|下单|复购)|到店.{0,6}\d+\s*次/;
+const BROADCAST_CHANNELS = new Set(['大众点评', '小红书', '企微', '抖音', '朋友圈']);
+
 const CHANNEL_LABELS = {
   wecom: '企业微信', dianping: '大众点评', xiaohongshu: '小红书', douyin: '抖音',
   sms: '短信', miniprogram: '会员小程序', pengyouquan: '朋友圈', subscribe: '订阅消息',
@@ -214,7 +218,19 @@ export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) 
         ORDER BY created_at DESC LIMIT 200`,
       params
     );
-    actions = (r.rows || []).map((row) => {
+    actions = (r.rows || []).filter((row) => {
+      const payload = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+      const ch = String(payload.channel || '').trim().toLowerCase();
+      const chLabel = CHANNEL_LABELS[ch] || '';
+      const audienceText = [payload.target_audience, row.title, row.detail].filter(Boolean).join(' ');
+      const precise = PRECISE_AUDIENCE_RE.test(audienceText);
+      const broadcast = BROADCAST_CHANNELS.has(chLabel);
+      if (precise && broadcast) {
+        log.warn({ actionKey: row.action_key, channel: ch, audience: String(payload.target_audience || '').slice(0, 60) }, 'review queue: precise audience on broadcast channel; excluded');
+        return false;
+      }
+      return true;
+    }).map((row) => {
       const payload = (row.payload && typeof row.payload === 'object') ? row.payload : {};
       const channel = String(payload.channel || '').trim();
       return {
