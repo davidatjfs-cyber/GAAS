@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getMarketingSuggestions } from '../marketing-suggestions.js';
+import { getMarketingSuggestions, getMarketingReviewQueue, anomalyLabel, marketingSourceLabel } from '../marketing-suggestions.js';
 
 // 2026-07-31：用户明确要求"这个工作要的是质量，不是数量"——之前查growth_actions
 // (campaign_autopilot生成)的通用模板文案质量差、且被历史堆积挤没真正有价值的内容。
@@ -71,4 +71,47 @@ test('getMarketingSuggestions：按门店轮流抽取，历史堆积多的门店
   items.forEach((it) => { storeCounts[it.store] = (storeCounts[it.store] || 0) + 1; });
   assert.equal(Object.keys(storeCounts).length, 2, '两个门店都应该有展示，不能被门店A的历史堆积独占');
   assert.ok(storeCounts['门店A'] <= 2 && storeCounts['门店B'] <= 2, '每店展示数不能超过limit');
+});
+
+test('anomalyLabel：slot_decline 等英文码输出中文', () => {
+  assert.equal(anomalyLabel('slot_decline'), '时段营收下滑');
+  assert.equal(anomalyLabel('rising_category_opportunity'), '上升品类机会');
+  assert.equal(anomalyLabel('whatever'), 'whatever');
+});
+
+test('getMarketingReviewQueue：策略实验 + growth_actions(proposed) 聚合到一个队列', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/FROM strategy_experiments/.test(sql)) {
+        return { rows: [{
+          experiment_code: 'EXP-1', title: '推出午市双人套餐', goal: 'g', anomaly_type: 'slot_decline',
+          created_at: '2026-08-07T01:00', created_by: 'marketing_job',
+          variants: [{ variantCode: 'A', label: 'l', action: 'a', executionGuide: 'e', store: '门店A' }],
+        }] };
+      }
+      if (/FROM growth_actions/.test(sql)) {
+        return { rows: [{
+          action_key: 'rule:1', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
+          title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom' }, created_by: 'rule_engine',
+          created_at: '2026-08-07T02:00',
+        }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const items = await getMarketingReviewQueue(pool, 'default', []);
+  assert.equal(items.length, 2);
+  const exp = items.find((x) => x.kind === 'strategy_experiment');
+  const action = items.find((x) => x.kind === 'growth_action');
+  assert.ok(exp);
+  assert.equal(exp.sourceLabel, '每日营销建议');
+  assert.equal(exp.anomalyLabel, '时段营收下滑');
+  assert.ok(action);
+  assert.equal(action.sourceLabel, '自动营销规则');
+  assert.equal(action.payload.channel, 'wecom');
+  assert.equal(marketingSourceLabel('agent_v2'), 'AI运营建议');
+  // 队列按创建时间倒序：growth_action 更新，排前面
+  assert.equal(items[0].kind, 'growth_action');
 });

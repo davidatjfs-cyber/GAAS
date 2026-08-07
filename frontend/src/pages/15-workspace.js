@@ -891,7 +891,7 @@ function wsRenderPllmExperimentCard(it, seen) {
         wsEsc((it.store || '') + ' — ' + (it.title || '')) +
         '</summary>' +
         '<div style="margin-top:10px;">' +
-        (it.anomalyType ? '<div class="ws-card__desc">触发信号：' + wsEsc(it.anomalyType) + (it.goal ? '（' + wsEsc(it.goal) + '）' : '') + '</div>' : '') +
+        (it.anomalyType ? '<div class="ws-card__desc">触发信号：' + wsEsc(it.anomalyLabel || (typeof hrmsAnomalyLabel === 'function' ? hrmsAnomalyLabel(it.anomalyType) : it.anomalyType)) + (it.sourceLabel ? ' · 来源：' + wsEsc(it.sourceLabel) : '') + (it.goal ? '（' + wsEsc(it.goal) + '）' : '') + '</div>' : '') +
         (it.feedback && it.feedback.total > 0
             ? '<div class="ws-card__desc" style="opacity:.62;font-size:12px;">近30天本店审核：采纳 ' + it.feedback.approved + ' / 拒绝 ' + it.feedback.rejected +
               (it.feedback.topReasons && it.feedback.topReasons.length ? ' · 主要拒绝原因：' + wsEsc(it.feedback.topReasons.map((r) => r.label + (r.count > 1 ? '×' + r.count : '')).join('、')) : '') + '</div>'

@@ -90,6 +90,25 @@ function hrmsAskMarketingRejectReason() {
     });
 }
 
+// ========== 营销建议异常类型/来源中文映射（工作台+增长看板共用） ==========
+var HRMS_MARKETING_ANOMALY_LABELS = {
+    slot_decline: '时段营收下滑', category_decline: '品类营收下滑', overall_decline: '整体营收下滑',
+    traffic_decline: '客流下滑', bad_review_product: '差评产品', bad_review_service: '差评服务',
+    rising_category_opportunity: '上升品类机会', diner_mix_opportunity: '客群结构机会',
+    marketing: '营销机会', churn_risk: '流失风险',
+};
+function hrmsAnomalyLabel(code) {
+    return HRMS_MARKETING_ANOMALY_LABELS[String(code || '')] || String(code || '经营信号');
+}
+var HRMS_MARKETING_SOURCE_LABELS = {
+    marketing_job: '每日营销建议', master_dispatcher: '营销异常派工', pllm: 'PLLM策略',
+    rule_engine: '自动营销规则', campaign_autopilot: '活动自动生成', agent_v2: 'AI运营建议',
+    agent_collaboration: '智能体协作', admin: '手工/活动激活', marketing_planner: '营销策划',
+};
+function hrmsMarketingSourceLabel(source) {
+    return HRMS_MARKETING_SOURCE_LABELS[String(source || '')] || String(source || '未知来源');
+}
+
         (function applyTenantBranding() {
             try {
                 const tenantId = resolveHrmsLoginTenantId();
