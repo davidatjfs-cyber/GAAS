@@ -358,8 +358,13 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 支持动作类建议「通过·派发执行/不适合·忽略」；JS 走 frontend/src/pages。
  * 2026-08-07 第七十次上调（72823→72841）：管理员工作台任务栏接入营销建议待审虚拟任务
  * （来源/触发/渠道中文展示 + 「去审核」直达活动审核），JS 走 frontend/src/pages/15-workspace.js。
+ * 2026-08-07 第七十一次上调（72841→72849）：差评展示修复——接口默认只回 30 条导致
+ * "数据量太少"，前端显式请求 limit=500 并展示接口返回的真实总量（共N条），
+ * JS 走 frontend/src/pages/15-workspace.js（bundle 后净增 8 行）。
+ * 2026-08-07 第七十二次上调（72849→72869）：营销审核加动作阶段筛选
+ * （时段下滑/复购储值/品宣/外卖/AI建议），JS 走 frontend/src/pages/13-growth.js。
  */
-const MAX_LINES = 72841;
+const MAX_LINES = 72869;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

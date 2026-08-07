@@ -79,13 +79,46 @@ test('平台差评不应被桌访记录挤出：limit=3时桌访记录有5条，
     calls: [],
     async query(sql, params) {
       this.calls.push({ sql, params });
-      if (/content_type = 'bad_review'/.test(sql)) return { rows: platformRows };
-      return { rows: visitRows };
+      if (/content_type = 'bad_review'/.test(sql)) {
+        return { rows: platformRows.map((r) => ({ ...r, total_count: platformRows.length })) };
+      }
+      return { rows: visitRows.map((r) => ({ ...r, total_count: visitRows.length })) };
     },
   };
   const result = await getBadReviewFeed(pool, 'default', { limit: 3 });
-  const platformCount = result.filter((r) => r.source.startsWith('平台差评')).length;
+  const platformCount = result.items.filter((r) => r.source.startsWith('平台差评')).length;
   assert.equal(platformCount, 2, '平台差评应该全部保留，不能被桌访记录挤掉');
+});
+
+// 2026-08-07：用户反馈"差评展示数据量太少"——根因之一是接口默认只回 30 条，
+// 近30天实际有 284 条负面记录也只显示 30 条。锁定：返回 total（真实总量），
+// 且默认 limit 扩大到 200（上限 500），不再静默截断到 30。
+test('返回 total 真实总量；默认 limit=200、上限 500，不被旧的 30 条截断', async () => {
+  const platformRows = [
+    { store: 'A', date: '2026-08-06', content: 'p1', platform: '美团', rating: '1' },
+  ];
+  const visitRows = Array.from({ length: 300 }, (_, i) => ({
+    store: 'A',
+    date: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
+    product_issue: `v${i}`,
+    service_issue: '',
+    unsat_reason: '',
+    satisfaction: '不满意',
+  }));
+  const pool = {
+    calls: [],
+    async query(sql, params) {
+      this.calls.push({ sql, params });
+      if (/content_type = 'bad_review'/.test(sql)) {
+        return { rows: platformRows.map((r) => ({ ...r, total_count: 1 })) };
+      }
+      return { rows: visitRows.map((r) => ({ ...r, total_count: 277 })) };
+    },
+  };
+  const result = await getBadReviewFeed(pool, 'default', {});
+  assert.equal(result.total, 278, 'total 应是平台+桌访的真实总量（1+277）');
+  assert.ok(result.items.length > 100, '默认应返回远超 30 条，而不是被旧上限截断');
+  assert.equal(result.items.length, 200, '默认 limit=200 时列表长度为 200');
 });
 
 // 2026-08-01：用户要求差评展示支持按来源筛选（桌访 / 平台-大众点评 / 平台-外卖）。
