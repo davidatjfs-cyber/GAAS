@@ -48,9 +48,12 @@ const SOURCE_TYPES = {
 };
 
 export async function getBadReviewFeed(pool, tenantId, {
-  store = '', startDate = '', endDate = '', limit = 30, storeFilter = [], sourceType = '',
+  store = '', startDate = '', endDate = '', limit = 200, storeFilter = [], sourceType = '',
 } = {}) {
-  const lim = Math.min(100, Math.max(1, Number(limit) || 30));
+  // 2026-08-07 修复：之前默认只回 30 条，近30天实际有 284 条负面记录也只显示 30 条，
+  // 用户反馈"差评展示数据量太少"。扩大到默认 200、上限 500，并返回 total 让前端
+  // 直接展示该筛选条件下真实总量，避免"全部/近30天"看起来只有几十条。
+  const lim = Math.min(500, Math.max(1, Number(limit) || 200));
   const scoped = Array.isArray(storeFilter) && storeFilter.length > 0;
   const effectiveStore = store && (!scoped || storeFilter.includes(store)) ? store : '';
   const storeAliasList = effectiveStore
@@ -60,6 +63,13 @@ export async function getBadReviewFeed(pool, tenantId, {
   const type = Object.values(SOURCE_TYPES).includes(sourceType) ? sourceType : '';
   const wantPlatform = type === '' || type === SOURCE_TYPES.platform_dianping || type === SOURCE_TYPES.platform_delivery;
   const wantVisit = type === '' || type === SOURCE_TYPES.table_visit;
+  const visitNegativeWhere = `
+    AND (
+      COALESCE(agent_data->'fields'->>'product_issue','') <> ''
+      OR COALESCE(agent_data->'fields'->>'service_issue','') <> ''
+      OR COALESCE(agent_data->'fields'->>'unsat_reason','') <> ''
+      OR (agent_data->'fields'->>'satisfaction') NOT IN ('满意', '')
+    )`;
   try {
     const platformParams = [tenantId];
     let platformWhere = '';
@@ -84,7 +94,8 @@ export async function getBadReviewFeed(pool, tenantId, {
         `SELECT agent_data->'fields'->>'store' AS store, ${DATE_EXPR} AS date,
                 agent_data->'fields'->>'content' AS content,
                 agent_data->'fields'->>'platform' AS platform,
-                agent_data->'fields'->>'rating' AS rating
+                agent_data->'fields'->>'rating' AS rating,
+                COUNT(*) OVER() AS total_count
            FROM agent_messages
           WHERE tenant_id = $1 AND content_type = 'bad_review' AND ${DATE_GUARD}${platformWhere}
           ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
@@ -95,15 +106,10 @@ export async function getBadReviewFeed(pool, tenantId, {
                 agent_data->'fields'->>'product_issue' AS product_issue,
                 agent_data->'fields'->>'service_issue' AS service_issue,
                 agent_data->'fields'->>'unsat_reason' AS unsat_reason,
-                agent_data->'fields'->>'satisfaction' AS satisfaction
+                agent_data->'fields'->>'satisfaction' AS satisfaction,
+                COUNT(*) OVER() AS total_count
            FROM agent_messages
-          WHERE tenant_id = $1 AND content_type = 'table_visit' AND ${DATE_GUARD}
-            AND (
-              COALESCE(agent_data->'fields'->>'product_issue','') <> ''
-              OR COALESCE(agent_data->'fields'->>'service_issue','') <> ''
-              OR COALESCE(agent_data->'fields'->>'unsat_reason','') <> ''
-              OR (agent_data->'fields'->>'satisfaction') NOT IN ('满意', '')
-            )${visitWhere}
+          WHERE tenant_id = $1 AND content_type = 'table_visit' AND ${DATE_GUARD}${visitNegativeWhere}${visitWhere}
           ORDER BY ${DATE_EXPR} DESC LIMIT ${lim}`,
         visitParams
       ) : Promise.resolve({ rows: [] }),
@@ -132,10 +138,14 @@ export async function getBadReviewFeed(pool, tenantId, {
     // 把平台差评整体挤出列表，造成"看起来没有差评"的假象——不是数据没导入，是被截断挤掉了。
     // 改成：平台差评全部保留（不占用visitItems的名额），剩余名额留给桌访记录。
     const visitBudget = Math.max(0, lim - platformItems.length);
-    return [...platformItems, ...visitItems.slice(0, visitBudget)]
+    const items = [...platformItems, ...visitItems.slice(0, visitBudget)]
       .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const platformTotal = Number(platformR.rows?.[0]?.total_count || 0);
+    const visitTotal = Number(visitR.rows?.[0]?.total_count || 0);
+    const total = platformTotal + visitTotal;
+    return { items, total };
   } catch (e) {
     log.error({ msg: 'bad_review_feed_failed', err: e?.message || String(e) });
-    return [];
+    return { items: [], total: 0 };
   }
 }
