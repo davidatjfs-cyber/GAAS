@@ -2306,7 +2306,7 @@
                 if (!actionsData.ok) throw new Error(actionsData.error || 'api_error');
                 const rows = actionsData?.actions || [];
                 try { document.getElementById('__growth_actions_cache').textContent = JSON.stringify(rows); } catch (e) {}
-                var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
+                var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团', 'sms': '短信', 'subscribe': '订阅消息' };
                 var actionTypeLabels = { 'send_voucher': '🎫 发券', 'campaign_activate': '🚀 激活活动', 'create_content': '📝 创建内容', 'promo_task': '📋 推广任务', 'generate_poster': '🖼️ 生成海报', 'pllm_task': '🤖 PLLM任务', 'pllm_experiment': '🧭 PLLM策略实验' };
                 host.innerHTML = rows.length ? rows.map(function(x) {
                     const key = x.action_key || '';
@@ -2457,7 +2457,7 @@
             if (!x) { showNotification('动作数据未缓存', 'warning'); return; }
             __execConfirmData = { actionKey: actionKey, mode: mode || 'execute', action: x };
             var payload = x.payload || {};
-            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
+            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团', 'sms': '短信', 'subscribe': '订阅消息' };
             var channel = payload.channel || 'wecom';
             var channelLabel = channelLabels[channel] || channel;
             var audienceLabels = { 'all': '全部客户', 'new': '新客', 'loyal': '老客/忠诚', 'churn': '流失预警', 'birthday': '生日月客户' };
@@ -2634,7 +2634,7 @@
             var payload = x.payload || {};
             var key = x.action_key || '';
             var actionType = x.action_type || '';
-            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团' };
+            var channelLabels = { 'miniprogram': '会员小程序', 'wecom': '企微', 'xiaohongshu': '小红书', 'douyin': '抖音', 'pengyouquan': '朋友圈', 'dianping': '大众点评', 'waimai': '美团', 'sms': '短信', 'subscribe': '订阅消息' };
             var channelColors = { 'wecom': '#86C9A2', 'miniprogram': '#EABBC5', 'xiaohongshu': '#E58B98', 'douyin': '#CFA14A', 'pengyouquan': '#5C9A76', 'dianping': '#D18FA0', 'waimai': '#CFA14A' };
             var channel = payload.channel || '';
             var channelLabel = channelLabels[channel] || channel || '-';

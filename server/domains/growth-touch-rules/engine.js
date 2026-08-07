@@ -94,6 +94,9 @@ export async function runTouchRuleEngine(pool, options = {}, deps) {
       await pool.query(`UPDATE growth_touch_rules SET last_run_at = NOW() WHERE rule_key = $1`, [rule.rule_key]).catch(() => {});
       continue;
     }
+    // 2026-08-07：规则未审核通过时不再生成单客户待审建议——每条只针对一个手机号，
+    // 管理员无法按标签圈人执行；规则级审核统一在「自动营销治理」完成。
+    if (!rule.approved_at) continue;
     for (const row of candidates) {
       // 2026-08-07 核心修复：同规则同客户已有待审/已分配/执行中的动作时，不再生成新
       // 动作（周期键变化会导致旧记录永远留在 proposed，审核队列越堆越多）。

@@ -31,6 +31,16 @@ const SOURCE_LABELS = {
   agent_collaboration: '智能体协作', admin: '手工/活动激活', marketing_planner: '营销策划',
 };
 
+const CHANNEL_LABELS = {
+  wecom: '企业微信', dianping: '大众点评', xiaohongshu: '小红书', douyin: '抖音',
+  sms: '短信', miniprogram: '会员小程序', pengyouquan: '朋友圈', subscribe: '订阅消息',
+  member: '会员', waimai: '美团',
+};
+
+export function channelLabel(code) {
+  return CHANNEL_LABELS[String(code || '').trim().toLowerCase()] || String(code || '');
+}
+
 export function anomalyLabel(code) {
   return ANOMALY_LABELS[String(code || '')] || String(code || 'unknown');
 }
@@ -196,7 +206,10 @@ export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) 
       `SELECT action_key, action_type, status, store_id, title, detail, payload, created_by, created_at
          FROM growth_actions
         WHERE tenant_id = $1 AND status = 'proposed'
-          AND created_at >= NOW() - interval '30 days'${whereStore}
+          AND created_at >= NOW() - interval '30 days'
+          -- 2026-08-07：单客户级动作（rule_engine/复购唤醒按 payload.customer_id 生成）
+          -- 不是可审核的营销方案，只针对一个手机号，一律不进审核队列
+          AND (payload->>'customer_id' IS NULL OR payload->>'customer_id' = '')${whereStore}
         ORDER BY created_at DESC LIMIT 200`,
       params
     );
@@ -214,7 +227,7 @@ export async function getMarketingReviewQueue(pool, tenantId, storeFilter = []) 
         anomalyType: null,
         anomalyLabel: null,
         channel,
-        channelLabel: channel,
+        channelLabel: channelLabel(channel),
         createdAt: row.created_at,
         status: row.status || 'proposed',
         payload: payload,
