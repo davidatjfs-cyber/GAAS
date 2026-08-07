@@ -1343,6 +1343,7 @@
       overview: { summary: {}, items: [], alerts: [], billing: [], acceptance: [] },
       health: { summary: {}, tenants: [], faqs: [], filter: 'red', selectedTenantId: '', incidents: null },
       sales: { leads: [], selectedLeadId: null, sandboxKey: '', sandboxMessages: [], assistantMessages: [], assistantThreadId: null },
+      salesSim: { sessionId: null, messages: [], voice: { recorder: null, chunks: [], stream: null, startedAt: 0, timer: null, phase: 'idle' } },
     };
     const ACTION_GLOSSARY = [
       { term: '选中', desc: '将该租户设为当前操作对象。选中后顶部会显示租户条，「配置」页表单自动带入该租户 ID。' },
