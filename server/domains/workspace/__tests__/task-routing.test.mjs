@@ -86,6 +86,39 @@ test('getNotableOpenTasks 的cc视图只覆盖食安类目，不再包含运营�
   assert.equal(params.length, 2);
 });
 
+test('admin 工作台 home 附带 marketingReview（统一审核队列），store_manager 不带', async () => {
+  const pool = {
+    async query(sql) {
+      if (/status = 'pending_review'/.test(sql)) return { rows: [] };
+      if (/lower\(assignee_username\) = lower\(\$2\)/.test(sql)) return { rows: [] };
+      if (/food_safety/.test(sql)) return { rows: [] };
+      if (/GROUP BY v\.store/.test(sql)) return { rows: [] };
+      if (/FROM strategy_experiments/.test(sql)) {
+        return { rows: [{
+          experiment_code: 'EXP-REV-1', title: '推出午市双人套餐', goal: 'g', anomaly_type: 'slot_decline',
+          created_at: '2026-08-07T01:00', created_by: 'marketing_job',
+          variants: [{ variantCode: 'A', label: 'l', action: 'a', executionGuide: 'e', store: '洪潮大宁久光店' }],
+        }] };
+      }
+      if (/FROM growth_actions/.test(sql)) {
+        return { rows: [{
+          action_key: 'rule:1', action_type: 'send_voucher', status: 'proposed', store_id: '51866138',
+          title: '沉睡客户召回', detail: 'd', payload: { channel: 'wecom' }, created_by: 'rule_engine',
+          created_at: '2026-08-07T02:00',
+        }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const admin = await getWorkspaceHome(pool, 'default', 'admin_a', { role: 'admin' });
+  assert.equal(admin.marketingReview.length, 2);
+  assert.equal(admin.marketingReview[0].source, 'marketing_review');
+  assert.equal(admin.marketingReview[0].sourceLabel, '自动营销规则');
+  assert.ok(admin.marketingReview.some((t) => t.anomalyLabel === '时段营收下滑'));
+  const sm = await getWorkspaceHome(pool, 'default', 'sm_a', { role: 'store_manager' });
+  assert.deepEqual(sm.marketingReview, []);
+});
+
 describe('getPendingConfirmations', () => {
   test('非admin/hq_manager 只能确认自己发起(promoted_by)的任务反馈，即使是巡检类', async () => {
     const calls = [];

@@ -356,8 +356,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-07 第六十九次上调（72754→72823）：活动审核改为统一审核队列（策略实验 +
  * growth_actions 聚合一个端口），异常类型/来源全部中文展示，AI建议纳入审核，
  * 支持动作类建议「通过·派发执行/不适合·忽略」；JS 走 frontend/src/pages。
+ * 2026-08-07 第七十次上调（72823→72841）：管理员工作台任务栏接入营销建议待审虚拟任务
+ * （来源/触发/渠道中文展示 + 「去审核」直达活动审核），JS 走 frontend/src/pages/15-workspace.js。
  */
-const MAX_LINES = 72823;
+const MAX_LINES = 72841;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

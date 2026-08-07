@@ -324,6 +324,7 @@ function wsRenderTaskCard(task, opts) {
     const titleText = String(task.title || '');
     const showStoreSeparately = task.store && !titleText.startsWith(String(task.store));
     const isGrowthTask = task.source === 'growth_solution';
+    const isMarketingReview = task.source === 'marketing_review';
     const isPendingReview = task.status === 'pending_review';
     // 2026-07-30 第一次修复：_ccOnly 表示这条任务不是指派给当前查看者的，只是按规则抄送
     // 给他知道（目前只有食品安全类是这样：仅hq_manager可判罚处理，管理员只是同步知悉）——
@@ -341,6 +342,8 @@ function wsRenderTaskCard(task, opts) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-ack-task="' + wsEsc(task.task_id) + '">确认收到</button>';
     } else if (isGrowthTask) {
         actsHtml = '<button type="button" class="ws-action-btn ws-btn ws-btn--primary" data-ws-approve="' + wsEsc(task.task_id) + '">确认完成/批准</button>';
+    } else if (isMarketingReview) {
+        actsHtml = '<button type="button" class="ws-btn ws-btn--primary" data-ws-go-review="' + wsEsc(task.task_id) + '">去审核 →</button>';
     } else if (isPendingReview) {
         actsHtml = '<span class="ws-tag">已提交，等待确认</span>';
     } else {
@@ -352,12 +355,16 @@ function wsRenderTaskCard(task, opts) {
     const summaryLine =
         sevTag + ' ' + (task.store ? '<span class="ws-tag">' + wsEsc(task.store) + '</span> ' : '') +
         (isGrowthTask ? '<span class="ws-tag">经营诊断</span> ' : '') +
+        (isMarketingReview ? '<span class="ws-tag" style="background:rgba(209,143,160,0.18);color:#D18FA0;">营销建议待审</span> ' : '') +
         wsEsc((showStoreSeparately ? task.store + ' — ' : '') + titleText);
     // 2026-08-01：用户要求责任人看到的任务卡片补上"发起人/开始时间/完成期限"三行，
     // 才能追踪紧迫感——created_by_name/timeout_at 由 GAAS 的 getMyOpenTasks 联表补上
     // （agents-service-v2 的 createBoardTask 默认给 timeout_at 2 天期限）。
     const metaLines = [];
     if (task.created_by_name) metaLines.push('发起人：' + wsEsc(task.created_by_name));
+    if (isMarketingReview && task.sourceLabel) metaLines.push('来源：' + wsEsc(task.sourceLabel));
+    if (isMarketingReview && task.anomalyLabel) metaLines.push('触发：' + wsEsc(task.anomalyLabel));
+    if (isMarketingReview && task.channelLabel) metaLines.push('渠道：' + wsEsc(task.channelLabel));
     if (task.created_at) metaLines.push('开始时间：' + wsEsc(String(task.created_at).slice(0, 16).replace('T', ' ')));
     if (task.timeout_at) metaLines.push('完成期限：' + wsEsc(String(task.timeout_at).slice(0, 16).replace('T', ' ')));
     const metaHtml = metaLines.length
@@ -368,7 +375,7 @@ function wsRenderTaskCard(task, opts) {
         wsFormatTaskDetail(task.detail) +
         '<div class="ws-card__acts">' +
         actsHtml +
-        (hideProgressLink || isGrowthTask ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
+        (hideProgressLink || isGrowthTask || isMarketingReview ? '' : '<button type="button" class="ws-btn ws-btn--link" data-ws-open-task="' + wsEsc(task.task_id) + '">' + progressLabel + '</button>') +
         '</div>' +
         (isCcOnly && isHqVerdictRole
             ? '<div class="ws-respond-form" id="ws-verdict-form-' + wsEsc(task.task_id) + '" style="display:none;margin-top:8px;">' +
@@ -523,6 +530,15 @@ function wsBindTaskCardEvents(root) {
             const category = card ? card.getAttribute('data-task-category') : '';
             const hasDiagnosis = WS_DIAGNOSIS_BACKED_CATEGORIES.includes(String(category || ''));
             try { showPage(hasDiagnosis ? 'diagnosis' : 'agent-tasks'); } catch (e) {}
+        });
+    });
+    // 2026-08-07：营销建议待审任务 → 直达「增长 → 执行中心 → 活动审核」
+    root.querySelectorAll('[data-ws-go-review]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            try {
+                showPage('growth');
+                setTimeout(() => { if (typeof showGrowthTab === 'function') showGrowthTab('review'); }, 120);
+            } catch (e) {}
         });
     });
 }
@@ -1988,7 +2004,8 @@ async function wsRenderBossOrHq(root, persona) {
         wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24'),
     ]);
     const allStores = (home?.storeLights || home?.storeSummary || []).map((s) => s.store).filter(Boolean);
-    const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
+    const reviewTasks = (Array.isArray(home?.marketingReview) ? home.marketingReview : []).map((t) => Object.assign({}, t, { source: 'marketing_review' }));
+    const tasksList = reviewTasks.concat(Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     const pendingApprovals = Array.isArray(approvalsData?.items) ? approvalsData.items : [];
     const pendingConfirmations = Array.isArray(pendingConfirmData?.items) ? pendingConfirmData.items : [];
     // 2026-07-31：用户反馈"飞书秒回resolved的任务，工作台完全看不到"——查证发现任务其实
@@ -2294,7 +2311,8 @@ async function wsRenderStore(root) {
         wsFetchJson('/api/workspace/tasks/recently-resolved?hours=24'),
         wsFetchJson('/api/workspace/pending-confirmations'),
     ]);
-    const tasksList = (Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
+    const reviewTasks = (Array.isArray(home?.marketingReview) ? home.marketingReview : []).map((t) => Object.assign({}, t, { source: 'marketing_review' }));
+    const tasksList = reviewTasks.concat(Array.isArray(home?.myTasks) ? home.myTasks : []).concat(growthTasks);
     // 2026-07-31：用户反馈"待批"是否真的连通好用——查证发现店长/出品经理视图(wsRenderStore)
     // 这里之前硬编码成空数组，从来没真正查询过审批数据，永远显示0，只有老板/总部视图
     // (wsRenderBossOrHq)是真实连通的。改成跟老板/总部视图一样查同一个/api/approvals接口。
