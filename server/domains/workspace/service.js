@@ -5,6 +5,7 @@
  */
 import { childLogger } from '../../utils/logger.js';
 import { pickAssigneeForCategory } from '../master-agent/resolve-assignee.js';
+import { getMarketingReviewQueue } from './marketing-suggestions.js';
 
 const log = childLogger({ domain: 'workspace', handler: 'service' });
 
@@ -309,6 +310,7 @@ export async function getPendingConfirmations(pool, tenantId, username, role) {
 
 export async function getWorkspaceHome(pool, tenantId, username, { role = '', month = '' } = {}) {
   const isFoodSafetyCcRole = WS_FOOD_SAFETY_CC_ROLES.includes(String(role || '').trim());
+  const isReviewRole = ['admin', 'hq_manager'].includes(String(role || '').trim());
   const [storeSummary, storeLights, myTasks, ccTasks, unread] = await Promise.all([
     getOpenTaskSummaryByStore(pool, tenantId),
     getStoreHealthLights(pool, tenantId, month),
@@ -328,7 +330,30 @@ export async function getWorkspaceHome(pool, tenantId, username, { role = '', mo
     ...myTasks,
     ...ccTasks.filter((t) => !myTaskIds.has(t.task_id)).map((t) => ({ ...t, _ccOnly: true })),
   ];
-  return { storeSummary, storeLights, myTasks: tasks, unreadCount: unread };
+  // 2026-08-07：待审核的营销建议（统一审核队列）也推送到管理员工作台任务栏，
+  // 用虚拟任务卡片展示（不写 master_tasks，避免共享表写入权问题），点「去审核」直达活动审核。
+  let marketingReview = [];
+  if (isReviewRole) {
+    try {
+      marketingReview = (await getMarketingReviewQueue(pool, tenantId, [])).slice(0, 20).map((it) => ({
+        task_id: it.actionKey,
+        title: (it.store ? it.store + ' — ' : '') + (it.title || ''),
+        detail: it.detail || '',
+        store: it.store || '',
+        severity: 'normal',
+        category: 'marketing_review',
+        source: 'marketing_review',
+        status: it.status || 'pending_approval',
+        sourceLabel: it.sourceLabel,
+        anomalyLabel: it.anomalyLabel,
+        channelLabel: it.channelLabel,
+        created_at: it.createdAt,
+      }));
+    } catch (e) {
+      log.warn({ msg: 'load_marketing_review_for_home_failed', err: e?.message });
+    }
+  }
+  return { storeSummary, storeLights, myTasks: tasks, unreadCount: unread, marketingReview };
 }
 
 /**
