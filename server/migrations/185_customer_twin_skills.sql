@@ -29,7 +29,7 @@ ON CONFLICT (skill_key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS job_coach_skill_progress (
   id BIGSERIAL PRIMARY KEY,
-  username TEXT NOT NULL,
+  username CITEXT NOT NULL,
   skill_key TEXT NOT NULL REFERENCES job_coach_skills(skill_key) ON DELETE CASCADE,
   level TEXT NOT NULL DEFAULT 'normal',
   trained_count INT NOT NULL DEFAULT 0,
