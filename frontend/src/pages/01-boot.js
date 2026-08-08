@@ -5026,6 +5026,11 @@ th { background: #F2EAEE; font-weight: 700; }
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN;
             }
+            // 全局训练看板：店长/出品经理/总部营运/总部HR/管理员 可见（硬边界）
+            if (page === 'customer-twin-dashboard') {
+                const r = String(role == null ? currentUser?.role : role || '').trim();
+                return ['admin', 'hq_manager', 'store_manager', 'store_production_manager', 'hr_manager'].includes(r);
+            }
             if (page === 'strategy') {
                 const r = String(role == null ? currentUser?.role : role || '').trim();
                 return r === ROLES.ADMIN || r === ROLES.HQ_MANAGER || r === ROLES.STORE_MANAGER || r === ROLES.PRODUCTION_MANAGER;

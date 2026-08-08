@@ -1,210 +1,62 @@
 /**
- * AI 顾客技能剧本（14 技能全就绪）
- * 四阶段：opening 开场 → deep_dive 深挖 → challenge 挑战 → closing 收尾
+ * AI 顾客技能剧本调度（v2）
+ * 场景内容在 coach-scenes.js（14 技能 × 普通/高级/金牌 × 每级 2 套场景）。
+ * 每场训练随机选场景、随机开场、随机打乱追问顺序，并避开上次用过的场景。
  */
 
+import { SKILL_SCENES } from './coach-scenes.js';
+
 export const COACH_CRITICAL_PRINCIPLES = [
-  { id: 'soothe_first', label: '异议/客诉先安抚', fix: '先道歉/表达理解再处理，不与客人争辩', anti: /(这跟我们没关系|不关我事|你去找|随便你|那是你的事)/ },
-  { id: 'need_first', label: '先了解需求再推荐', fix: '推荐前先问清人数/口味/场合/预算', anti: /(不用问|直接给你|我说了算)/ },
-  { id: 'own_exception', label: '异常先揽责', fix: '用"我来处理/我们负责"承接，再找原因', anti: /(不是我的错|找我们经理|我不知道|别问我)/ },
-  { id: 'promise_keep', label: '承诺要兑现', fix: '给具体时间/数字并保证做到，不模糊承诺', anti: /(应该可以吧|到时候再说|下次再说)/ },
-  { id: 'allergy_confirm', label: '过敏/忌口必须确认', fix: '主动问过敏/忌口并落实到单，不抱侥幸', anti: /(过敏没事的|一点点没事|不用管)/ },
-  { id: 'no_fabricate', label: '不确定先核实，不编造', fix: '不确定的内容先查证或请示，不说"大概/应该"', anti: /(好像是|应该是|可能是吧|说不准|记不清|大概吧)/ },
+  { id: 'soothe_first', label: '异议/客诉先安抚', fix: '先道歉/表达理解再处理，不与客人争辩', standard: '非常抱歉让您久等了，我马上帮您查，您先喝口茶。', anti: /(这跟我们没关系|不关我事|你去找|随便你|那是你的事)/ },
+  { id: 'need_first', label: '先了解需求再推荐', fix: '推荐前先问清人数/口味/场合/预算', standard: '好的，请问今天几位用餐？有没有忌口？我再给您推荐合适的。', anti: /(不用问|直接给你|我说了算)/ },
+  { id: 'own_exception', label: '异常先揽责', fix: '用"我来处理/我们负责"承接，再找原因', standard: '实在抱歉，这是我们没做好，我马上帮您处理。', anti: /(不是我的错|找我们经理|我不知道|别问我)/ },
+  { id: 'promise_keep', label: '承诺要兑现', fix: '给具体时间/数字并保证做到，不模糊承诺', standard: '这道菜大约 8 分钟给您上，我帮您盯着。', anti: /(应该可以吧|到时候再说|下次再说)/ },
+  { id: 'allergy_confirm', label: '过敏/忌口必须确认', fix: '主动问过敏/忌口并落实到单，不抱侥幸', standard: '请问有没有过敏或忌口？我帮您备注到后厨，确保不混用。', anti: /(过敏没事的|一点点没事|不用管)/ },
+  { id: 'no_fabricate', label: '不确定先核实，不编造', fix: '不确定的内容先查证或请示，不说"大概/应该"', standard: '这个我需要和后厨确认一下，马上给您准确答复。', anti: /(好像是|应该是|可能是吧|说不准|记不清|大概吧)/ },
 ];
 
 export const COACH_DIMENSIONS = [
-  { key: 'professional', label: '专业度', fix: '回答不够专业：用知识库准确回答，菜品/规则先掌握再开口' },
-  { key: 'tone', label: '语气', fix: '语气不够自然/礼貌：多用"您/请/我帮您"，避免生硬冷淡' },
-  { key: 'response', label: '应对', fix: '应对不够得体：先接住客人情绪再给方案，被追问不慌乱' },
-  { key: 'completeness', label: '完整性', fix: '回答不完整：把关键信息（规则/时限/补偿/替代方案）说全' },
-  { key: 'knowledge_accuracy', label: '知识准确性', fix: '知识有误：核对知识库，不确定先查证再回答' },
-  { key: 'initiative', label: '主动性', fix: '不够主动：主动确认需求、主动告知时间、主动补位' },
-  { key: 'sales_conversion', label: '销售转化', skills: ['selling'], fix: '推销未促成：合适时机给出明确建议并邀请行动（"要不要帮您办一个？"）' },
+  { key: 'professional', label: '专业度', fix: '回答不够专业：用知识库准确回答，菜品/规则先掌握再开口', standard: '这道菜是豆酱焗清远鸡，用的是广东清远走地鸡，腌制后砂锅焗制，肉嫩是腌制和火候控制的。' },
+  { key: 'tone', label: '语气', fix: '语气不够自然/礼貌：多用"您/请/我帮您"，避免生硬冷淡', standard: '您好，不好意思让您久等了，我马上帮您处理。' },
+  { key: 'response', label: '应对', fix: '应对不够得体：先接住客人情绪再给方案，被追问不慌乱', standard: '您先别着急，我理解您的感受，我先查一下单，马上给您答复。' },
+  { key: 'completeness', label: '完整性', fix: '回答不完整：把关键信息（规则/时限/补偿/替代方案）说全', standard: '充值 500 送 100，金额次日到账，全场通用，有效期一年，我可以把细则发您确认。' },
+  { key: 'knowledge_accuracy', label: '知识准确性', fix: '知识有误：核对知识库，不确定先查证再回答', standard: '我们用的是清远鸡，具体供应商我可以查证后给您准确答复。' },
+  { key: 'initiative', label: '主动性', fix: '不够主动：主动确认需求、主动告知时间、主动补位', standard: '请问需要帮您安排座位吗？您的菜大约 10 分钟上，我先帮您催一下。' },
+  { key: 'sales_conversion', label: '销售转化', skills: ['selling'], fix: '推销未促成：合适时机给出明确建议并邀请行动', standard: '按您的用餐频率，充 500 最划算，两个月刚好用完，我现在帮您办一个？' },
 ];
 
-export const SELLING_SCRIPT = {
-  skill_key: 'selling',
-  persona: {
-    label: '犹豫型老顾客',
-    desc: '常客，价格敏感，对充值/会员有疑虑，怕被套路',
-    scene: '晚饭时段，2 人用餐，用餐尾声',
-  },
-  opening: [
-    '服务员，你们会员充 500 送 100 是真的吗？',
-    '我看你们桌上有会员活动，具体是什么？',
-    '你们是不是有会员充值？划算吗？',
-  ],
-  deep_dive: [
-    '我一个月就来两三次，充 500 划算吗？',
-    '充的钱能用在套餐上吗？',
-    '会员除了充值还有什么好处？',
-    '会不会充了以后你们价格就变了？',
-    '如果我朋友也办，两个人能一起用吗？',
-    '充值送的那 100 有使用期限吗？',
-  ],
-  challenge: [
-    '上次我在别家充了钱，后来店都换了，你们怎么保证？',
-    '你们是不是就靠充值套住客人？',
-    '我现在不办，过几天活动还有吗？',
-  ],
-  closing_satisfied: [
-    '行，听起来还可以，那我现在办一个吧。',
-    '好，那就先充 500 试试。',
-  ],
-  closing_unsatisfied: [
-    '我再想想吧，不着急。',
-    '算了，下次再说。',
-  ],
-  knowledge_hints: ['推销', '会员', '充值'],
-  min_deep_turns: 3,
-  min_challenge_turns: 1,
-};
-
-const D = {
-  dish_intro: {
-    persona: { label: '首次到店好奇客', desc: '第一次来，想吃招牌但不知道点什么', scene: '点餐时段，2 人' },
-    opening: ['你们有什么招牌菜推荐吗？', '我第一次来，哪几道菜比较有代表性？', '你们店里点得最多的是什么？'],
-    deep_dive: ['这道菜是什么做的？', '为什么是招牌？好吃在哪？', '这道菜适合几个人吃？', '有没有不辣的推荐？', '和另一家店的做法有什么区别？', '点了招牌还要配什么菜比较好？'],
-    challenge: ['你说得好听，万一不好吃怎么办？', '招牌卖这么贵，值吗？', '我朋友上次来觉得一般，你怎么说？'],
-    closing_satisfied: ['行，那就按你说的点吧。', '听起来不错，来一份试试。'],
-    closing_unsatisfied: ['我再看看，不用了。', '算了，先点两个常吃的。'],
-    knowledge_hints: ['菜品介绍', '菜品知识'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  dine_complaint: {
-    persona: { label: '愤怒型堂食客', desc: '等太久/上错菜/有异物，情绪激动', scene: '高峰用餐，已等 30 分钟' },
-    opening: ['服务员！我们这桌的菜多久能上？都等半小时了！', '这个菜不是我们点的，你们怎么回事？', '菜里这是什么？你们怎么做的？'],
-    deep_dive: ['你们到底还要多久？给个准话。', '是不是把我们这桌忘了？', '上错的菜怎么办？', '等这么久你们怎么补偿？', '叫你们经理来。', '我菜都凉了，这怎么吃？'],
-    challenge: ['你们是不是根本就没下单？', '我以后再也不来了，你看着办。', '你们店就是这种服务水平？'],
-    closing_satisfied: ['行，你们处理得还算及时，这次就算了。', '那好吧，菜快点补上就行。'],
-    closing_unsatisfied: ['算了，结账吧，我不想等了。', '不用了，我直接差评。'],
-    knowledge_hints: ['堂食客诉', '出品质量', '食安事件'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  table_visit: {
-    persona: { label: '配合型就餐客', desc: '用餐接近尾声，愿意反馈', scene: '晚市，客人快吃完' },
-    opening: ['（服务员走近）你们今天还会来问意见吗？', '你们是不是要收集反馈？我问一下。', '我吃得差不多了，你们要了解什么？'],
-    deep_dive: ['你们一般问什么问题？', '如果我不满意你们会处理吗？', '今天菜怎么样你们会记录吗？', '我说的意见真的会改吗？', '上次我提的意见好像没改。', '你们多久回访一次老客人？'],
-    challenge: ['你们问这么多是不是走过场？', '我说了不好吃你们能退吗？', '店长在吗？我想当面说。'],
-    closing_satisfied: ['你们还挺认真，行，那我实话实说。', '可以，我把感受说清楚。'],
-    closing_unsatisfied: ['算了，说了也没用。', '不用问了，我先走了。'],
-    knowledge_hints: ['桌访'],
-    min_deep_turns: 2, min_challenge_turns: 1,
-  },
-  delivery_complaint: {
-    persona: { label: '外卖不满客', desc: '电话/在线投诉，语气冲', scene: '晚间外卖高峰' },
-    opening: ['你们外卖怎么回事？等了 1 个多小时！', '餐到了但完全不是我要的，怎么处理？', '汤全洒了，你们怎么做外卖的？'],
-    deep_dive: ['你们出餐到底多久？', '少了一个菜，现在能补吗？', '退款怎么操作？多久到账？', '你们和骑手谁负责？', '我下次还敢点吗？', '平台上的差评你们看到了吗？'],
-    challenge: ['你们是不是根本没做我的单？', '补偿就这点？太敷衍了吧。', '我现在就要个说法。'],
-    closing_satisfied: ['行，那你尽快处理，我等着。', '可以，这样我能接受。'],
-    closing_unsatisfied: ['算了，我直接找平台投诉。', '不用了，以后不点了。'],
-    knowledge_hints: ['外卖客诉', '外卖异常'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  delivery_anomaly: {
-    persona: { label: '外卖异常客', desc: '超时/洒漏/少餐的具体异常', scene: '收到餐后发现问题' },
-    opening: ['餐洒了，汤全漏了，怎么办？', '少了一个菜，你们看看单子。', '超时了 40 分钟，凉透了。'],
-    deep_dive: ['洒漏是骑手问题还是你们打包问题？', '少餐能补送吗？多久到？', '超时你们有补偿吗？', '打包是不是不够严实？', '退款还是补送你们选哪个？', '你们怎么避免下次再这样？'],
-    challenge: ['你们每次都说补，每次都补不上。', '这种情况是不是该免单？', '我要投诉到底了。'],
-    closing_satisfied: ['行，那补送一份，我等着。', '可以，这次就算了。'],
-    closing_unsatisfied: ['不用补了，退款吧。', '我直接差评。'],
-    knowledge_hints: ['外卖异常'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  greeting: {
-    persona: { label: '到店散客', desc: '进店等位，观望态度', scene: '晚市高峰，门口排队' },
-    opening: ['（进店）还有位置吗？', '现在要等多久？', '两个人有位子吗？'],
-    deep_dive: ['前面还有几桌？', '等位可以扫码吗？', '有没有宝宝椅？', '能不能先看看菜单？', '等位有水和零食吗？', '我们赶时间，能不能快点？'],
-    challenge: ['你们这排队要等一小时吧？', '我朋友都到了，能不能先进去？', '等这么久值得吗？'],
-    closing_satisfied: ['行，那我们就等一下。', '好，帮我们排上。'],
-    closing_unsatisfied: ['算了，我们换一家。', '太久，不吃了。'],
-    knowledge_hints: ['迎宾'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  dish_knowledge: {
-    persona: { label: '刨根问底好奇客', desc: '对食材产地做法很感兴趣', scene: '点餐时连续追问' },
-    opening: ['你们豆酱焗鸡用的是哪里的鸡？', '这道鱼生是哪里来的鱼？', '你们的叉烧怎么做这么香？'],
-    deep_dive: ['食材产地是哪里？', '做法有什么讲究？', '为什么鸡肉这么嫩？', '这个豆酱是什么味道？', '食材每天新鲜吗？', '火候怎么控制的？'],
-    challenge: ['你说得这么专业，不会是背的吧？', '我上次吃的鱼生有点腥，怎么回事？', '你们能保证食材新鲜吗？'],
-    closing_satisfied: ['原来如此，那我点一份试试。', '你们还挺懂行，就点这个。'],
-    closing_unsatisfied: ['听你这么说还是不放心。', '算了，换一道。'],
-    knowledge_hints: ['菜品知识', '菜品介绍'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  allergy_knowledge: {
-    persona: { label: '过敏谨慎客', desc: '有过敏史，点单小心', scene: '点餐时主动说明忌口' },
-    opening: ['我海鲜过敏，你们哪些菜不能点？', '我对大豆过敏，你们豆酱类菜品多吗？', '我孩子对坚果过敏，甜品里有没有？'],
-    deep_dive: ['酱油里含大豆吗？', '汤底里有海鲜吗？', '炒菜的油是什么油？', '过敏的话你们能怎么处理？', '能不能备注到后厨？', '如果误上了怎么办？'],
-    challenge: ['你们服务员都懂这些吗？', '上次我说了不要辣还是上了辣的。', '你们怎么保证不交叉污染？'],
-    closing_satisfied: ['好，那你帮我确认好再下单。', '可以，谢谢你提醒得仔细。'],
-    closing_unsatisfied: ['算了，我不敢在你们这吃。', '不放心，我还是换一家。'],
-    knowledge_hints: ['忌口知识'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  food_safety_knowledge: {
-    persona: { label: '谨慎养生客', desc: '关注食品安全细节', scene: '用餐中询问' },
-    opening: ['你们食材的保质期是怎么管理的？', '凉菜放多久了？安全吗？', '你们洗碗是怎么消毒的？'],
-    deep_dive: ['食材过期了怎么办？', '剩菜会二次利用吗？', '冰箱温度你们有检查吗？', '交叉污染怎么避免？', '食品许可证有吗？', '员工健康证齐全吗？'],
-    challenge: ['你们嘴上说得好，真出事怎么办？', '网上说你们店卫生有问题。', '我能去后厨看看吗？'],
-    closing_satisfied: ['听你这么说就放心了。', '可以，那你们继续保持。'],
-    closing_unsatisfied: ['我还是有点担心。', '算了，下次不来了。'],
-    knowledge_hints: ['食安知识'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  food_safety_incident: {
-    persona: { label: '食安事件客', desc: '发现异物/疑似变质，情绪紧张', scene: '用餐中突发' },
-    opening: ['菜里有根头发，你们怎么处理？', '这个肉好像坏了，味道不对。', '吃到异物了，你们必须给说法！'],
-    deep_dive: ['这是什么异物？怎么进去的？', '会不会拉肚子？你们负责吗？', '要不要叫医生？', '你们怎么赔偿？', '需要登记吗？', '后厨会不会还有别的问题？'],
-    challenge: ['我要打 12315 投诉。', '你们是不是经常出这种事？', '今天必须给我个满意答复！'],
-    closing_satisfied: ['你们处理得还算负责，这次就这样。', '行，那你们后续要整改。'],
-    closing_unsatisfied: ['不用说了，我直接投诉。', '我保留追究权利。'],
-    knowledge_hints: ['食安事件', '食安知识'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  kitchen_collab: {
-    persona: { label: '高峰配合场景', desc: '传菜/催单/沽清/错菜的协同', scene: '晚市高峰，前后场联动' },
-    opening: ['出菜口堆满了，你们传菜的人呢？', 'X 桌催了三次了，后厨到底做没做？', 'XX 菜沽清了，你们系统改了没？'],
-    deep_dive: ['这桌的菜先上哪个？', '急单怎么插队？', '沽清后怎么跟客人说？', '上错桌了现在怎么办？', '退菜流程是什么？', '高峰怎么避免再出错？'],
-    challenge: ['你们前后场是不是各干各的？', '再乱下去客人全跑了。', '这事谁负责？'],
-    closing_satisfied: ['行，按流程来，我盯着。', '可以，那大家配合好。'],
-    closing_unsatisfied: ['算了，我自己处理。', '你们这样我真没法配合。'],
-    knowledge_hints: ['与厨房配合', '出品质量'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  output_quality: {
-    persona: { label: '挑剔出品客', desc: '对温度/分量/摆盘/颜色不满意', scene: '上菜后提出' },
-    opening: ['这菜是温的，不够热啊。', '这个分量是不是少了？', '摆盘也太随意了吧。'],
-    deep_dive: ['热菜标准温度是多少？', '分量是称重过的吗？', '这个颜色是不是炒过了？', '能重新做一份吗？', '退菜怎么处理？', '你们的标准卡在哪看？'],
-    challenge: ['你们是不是拿剩菜应付我？', '这个水平也敢端上来？', '重做要等多久？'],
-    closing_satisfied: ['重做一份可以，我等着。', '行，那这次你们改进。'],
-    closing_unsatisfied: ['不用重做了，退了吧。', '直接免单吧。'],
-    knowledge_hints: ['出品质量'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-  cooking_knowledge: {
-    persona: { label: '内行求知客', desc: '懂一点烹饪，想验证服务员专业性', scene: '闲聊中提问' },
-    opening: ['你们炒菜为什么这么嫩？', '烧鹅皮为什么能这么脆？', '鱼为什么蒸不老？'],
-    deep_dive: ['油温一般控制在多少？', '上浆挂糊是什么原理？', '为什么有的菜要猛火快炒？', '去腥用什么方法？', '炖肉为什么越炖越软？', '你们炒锅有标准火候吗？'],
-    challenge: ['你说得对吗？我不太信。', '我去过好多店，就你们说得玄乎。', '能说下具体时间温度吗？'],
-    closing_satisfied: ['不错，你们服务员还真懂。', '行，那点一道试试你的推荐。'],
-    closing_unsatisfied: ['都是背的台词吧。', '算了，不聊了。'],
-    knowledge_hints: ['烹饪知识', '菜品知识'],
-    min_deep_turns: 3, min_challenge_turns: 1,
-  },
-};
-
-function normalizeScript(s) {
+export function scriptFor(skillKey, level = 'normal') {
+  const def = SKILL_SCENES[skillKey];
+  if (!def) return null;
+  const lv = def.levels[level] || def.levels.normal;
   return {
-    ...s,
-    min_deep_turns: Math.max(s.min_deep_turns || 3, 6),
-    min_challenge_turns: Math.max(s.min_challenge_turns || 1, 3),
+    skill_key: skillKey,
+    level,
+    knowledge_hints: def.knowledge_hints || [],
+    min_deep_turns: 6,
+    min_challenge_turns: 3,
+    scenes: lv.scenes,
+    closing_satisfied: lv.closing_satisfied,
+    closing_unsatisfied: lv.closing_unsatisfied,
   };
 }
 
-export const SKILL_SCRIPTS = {
-  selling: normalizeScript(SELLING_SCRIPT),
-  ...Object.fromEntries(Object.entries(D).map(([k, v]) => [k, normalizeScript(v)])),
-};
+export function pickScene(script, { avoidKey = '', rnd = Math.random } = {}) {
+  const pool = Array.isArray(script?.scenes) ? script.scenes : [];
+  if (!pool.length) return null;
+  const candidates = pool.filter((s) => s.key !== avoidKey);
+  const source = candidates.length ? candidates : pool;
+  return source[Math.floor(Math.max(0, Math.min(0.999999, rnd())) * source.length)] || source[0];
+}
+
+export function shuffledIndices(len, rnd = Math.random) {
+  const arr = Array.from({ length: Math.max(0, Number(len) || 0) }, (_, i) => i);
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.max(0, Math.min(0.999999, rnd())) * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 export function dimensionFix(key) {
   return COACH_DIMENSIONS.find((d) => d.key === key)?.fix || '';

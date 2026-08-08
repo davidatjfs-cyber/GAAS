@@ -346,3 +346,176 @@ function loadCustomerTwinReviewPage() {
   ctrWireEvents();
   ctrLoad();
 }
+
+// ========== 全局训练看板（店长/总部经理/管理员） ==========
+var __ctd = { data: null, storeFilter: '' };
+
+function ctdEnsureContainer() {
+  if (document.getElementById('customer-twin-dashboard-page')) return;
+  const page = document.createElement('div');
+  page.id = 'customer-twin-dashboard-page';
+  page.className = 'hidden';
+  page.innerHTML =
+    '<div style="max-width:980px;margin:0 auto;padding:14px 12px 30px;color:#e8eef2;font-family:inherit">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
+    '<div><div style="font-size:17px;font-weight:800">全局训练看板</div>' +
+    '<div style="font-size:12px;color:rgba(232,238,242,.62);margin-top:2px">AI岗位教练 · 店长/总部经理/管理员可见</div></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<button data-ctd-action="refresh" style="padding:9px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">刷新</button>' +
+    '<button data-ctd-action="back" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(232,238,242,.35);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px">返回培训</button>' +
+    '</div></div>' +
+    '<div id="ctd-error" class="hidden" style="background:rgba(185,28,28,.15);border:1px solid rgba(185,28,28,.45);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>' +
+    '<div id="ctd-body">加载中…</div></div>';
+  document.body.appendChild(page);
+}
+
+function ctdLevelLabel(level) {
+  return level === 'advanced' ? '高级' : level === 'gold' ? '金牌' : '普通';
+}
+
+function ctdPct(v) {
+  return v == null ? '—' : v + '%';
+}
+
+function ctdScore(v) {
+  return v == null ? '—' : v + ' 分';
+}
+
+function ctdRender() {
+  const body = document.getElementById('ctd-body');
+  const d = __ctd.data || {};
+  const t = d.totals || {};
+  const fmtDate = (s) => s ? String(s || '').slice(0, 16).replace('T', ' ') : '—';
+  const storeFilter = String(__ctd.storeFilter || '').trim();
+  const stores = (d.by_store || []).filter((s) => !storeFilter || s.store === storeFilter);
+  const staff = (d.staff_detail || []).filter((x) => !storeFilter || x.store === storeFilter);
+  const notTrained = (d.not_trained || []).filter((x) => !storeFilter || x.store === storeFilter);
+  const cal = d.calibration || {};
+
+  const summaryCards = [
+    ['应训前厅', t.staff_count + ' 人'],
+    ['已参训', t.trained_staff + ' 人'],
+    ['参与率', ctdPct(t.participation_rate)],
+    ['累计训练', t.total_sessions + ' 次'],
+    ['近 7 天', t.week_sessions + ' 次'],
+    ['平均分', ctdScore(t.avg_score)],
+    ['通过率', ctdPct(t.pass_rate)],
+    ['校准一致率', cal.total ? ctdPct(cal.avg_rate) + '（' + cal.total + ' 份）' : '暂无'],
+  ];
+  const cardsHtml = summaryCards.map(([k, v]) =>
+    '<div style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;text-align:center">' +
+    '<div style="font-size:12px;color:rgba(232,238,242,.62)">' + ctrEsc(k) + '</div>' +
+    '<div style="font-size:20px;font-weight:800;margin-top:4px">' + ctrEsc(v) + '</div></div>'
+  ).join('');
+
+  const storeRows = stores.map((s) =>
+    '<tr><td>' + ctrEsc(s.store) + '</td><td>' + s.staff_count + '</td><td>' + s.trained_staff + '</td>' +
+    '<td>' + s.sessions + '（周 ' + s.week_sessions + '）</td><td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
+  ).join('') || '<tr><td colspan="6" style="text-align:center;color:rgba(232,238,242,.45)">暂无门店数据</td></tr>';
+
+  const skillRows = (d.by_skill || []).map((s) =>
+    '<tr><td>' + ctrEsc(s.label) + '</td><td>' + s.sessions + '</td><td>' + s.trained_users + '</td>' +
+    '<td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
+  ).join('');
+
+  const weakRows = (d.weakest_skills || []).map((s, i) =>
+    '<tr><td>' + (i + 1) + '</td><td>' + ctrEsc(s.label) + '</td><td>' + s.sessions + '</td>' +
+    '<td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
+  ).join('') || '<tr><td colspan="5" style="text-align:center;color:rgba(232,238,242,.45)">暂无训练数据</td></tr>';
+
+  const notRows = notTrained.map((x) =>
+    '<tr><td>' + ctrEsc(x.name) + '</td><td>' + ctrEsc(x.username) + '</td><td>' + ctrEsc(x.store) + '</td><td>' + ctrEsc(x.position) + '</td></tr>'
+  ).join('') || '<tr><td colspan="4" style="text-align:center;color:rgba(232,238,242,.45)">全部前厅人员均已参训</td></tr>';
+
+  const staffRows = staff.map((x) => {
+    const skills = (x.skills || []).map((sk) =>
+      ctrEsc(sk.label) + ' ' + ctdLevelLabel(sk.level) + ' ' + sk.trained_count + '/' + sk.success_count
+    ).join('；');
+    return '<tr><td>' + ctrEsc(x.name) + '</td><td>' + ctrEsc(x.store) + '</td><td>' + ctrEsc(x.position) + '</td>' +
+      '<td>' + x.total_sessions + '</td><td>' + ctdScore(x.avg_score) + '</td><td>' + fmtDate(x.last_finished_at) + '</td>' +
+      '<td style="font-size:11px;color:rgba(232,238,242,.72)">' + ctrEsc(skills || '尚未开练') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:rgba(232,238,242,.45)">暂无人员数据</td></tr>';
+
+  const storeOptions = (d.by_store || []).map((s) =>
+    '<option value="' + ctrEsc(s.store) + '"' + (s.store === storeFilter ? ' selected' : '') + '>' + ctrEsc(s.store) + '</option>'
+  ).join('');
+
+  body.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">' + cardsHtml + '</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+    '<label style="font-size:12px;color:rgba(232,238,242,.7)">门店筛选</label>' +
+    '<select id="ctd-store-filter" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#e8eef2;font-size:13px">' +
+    '<option value="">全部门店</option>' + storeOptions + '</select></div>' +
+
+    '<div style="display:grid;gap:12px">' +
+    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">门店对比</div>' +
+    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px"><thead>' +
+    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">门店</th><th style="padding:6px">应训</th><th style="padding:6px">已训</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+    '<tbody>' + storeRows + '</tbody></table></div></div>' +
+
+    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">技能训练情况（14 项前厅技能）</div>' +
+    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
+    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">技能</th><th style="padding:6px">训练次数</th><th style="padding:6px">参训人数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+    '<tbody>' + skillRows + '</tbody></table></div></div>' +
+
+    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">最弱技能 TOP5（通过率最低）</div>' +
+    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
+    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">排名</th><th style="padding:6px">技能</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+    '<tbody>' + weakRows + '</tbody></table></div></div>' +
+
+    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">尚未参训人员（' + notTrained.length + ' 人）</div>' +
+    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px"><thead>' +
+    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">姓名</th><th style="padding:6px">账号</th><th style="padding:6px">门店</th><th style="padding:6px">岗位</th></tr></thead>' +
+    '<tbody>' + notRows + '</tbody></table></div></div>' +
+
+    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">个人明细（' + staff.length + ' 人）</div>' +
+    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px"><thead>' +
+    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">姓名</th><th style="padding:6px">门店</th><th style="padding:6px">岗位</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">最近训练</th><th style="padding:6px">技能进度</th></tr></thead>' +
+    '<tbody>' + staffRows + '</tbody></table></div></div>' +
+    '</div>';
+
+  const filter = document.getElementById('ctd-store-filter');
+  if (filter) {
+    filter.onchange = () => {
+      __ctd.storeFilter = filter.value || '';
+      ctdRender();
+    };
+  }
+}
+
+async function ctdLoad() {
+  const errEl = document.getElementById('ctd-error');
+  const body = document.getElementById('ctd-body');
+  if (errEl) errEl.classList.add('hidden');
+  if (body) body.textContent = '加载中…';
+  try {
+    const data = await ctrApi('/api/customer-twin/training/dashboard');
+    __ctd.data = data;
+    ctdRender();
+  } catch (e) {
+    if (errEl) {
+      errEl.textContent = '加载失败：' + ctrChineseError(e, e && e.data);
+      errEl.classList.remove('hidden');
+    }
+    if (body) body.textContent = '';
+  }
+}
+
+function ctdHandleClick(ev) {
+  const ref = ev.target.closest('[data-ctd-action="refresh"]');
+  const back = ev.target.closest('[data-ctd-action="back"]');
+  if (ref) ctdLoad();
+  else if (back && typeof showPage === 'function') showPage('training');
+}
+
+function loadCustomerTwinDashboardPage() {
+  ctdEnsureContainer();
+  document.removeEventListener('click', ctdHandleClick);
+  document.addEventListener('click', ctdHandleClick);
+  ctdLoad();
+}

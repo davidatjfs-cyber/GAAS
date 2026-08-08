@@ -16,6 +16,7 @@ import { createCustomerTwinAdminRequired } from './admin-guard.js';
 import { syncDishData } from './feishu-dish-sync.js';
 import { createCoachSession, nextCoachTurn, finishCoachSession, setCoachLlm } from './coach-session.js';
 import { pickDailyCalibration, submitCalibration, calibrationStats } from './calibration.js';
+import { trainingDashboard, TRAIN_MANAGER_ROLES } from './training-dashboard.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -213,6 +214,24 @@ export function registerCustomerTwinRoutes(ctx) {
       res.json(await calibrationStats(pool));
     } catch (e) {
       log.error({ msg: 'calibration_stats', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/customer-twin/training/dashboard', authRequired, async (req, res) => {
+    try {
+      const role = String(req.user?.role || '').trim();
+      if (!TRAIN_MANAGER_ROLES.includes(role)) {
+        return res.status(403).json({ ok: false, error: 'forbidden' });
+      }
+      const data = await trainingDashboard(pool, {
+        role,
+        store: String(req.user?.current_store || req.user?.store || '').trim(),
+        allowedStores: req.user?.allowed_stores,
+      });
+      res.json(data);
+    } catch (e) {
+      log.error({ msg: 'twin_training_dashboard', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

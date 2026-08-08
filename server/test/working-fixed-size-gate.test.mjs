@@ -365,8 +365,11 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * （时段下滑/复购储值/品宣/外卖/AI建议），JS 走 frontend/src/pages/13-growth.js。
  * 2026-08-08 第七十三次上调（72869→72935）：培训卡审核模块新增「每日评分校准」界面
  * （管理员抽取已完成会话独立打分、对比一致率；新代码在 frontend/src/pages/16-customer-twin.js）。
+ * 2026-08-08 第七十四次上调（72935→73148）：全局训练看板（店长/总部经理/管理员）——
+ * 新增页面容器/渲染/刷新逻辑与训练首页入口，JS 走 frontend/src/pages/16-customer-twin.js、
+ * 03-training-focus.js、01-boot.js、02-confirm-role-modules.js、11-rewards-permissions.js。
  */
-const MAX_LINES = 72935;
+const MAX_LINES = 73148;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');
