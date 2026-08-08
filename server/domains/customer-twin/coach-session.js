@@ -100,9 +100,9 @@ export async function nextCoachTurn(pool, { sessionId, username, message }) {
   transcript.push({ role: 'customer', text: customerText, phase: nextPhase });
   await pool.query(
     `UPDATE customer_twin_coach_sessions
-        SET phase = $3, transcript = $4::jsonb
+        SET phase = $2, transcript = $3::jsonb
       WHERE id = $1`,
-    [sessionId, null, nextPhase, JSON.stringify(transcript)]
+    [sessionId, nextPhase, JSON.stringify(transcript)]
   );
   return {
     ok: true,
@@ -133,9 +133,9 @@ export async function finishCoachSession(pool, { sessionId, username, useLlm = t
 
   await pool.query(
     `UPDATE customer_twin_coach_sessions
-        SET status='finished', success=$3, rule_score=$4::jsonb, ai_score=$5::jsonb, finished_at=NOW()
+        SET status='finished', success=$2, rule_score=$3::jsonb, ai_score=$4::jsonb, finished_at=NOW()
       WHERE id = $1`,
-    [sessionId, null, result.success, JSON.stringify({ violations: result.violations }), JSON.stringify(result.dims)]
+    [sessionId, result.success, JSON.stringify({ violations: result.violations }), JSON.stringify(result.dims)]
   );
 
   const progress = await updateSkillProgress(pool, username, session.skill_key, result.success);
