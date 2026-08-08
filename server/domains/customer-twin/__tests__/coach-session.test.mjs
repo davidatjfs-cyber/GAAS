@@ -16,8 +16,8 @@ function memoryPool(sessionStore) {
         return { rows: sessionStore.current ? [sessionStore.current] : [] };
       }
       if (sql.includes('SET phase =')) {
-        const phase = params[2];
-        const transcript = params[3];
+        const phase = params[1];
+        const transcript = params[2];
         sessionStore.current.phase = phase;
         sessionStore.current.transcript = JSON.parse(transcript);
         return { rows: [] };
