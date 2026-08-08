@@ -1931,13 +1931,13 @@
             if (!card) {
                 card = document.createElement('div');
                 card.id = 'job-coach-entry-card';
-                card.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,rgba(13,122,95,.18),rgba(209,143,160,.12));border:1px solid rgba(13,122,95,.28);';
+                card.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:18px;background:rgba(224,166,180,.10);border:1px solid rgba(224,166,180,.32);box-shadow:0 1px 2px rgba(0,0,0,.35),0 24px 60px rgba(0,0,0,.35);';
                 home.insertBefore(card, home.firstChild);
             }
             card.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
-                + '<div><div style="font-size:15px;font-weight:700;color:#E8F5F0;">AI 岗位教练</div>'
-                + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">情景陪练 · 能力雷达 · 今日弱项训练</div></div>'
-                + '<a href="/job-coach.html" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#0d7a5f;color:#fff;font-size:13px;font-weight:600;text-decoration:none;">开始陪练</a>'
+                + '<div><div style="font-size:15px;font-weight:700;color:#F2EAEE;">AI 岗位教练</div>'
+                + '<div style="font-size:12px;color:#97848E;margin-top:4px;line-height:1.4;">情景陪练 · 能力雷达 · 今日弱项训练</div></div>'
+                + '<a href="/job-coach.html" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:12px;background:#E0A6B4;color:#241319;font-size:13px;font-weight:600;text-decoration:none;">开始陪练</a>'
                 + '</div><div id="job-coach-radar-line" style="margin-top:10px;font-size:12px;color:rgba(242,234,238,.8);line-height:1.45;">加载能力画像…</div>';
             fetch('/api/sales-sim/me', {
                 headers: { Authorization: 'Bearer ' + (localStorage.getItem('hrms_token') || '') }
@@ -1963,11 +1963,11 @@
             if (typeof isAdminUser === 'function' && isAdminUser() && !document.getElementById('twin-review-entry-card')) {
                 var reviewCard = document.createElement('div');
                 reviewCard.id = 'twin-review-entry-card';
-                reviewCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:rgba(207,161,74,.10);border:1px solid rgba(207,161,74,.35);';
+                reviewCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:18px;background:rgba(224,166,180,.10);border:1px solid rgba(224,166,180,.32);box-shadow:0 1px 2px rgba(0,0,0,.35),0 24px 60px rgba(0,0,0,.35);';
                 reviewCard.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
-                    + '<div><div style="font-size:15px;font-weight:700;color:#F3E1B9;">培训卡审核</div>'
-                    + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">审核真实桌访与差评生成的培训卡（仅管理员可见）</div></div>'
-                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#a8802f;color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;">进入审核</button>'
+                    + '<div><div style="font-size:15px;font-weight:700;color:#F2EAEE;">培训卡审核</div>'
+                    + '<div style="font-size:12px;color:#97848E;margin-top:4px;line-height:1.4;">审核真实桌访与差评生成的培训卡（仅管理员可见）</div></div>'
+                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:12px;background:#E0A6B4;color:#241319;font-size:13px;font-weight:600;border:none;cursor:pointer;">进入审核</button>'
                     + '</div>';
                 var anchor = document.getElementById('job-coach-entry-card');
                 home.insertBefore(reviewCard, anchor ? anchor.nextSibling : home.firstChild);
@@ -1981,11 +1981,11 @@
             if (typeof isTrainingManager === 'function' && isTrainingManager() && !document.getElementById('twin-dashboard-entry-card')) {
                 var dashCard = document.createElement('div');
                 dashCard.id = 'twin-dashboard-entry-card';
-                dashCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:rgba(107,142,183,.14);border:1px solid rgba(107,142,183,.38);';
+                dashCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:18px;background:rgba(224,166,180,.10);border:1px solid rgba(224,166,180,.32);box-shadow:0 1px 2px rgba(0,0,0,.35),0 24px 60px rgba(0,0,0,.35);';
                 dashCard.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
-                    + '<div><div style="font-size:15px;font-weight:700;color:#DCE7F5;">全局训练看板</div>'
-                    + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">训练量 · 参与率 · 技能通过率 · 个人明细（店长/总部/管理员）</div></div>'
-                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#3b6ea5;color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;">查看看板</button>'
+                    + '<div><div style="font-size:15px;font-weight:700;color:#F2EAEE;">全局训练看板</div>'
+                    + '<div style="font-size:12px;color:#97848E;margin-top:4px;line-height:1.4;">训练量 · 参与率 · 技能通过率 · 个人明细（店长/总部/管理员）</div></div>'
+                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:12px;background:#E0A6B4;color:#241319;font-size:13px;font-weight:600;border:none;cursor:pointer;">查看看板</button>'
                     + '</div>';
                 var dashAnchor = document.getElementById('job-coach-entry-card');
                 home.insertBefore(dashCard, dashAnchor ? dashAnchor.nextSibling : home.firstChild);
