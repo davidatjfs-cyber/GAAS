@@ -13,6 +13,7 @@ function memoryPool() {
                 { username: 'admin', name: '管理员', role: 'admin', store: '总部', position: '系统管理员', status: 'active' },
                 { username: 'FOH1', name: '小张', role: 'store_employee', store: '洪潮大宁久光店', position: '前厅服务员', department: '前厅', status: 'active' },
                 { username: 'FOH2', name: '小李', role: 'store_employee', store: '洪潮大宁久光店', position: '收银', department: '前厅', status: 'active' },
+                { username: 'FOH3', name: '小吴', role: 'store_employee', store: '洪潮大宁久光店', position: '传菜', department: '前厅', status: 'inactive' },
                 { username: 'K1', name: '大厨', role: 'store_employee', store: '洪潮大宁久光店', position: '炒锅', department: '后厨', status: 'active' },
                 { username: 'OLD1', name: '离职员工', role: 'store_employee', store: '洪潮大宁久光店', position: '服务员', status: '离职' },
               ],
@@ -21,6 +22,7 @@ function memoryPool() {
         };
       }
       if (sql.includes('FROM customer_twin_coach_sessions')) {
+        if (sql.includes(`status = 'active'`)) return { rows: [] };
         return {
           rows: [
             { username: 'FOH1', skill_key: 'selling', success: true, ai_score: { 专业度: 85, 语气: 85 }, finished_at: new Date().toISOString() },
@@ -60,6 +62,13 @@ test('训练看板：只统计在职前厅人员并按门店/技能聚合', asyn
   assert.equal(r.by_store.length, 1);
   assert.equal(r.not_trained.length, 1);
   assert.equal(r.not_trained[0].username, 'FOH2');
+  assert.equal(r.attention.length, 1);
+  assert.equal(r.attention[0].username, 'FOH2');
+  assert.equal(r.attention[0].reasons.includes('从未参训'), true);
+  assert.equal(r.staff_detail[0].recent_days.length, 7);
+  assert.equal(r.totals.incomplete_sessions, 0);
+  assert.equal(r.active_stars.length, 1);
+  assert.equal(r.active_stars[0].username, 'FOH1');
   assert.equal(r.calibration.total, 2);
   assert.equal(r.calibration.avg_rate, 90);
 });

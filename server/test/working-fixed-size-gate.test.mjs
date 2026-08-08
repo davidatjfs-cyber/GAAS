@@ -368,8 +368,10 @@ const htmlPath = path.resolve(__dirname, '../../working-fixed.html');
  * 2026-08-08 第七十四次上调（72935→73148）：全局训练看板（店长/总部经理/管理员）——
  * 新增页面容器/渲染/刷新逻辑与训练首页入口，JS 走 frontend/src/pages/16-customer-twin.js、
  * 03-training-focus.js、01-boot.js、02-confirm-role-modules.js、11-rewards-permissions.js。
+ * 2026-08-08 第七十五次上调（73148→73163）：训练看板 UI 重做（黑缎玫瑰、手机优先）——
+ * 新增重点跟进、本周积极之星、员工近 7 天每日训练块，JS 走 frontend/src/pages/16-customer-twin.js。
  */
-const MAX_LINES = 73148;
+const MAX_LINES = 73163;
 
 test('working-fixed.html line count must not grow', () => {
   const content = fs.readFileSync(htmlPath, 'utf8');

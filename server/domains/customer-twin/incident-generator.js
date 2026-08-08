@@ -83,7 +83,7 @@ function clampText(text, max = 300) {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-function buildCard({ cardKey, store, date, platform, product, reason, openingLine, metaExtra }) {
+function buildCard({ cardKey, store, date, platform, product, reason, openingLine, metaExtra, extraFacts = [] }) {
   const joined = [reason, product, store].filter(Boolean).join(' ');
   const cls = classify(joined);
   const meta = categoryMeta(cls.category_key);
@@ -93,6 +93,9 @@ function buildCard({ cardKey, store, date, platform, product, reason, openingLin
   ];
   if (product) facts.push(`涉及：${clampText(product, 80)}`);
   if (platform) facts.push(`来源：${platform}`);
+  for (const f of extraFacts) {
+    if (f) facts.push(clampText(f, 120));
+  }
   const rawLine = clampText(reason, 160);
   if (rawLine) facts.push(`原文：${rawLine}`);
 
@@ -166,11 +169,17 @@ export async function fetchTableVisitComplaints(pool, limit = 50) {
   const r = await pool.query(
     `SELECT id, date, store, satisfaction_level, repeat_customer,
             feedback, customer_complaint, dissatisfaction_dish,
-            complaint_resolution, guest_count, amount
+            dissatisfaction_main_reason, suggested_improvements,
+            staff_performance, facility_issues, problem_resolution,
+            compensation_provided, complaint_resolution, guest_count, amount
        FROM table_visit_records
-      WHERE (feedback IS NOT NULL AND length(feedback) > 0)
-         OR (customer_complaint IS NOT NULL AND length(customer_complaint) > 0)
-         OR (dissatisfaction_dish IS NOT NULL AND length(dissatisfaction_dish) > 0)
+      WHERE (customer_complaint IS NOT NULL AND length(customer_complaint) > 3)
+         OR (dissatisfaction_main_reason IS NOT NULL AND length(dissatisfaction_main_reason) > 3)
+         OR (suggested_improvements IS NOT NULL AND length(suggested_improvements) > 3)
+         OR (staff_performance IS NOT NULL AND length(staff_performance) > 3)
+         OR (facility_issues IS NOT NULL AND length(facility_issues) > 3)
+         OR (feedback IS NOT NULL AND length(feedback) > 3
+             AND feedback NOT LIKE '不满意的菜品%')
       ORDER BY date DESC
       LIMIT $1`,
     [limit]
@@ -192,14 +201,34 @@ export async function fetchBadReviews(pool, limit = 50) {
 }
 
 export function buildFromTableVisit(row) {
-  const reason = [
-    row.feedback,
+  const meaningful = [
     row.customer_complaint,
-    row.dissatisfaction_dish ? `不满意的菜品：${row.dissatisfaction_dish}` : '',
-    row.satisfaction_level === '不满意' ? '对本次用餐不满意' : '',
-    row.repeat_customer ? '' : '',
+    row.dissatisfaction_main_reason,
+    row.suggested_improvements,
+    row.staff_performance,
+    row.facility_issues,
+    row.problem_resolution,
+    row.feedback && !String(row.feedback).startsWith('不满意的菜品') ? row.feedback : '',
+  ].filter((v) => String(v || '').trim().length > 3);
+  if (!meaningful.length) return null;
+
+  const reason = [
+    row.customer_complaint,
+    row.dissatisfaction_main_reason ? `不满原因：${row.dissatisfaction_main_reason}` : '',
+    row.suggested_improvements ? `改进建议：${row.suggested_improvements}` : '',
+    row.staff_performance ? `服务表现：${row.staff_performance}` : '',
+    row.facility_issues ? `环境问题：${row.facility_issues}` : '',
+    row.problem_resolution ? `处理情况：${row.problem_resolution}` : '',
+    row.compensation_provided ? `补偿情况：${row.compensation_provided}` : '',
+    row.feedback && !String(row.feedback).startsWith('不满意的菜品') ? row.feedback : '',
+    row.dissatisfaction_dish ? `涉及菜品：${row.dissatisfaction_dish}` : '',
   ].filter(Boolean).join('；');
   if (!reason) return null;
+  const extraFacts = [
+    row.satisfaction_level ? `满意度：${row.satisfaction_level}` : '',
+    row.repeat_customer ? '顾客类型：老顾客' : '',
+    row.guest_count ? `用餐人数：${row.guest_count}` : '',
+  ];
   return buildCard({
     cardKey: `twin_tv_${row.id}`,
     store: row.store,
@@ -207,6 +236,7 @@ export function buildFromTableVisit(row) {
     platform: '桌访',
     product: row.dissatisfaction_dish || '',
     reason,
+    extraFacts,
     metaExtra: { sourceTable: 'table_visit_records', sourceRecordId: String(row.id) },
   });
 }
@@ -246,7 +276,36 @@ export async function generateIncidentCards(pool, { limitPerSource = 50 } = {}) 
     await upsertCard(pool, card);
     upserted += 1;
   }
-  return { candidates: cards.length, upserted, sources: { table_visit: tvRows.length, bad_review: brRows.length } };
+  const cleaned = await rejectThinTableVisitCards(pool);
+  return { candidates: cards.length, upserted, cleaned_thin_cards: cleaned, sources: { table_visit: tvRows.length, bad_review: brRows.length } };
+}
+
+export async function rejectThinTableVisitCards(pool) {
+  const r = await pool.query(
+    `SELECT card_key, incident_brief, locked_facts
+       FROM job_coach_incident_cards
+      WHERE active = FALSE
+        AND meta->>'source' = 'customer_twin'
+        AND meta->>'source_table' = 'table_visit_records'
+        AND meta->>'review_status' IS DISTINCT FROM 'rejected'`
+  );
+  let cleaned = 0;
+  for (const row of r.rows || []) {
+    const facts = Array.isArray(row.locked_facts) ? row.locked_facts.join(' ') : '';
+    const text = `${row.incident_brief || ''} ${facts}`;
+    const hasContext = /不满原因|改进建议|服务表现|环境问题|处理情况|补偿情况|满意度|顾客类型|投诉|等待|上菜|态度|卫生|退款|退菜|重做/.test(text);
+    const onlyDish = /涉及菜品|不满意的菜品/.test(text);
+    if (onlyDish && !hasContext) {
+      await pool.query(
+        `UPDATE job_coach_incident_cards
+            SET meta = jsonb_set(jsonb_set(meta, '{review_status}', '"rejected"'), '{reject_reason}', '"thin_table_visit_only_dish"')
+          WHERE card_key = $1 AND active = FALSE`,
+        [row.card_key]
+      );
+      cleaned += 1;
+    }
+  }
+  return cleaned;
 }
 
 export async function listPendingTwinCards(pool, { limit = 100 } = {}) {

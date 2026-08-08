@@ -50,6 +50,32 @@ test('无实质内容的桌访行不生成卡片', () => {
   assert.equal(buildFromTableVisit(row), null);
 });
 
+test('只有"不满意菜品"的薄桌访不生成卡片（用户反馈的废卡根因）', () => {
+  const row = {
+    id: 3, date: '2026-06-24', store: '洪潮久光店', satisfaction_level: '',
+    feedback: '不满意的菜品：猪油渣炒菜心', customer_complaint: '', dissatisfaction_dish: '猪油渣炒菜心',
+    dissatisfaction_main_reason: '', suggested_improvements: '', staff_performance: '',
+    facility_issues: '', problem_resolution: '', compensation_provided: '',
+  };
+  assert.equal(buildFromTableVisit(row), null);
+});
+
+test('桌访含原因/建议时生成卡片并带上下文事实', () => {
+  const row = {
+    id: 4, date: '2026-06-25', store: '洪潮久光店', satisfaction_level: '不满意', repeat_customer: true,
+    feedback: '', customer_complaint: '上菜太慢', dissatisfaction_dish: '烧鹅',
+    dissatisfaction_main_reason: '等了 30 分钟还没上', suggested_improvements: '高峰期增加传菜人手',
+    staff_performance: '', facility_issues: '', problem_resolution: '', compensation_provided: '',
+    guest_count: 3, amount: 300,
+  };
+  const card = buildFromTableVisit(row);
+  assert.ok(card);
+  assert.ok(card.locked_facts.some((f) => f.includes('改进建议')));
+  assert.ok(card.locked_facts.some((f) => f.includes('满意度')));
+  assert.ok(card.locked_facts.some((f) => f.includes('老顾客')));
+  assert.ok(card.incident_brief.includes('等了 30 分钟'));
+});
+
 test('差评（外卖超时）→ 事故卡归入外卖客诉类', () => {
   const row = {
     id: 'abc-123',
@@ -86,6 +112,7 @@ test('generateIncidentCards：写入 job_coach_incident_cards 且 active=false',
   const result = await generateIncidentCards(pool, { limitPerSource: 5 });
   assert.equal(result.candidates, 2);
   assert.equal(result.upserted, 2);
+  assert.equal(result.cleaned_thin_cards, 0);
   const inserts = pool.calls.filter((c) => c.sql.includes('INSERT INTO job_coach_incident_cards'));
   assert.equal(inserts.length, 2);
   assert.ok(inserts.every((c) => c.sql.includes('FALSE') && c.sql.includes('$18::jsonb')));

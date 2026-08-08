@@ -5,7 +5,7 @@ import { createCoachSession, nextCoachTurn, finishCoachSession } from '../coach-
 import { scriptFor } from '../coach-scripts.js';
 import { SKILL_SCENES } from '../coach-scenes.js';
 
-test('14 技能 × 3 级别均有 2 套场景且字段完整', () => {
+test('14 技能 × 3 级别均有 3 套场景（推销 4 套）且字段完整', () => {
   const expected = [
     'selling', 'dish_intro', 'dine_complaint', 'table_visit', 'delivery_complaint',
     'delivery_anomaly', 'greeting', 'dish_knowledge', 'allergy_knowledge',
@@ -17,7 +17,8 @@ test('14 技能 × 3 级别均有 2 套场景且字段完整', () => {
     for (const level of ['normal', 'advanced', 'gold']) {
       const s = scriptFor(k, level);
       assert.ok(s, `缺少剧本 ${k}/${level}`);
-      assert.equal(s.scenes.length, 2, `${k}/${level} 场景数`);
+      const want = k === 'selling' ? 4 : 3;
+      assert.equal(s.scenes.length, want, `${k}/${level} 场景数`);
       for (const scene of s.scenes) {
         assert.ok(scene.key && scene.persona, `${k}/${level}/${scene.key}`);
         assert.ok(Array.isArray(scene.opening) && scene.opening.length >= 2, `${k}/${level} opening`);

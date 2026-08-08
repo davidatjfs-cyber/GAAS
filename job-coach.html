@@ -6,40 +6,41 @@
   <title>AI 岗位教练</title>
   <style>
     :root {
-      --bg:#e7eee9; --ink:#132019; --muted:#627068; --card:#fff;
-      --accent:#0d7a5f; --line:#d0ddd4; --danger:#b91c1c; --warn:#b45309;
+      --bg:#170f14; --ink:#F2EAEE; --muted:rgba(242,234,238,.62); --card:rgba(224,166,180,.055);
+      --accent:#E0A6B4; --line:rgba(224,166,180,.22); --danger:#F4B6C2; --warn:#DDB66A;
       --safe-b: env(safe-area-inset-bottom, 0px);
     }
     * { box-sizing: border-box; }
-    body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:var(--bg); color:var(--ink); }
-    header { position:sticky; top:0; z-index:20; padding:12px 14px; background:#123c32; color:#fff; display:flex; justify-content:space-between; gap:10px; }
+    body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:linear-gradient(180deg,#23151c 0%,#170f14 100%); color:var(--ink); min-height:100vh; }
+    header { position:sticky; top:0; z-index:20; padding:12px 14px; background:linear-gradient(135deg,#3a1f2a,#281620); color:#fff; display:flex; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(224,166,180,.25); }
     header h1 { margin:0; font-size:17px; } header .sub { opacity:.78; font-size:11px; margin-top:3px; }
-    header a { color:#b7e4d5; font-size:12px; text-decoration:none; }
+    header a { color:#E9C4CE; font-size:12px; text-decoration:none; }
     main { max-width:720px; margin:0 auto; padding:10px 10px calc(24px + var(--safe-b)); display:grid; gap:10px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; backdrop-filter:blur(4px); }
     .card h2 { margin:0 0 10px; font-size:16px; }
     label { font-size:12px; color:var(--muted); display:grid; gap:4px; width:100%; margin-top:8px; }
     select, textarea, button { font:inherit; }
-    select, textarea { padding:11px 12px; border:1px solid var(--line); border-radius:12px; width:100%; font-size:16px; }
-    button { padding:11px 14px; border-radius:12px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
-    button.secondary { background:#fff; color:var(--accent); }
-    button.ghost { background:#f4f7f5; border-color:var(--line); color:var(--ink); }
+    select, textarea { padding:11px 12px; border:1px solid var(--line); border-radius:12px; width:100%; font-size:16px; background:rgba(224,166,180,.07); color:var(--ink); }
+    select option { background:#24151c; color:#F2EAEE; }
+    button { padding:11px 14px; border-radius:12px; border:1px solid rgba(224,166,180,.6); background:linear-gradient(135deg,#8d4a5d,#5f3240); color:#fff; cursor:pointer; font-weight:600; }
+    button.secondary { background:rgba(224,166,180,.1); color:var(--accent); }
+    button.ghost { background:rgba(242,234,238,.06); border-color:var(--line); color:var(--ink); }
     button:disabled { opacity:.45; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .pill { display:inline-flex; padding:4px 10px; border-radius:999px; background:#e8f5f0; color:var(--accent); font-size:12px; font-weight:600; }
-    .brief { background:#f7faf8; border:1px solid var(--line); border-radius:12px; padding:12px; font-size:14px; line-height:1.55; }
+    .pill { display:inline-flex; padding:4px 10px; border-radius:999px; background:rgba(224,166,180,.14); color:#E9C4CE; font-size:12px; font-weight:600; }
+    .brief { background:rgba(224,166,180,.05); border:1px solid var(--line); border-radius:12px; padding:12px; font-size:14px; line-height:1.55; }
     .brief h3 { margin:0 0 8px; font-size:15px; }
     .facts { margin:8px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
     .meters { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
-    .meter { background:#f7faf8; border:1px solid var(--line); border-radius:12px; padding:10px; }
+    .meter { background:rgba(224,166,180,.05); border:1px solid var(--line); border-radius:12px; padding:10px; }
     .meter .l { font-size:11px; color:var(--muted); } .meter .v { font-size:22px; font-weight:700; }
-    .chat { min-height:200px; max-height:min(46vh,360px); overflow:auto; display:grid; gap:8px; padding:10px; background:#f4f8f6; border:1px solid var(--line); border-radius:14px; }
+    .chat { min-height:200px; max-height:min(46vh,360px); overflow:auto; display:grid; gap:8px; padding:10px; background:rgba(0,0,0,.18); border:1px solid var(--line); border-radius:14px; }
     .bubble { max-width:88%; padding:9px 11px; border-radius:14px; font-size:14px; line-height:1.45; }
     .bubble .meta { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
-    .bubble.in { background:#fff; border:1px solid var(--line); justify-self:start; }
-    .bubble.out { background:rgba(13,122,95,.14); justify-self:end; }
-    .bubble.coach { border:1px dashed rgba(180,120,0,.55); background:#fff8e8; }
-    .debrief { white-space:pre-wrap; font-size:13px; line-height:1.5; background:#f8faf9; border:1px solid var(--line); border-radius:12px; padding:10px; }
+    .bubble.in { background:rgba(242,234,238,.08); border:1px solid rgba(224,166,180,.18); justify-self:start; }
+    .bubble.out { background:rgba(224,166,180,.18); justify-self:end; }
+    .bubble.coach { border:1px dashed rgba(221,182,106,.5); background:rgba(221,182,106,.08); }
+    .debrief { white-space:pre-wrap; font-size:13px; line-height:1.5; background:rgba(224,166,180,.05); border:1px solid var(--line); border-radius:12px; padding:10px; }
     .hint { font-size:12px; color:var(--muted); line-height:1.4; }
     .err { color:var(--danger); font-size:13px; min-height:1.2em; }
     .hidden { display:none !important; }
