@@ -1253,6 +1253,7 @@
                 { icon:'📦', label:'智能助手', href:'/forecast.html', roles:['admin','hr_manager','hq_manager','store_manager','store_production_manager'] },
                 { icon:'🎯', label:'AI岗位教练', href:'/job-coach.html' },
                 { icon:'📋', label:'培训卡审核', page:'customer-twin-review', roles:['admin'] },
+                { icon:'📊', label:'训练看板', page:'customer-twin-dashboard', roles:['admin','hq_manager','store_manager','store_production_manager','hr_manager'] },
                 { icon:'⚙️', label:'系统设置', page:'settings', roles:['admin'] },
             ];
             const role = currentUser?.role || '';

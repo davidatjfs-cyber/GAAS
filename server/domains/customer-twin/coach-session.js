@@ -3,7 +3,7 @@
  * 流程：选技能 → 开场 → 深挖 → 挑战 → 收尾 → 评分 → 进度/升级
  */
 
-import { SKILL_SCRIPTS } from './coach-scripts.js';
+import { scriptFor, pickScene, shuffledIndices } from './coach-scripts.js';
 import { evalSession, scanViolations, evaluateUpgrade, nextLevel } from './coach-scoring.js';
 import { retrieveCoachKnowledge } from './coach-rag.js';
 
@@ -13,8 +13,10 @@ export function setCoachLlm(fn) {
   _coachLlm = typeof fn === 'function' ? fn : null;
 }
 
-function pick(pool, idx) {
-  return pool[Math.abs(idx) % pool.length];
+function pick(pool) {
+  const arr = Array.isArray(pool) ? pool : [];
+  if (!arr.length) return '';
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function sessionNo() {
@@ -30,14 +32,43 @@ function phaseFor(session, script) {
   return used;
 }
 
+async function resolveScript(pool, username, skillKey) {
+  const cur = await pool.query(
+    `SELECT level FROM job_coach_skill_progress
+      WHERE username=$1 AND skill_key=$2 AND tenant_id='default'`,
+    [username, skillKey]
+  );
+  const level = String(cur.rows?.[0]?.level || 'normal').trim();
+  const script = scriptFor(skillKey, level);
+  return { script, level };
+}
+
 export async function createCoachSession(pool, { username, skillKey }) {
-  const script = SKILL_SCRIPTS[skillKey];
+  const { script, level } = await resolveScript(pool, username, skillKey);
   if (!script) return { ok: false, error: 'skill_script_not_ready' };
-  const seed = String(username).length + skillKey.length;
+  const last = await pool.query(
+    `SELECT persona FROM customer_twin_coach_sessions
+      WHERE username=$1 AND skill_key=$2 AND status='finished'
+        AND persona->>'scene_key' IS NOT NULL
+      ORDER BY finished_at DESC NULLS LAST LIMIT 1`,
+    [username, skillKey]
+  );
+  const avoidKey = String(last.rows?.[0]?.persona?.scene_key || '').trim();
+  const scene = pickScene(script, { avoidKey });
+  if (!scene) return { ok: false, error: 'skill_script_not_ready' };
+  const seed = String(username).length + skillKey.length + Math.floor(Math.random() * 1e6);
   const persona = {
-    ...script.persona,
+    label: scene.persona.label,
+    desc: scene.persona.desc,
+    scene: scene.persona.scene,
+    scene_key: scene.key,
+    level,
     seed,
     brand: seed % 2 === 0 ? '洪潮' : '马己仙',
+    order: {
+      deep: shuffledIndices(script.min_deep_turns),
+      challenge: shuffledIndices(script.min_challenge_turns),
+    },
   };
   const knowledge = await retrieveCoachKnowledge(pool, {
     skillLabel: script.skill_key,
@@ -46,7 +77,7 @@ export async function createCoachSession(pool, { username, skillKey }) {
     limit: 4,
   });
   const no = sessionNo();
-  const opening = pick(script.opening, seed);
+  const opening = pick(scene.opening);
   const transcript = [{ role: 'customer', text: opening, phase: 'opening' }];
   const r = await pool.query(
     `INSERT INTO customer_twin_coach_sessions
@@ -61,6 +92,7 @@ export async function createCoachSession(pool, { username, skillKey }) {
       id: r.rows[0].id,
       session_no: no,
       skill_key: skillKey,
+      level,
       phase: 'deep_dive',
       persona,
       knowledge: knowledge.map((k) => k.title),
@@ -77,25 +109,31 @@ export async function nextCoachTurn(pool, { sessionId, username, message }) {
   );
   const session = r.rows?.[0];
   if (!session) return { ok: false, error: 'session_not_found' };
-  const script = SKILL_SCRIPTS[session.skill_key];
+  const persona = session.persona || {};
+  const script = scriptFor(session.skill_key, persona.level || 'normal');
   if (!script) return { ok: false, error: 'skill_script_not_ready' };
+  const scene = (script.scenes || []).find((s) => s.key === persona.scene_key) || script.scenes?.[0];
+  if (!scene) return { ok: false, error: 'skill_script_not_ready' };
   const transcript = session.transcript || [];
   transcript.push({ role: 'trainee', text: String(message || '').slice(0, 1000) });
 
   const customerTurns = transcript.filter((t) => t.role === 'customer').length;
   const violations = scanViolations(transcript);
   const nextPhase = phaseFor({ ...session, transcript, phase: session.phase }, script);
+  const order = persona.order || {};
   let customerText;
   if (nextPhase === 'closing') {
     customerText = violations.length
-      ? pick(script.closing_unsatisfied, customerTurns)
-      : pick(script.closing_satisfied, customerTurns);
+      ? pick(script.closing_unsatisfied)
+      : pick(script.closing_satisfied);
   } else if (nextPhase === 'challenge') {
-    customerText = pick(script.challenge, customerTurns);
+    const idx = Math.max(0, customerTurns - 1 - script.min_deep_turns);
+    customerText = scene.challenge[(order.challenge || [])[idx] ?? idx] ?? scene.challenge[idx];
   } else if (nextPhase === 'deep_dive') {
-    customerText = pick(script.deep_dive, customerTurns);
+    const idx = Math.max(0, customerTurns - 1);
+    customerText = scene.deep_dive[(order.deep || [])[idx] ?? idx] ?? scene.deep_dive[idx];
   } else {
-    customerText = pick(script.opening, customerTurns);
+    customerText = pick(scene.opening);
   }
   transcript.push({ role: 'customer', text: customerText, phase: nextPhase });
   await pool.query(
@@ -125,11 +163,17 @@ export async function finishCoachSession(pool, { sessionId, username, useLlm = t
 
   const transcript = session.transcript || [];
   const violations = scanViolations(transcript);
-  let dims = null;
+  let judged = null;
   if (useLlm && _coachLlm) {
-    dims = await judgeWithLlm(transcript, session.skill_key, session.persona).catch(() => null);
+    judged = await judgeWithLlm(transcript, session.skill_key, session.persona).catch(() => null);
   }
-  const result = evalSession({ transcript, skillKey: session.skill_key, scores: dims, violations });
+  const result = evalSession({
+    transcript,
+    skillKey: session.skill_key,
+    scores: judged?.scores || null,
+    violations,
+    issues: judged?.issues || [],
+  });
 
   await pool.query(
     `UPDATE customer_twin_coach_sessions
@@ -191,7 +235,10 @@ async function judgeWithLlm(transcript, skillKey, persona) {
   const dims = ['专业度', '语气', '应对', '完整性', '知识准确性', '主动性'];
   if (skillKey === 'selling') dims.push('销售转化');
   const prompt =
-    `你是餐厅服务员培训评分裁判。根据以下对话，按维度 0-100 打分，只输出 JSON：{"专业度":80,...}。\n` +
+    `你是餐厅服务员培训评分裁判。根据以下对话：\n` +
+    `1) 按维度 0-100 打分；\n` +
+    `2) 对每个低于 80 分的维度，从对话里挑出服务员具体那句扣分原话，说明问题、改进建议和标准说法。\n` +
+    `只输出 JSON：{"专业度":80,"语气":70,...,"问题":[{"维度":"语气","原文":"服务员说的原话","问题":"具体问题","建议":"怎么改","标准说法":"应该怎么说"}]}。\n` +
     `客人人设：${JSON.stringify(persona || {})}\n` +
     `对话：\n${transcript.map((t) => `${t.role === 'customer' ? '客人' : '服务员'}：${t.text}`).join('\n')}`;
   const resp = await _coachLlm([
@@ -202,10 +249,16 @@ async function judgeWithLlm(transcript, skillKey, persona) {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return null;
   const parsed = JSON.parse(m[0]);
-  const out = {};
+  const scores = {};
   for (const d of dims) {
     const v = Number(parsed[d]);
-    out[d] = Number.isFinite(v) ? Math.max(20, Math.min(100, v)) : 70;
+    scores[d] = Number.isFinite(v) ? Math.max(20, Math.min(100, v)) : 70;
   }
-  return out;
+  const issues = Array.isArray(parsed['问题']) ? parsed['问题'].slice(0, 6).map((it) => ({
+    dimension: String(it?.维度 || it?.dimension || '').trim(),
+    quote: String(it?.原文 || it?.quote || '').slice(0, 200),
+    problem: String(it?.问题 || it?.problem || '').trim(),
+    standard: String(it?.标准说法 || it?.standard || '').trim(),
+  })).filter((it) => it.dimension) : [];
+  return { scores, issues };
 }

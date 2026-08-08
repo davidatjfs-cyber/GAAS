@@ -2,23 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scanViolations, evalSession, evaluateUpgrade } from '../coach-scoring.js';
 import { createCoachSession, nextCoachTurn, finishCoachSession } from '../coach-session.js';
-import { SKILL_SCRIPTS } from '../coach-scripts.js';
+import { scriptFor } from '../coach-scripts.js';
+import { SKILL_SCENES } from '../coach-scenes.js';
 
-test('14 技能均有剧本且字段完整', () => {
+test('14 技能 × 3 级别均有 2 套场景且字段完整', () => {
   const expected = [
     'selling', 'dish_intro', 'dine_complaint', 'table_visit', 'delivery_complaint',
     'delivery_anomaly', 'greeting', 'dish_knowledge', 'allergy_knowledge',
     'food_safety_knowledge', 'food_safety_incident', 'kitchen_collab',
     'output_quality', 'cooking_knowledge',
   ];
-  assert.equal(Object.keys(SKILL_SCRIPTS).length, 14);
+  assert.equal(Object.keys(SKILL_SCENES).length, 14);
   for (const k of expected) {
-    const s = SKILL_SCRIPTS[k];
-    assert.ok(s, `缺少剧本 ${k}`);
-    assert.ok(Array.isArray(s.opening) && s.opening.length >= 3, `${k} opening`);
-    assert.ok(Array.isArray(s.deep_dive) && s.deep_dive.length >= 6, `${k} deep_dive`);
-    assert.ok(Array.isArray(s.challenge) && s.challenge.length >= 3, `${k} challenge`);
-    assert.ok(s.closing_satisfied?.length && s.closing_unsatisfied?.length, `${k} closing`);
+    for (const level of ['normal', 'advanced', 'gold']) {
+      const s = scriptFor(k, level);
+      assert.ok(s, `缺少剧本 ${k}/${level}`);
+      assert.equal(s.scenes.length, 2, `${k}/${level} 场景数`);
+      for (const scene of s.scenes) {
+        assert.ok(scene.key && scene.persona, `${k}/${level}/${scene.key}`);
+        assert.ok(Array.isArray(scene.opening) && scene.opening.length >= 2, `${k}/${level} opening`);
+        assert.ok(Array.isArray(scene.deep_dive) && scene.deep_dive.length >= 6, `${k}/${level} deep_dive`);
+        assert.ok(Array.isArray(scene.challenge) && scene.challenge.length >= 3, `${k}/${level} challenge`);
+      }
+      assert.ok(s.closing_satisfied?.length && s.closing_unsatisfied?.length, `${k}/${level} closing`);
+    }
   }
 });
 
@@ -102,13 +109,16 @@ test('会话创建：返回开场并进入深挖阶段', async () => {
   assert.equal(r.ok, true);
   assert.equal(r.session.phase, 'deep_dive');
   assert.equal(r.session.transcript[0].role, 'customer');
-  assert.ok(r.session.transcript[0].text.includes('会员'));
+  assert.ok(r.session.persona.scene_key, '应记录场景 key');
+  assert.ok(r.session.persona.level === 'normal', '默认普通难度');
+  assert.ok(r.session.transcript[0].text.length > 0);
 });
 
 test('会话推进：深挖6轮→挑战3轮→收尾（约10分钟对话量）', async () => {
   const store = {
     current: {
       id: 1, skill_key: 'selling', phase: 'deep_dive', status: 'active',
+      persona: { brand: '洪潮', level: 'normal', scene_key: 'sell_n1', order: { deep: [0, 1, 2, 3, 4, 5], challenge: [0, 1, 2] } },
       transcript: [{ role: 'customer', text: '你们会员充500送100是真的吗？', phase: 'opening' }],
     },
     progress: null,

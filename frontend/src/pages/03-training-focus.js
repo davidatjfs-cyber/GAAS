@@ -1976,6 +1976,24 @@
                     if (typeof showPage === 'function') showPage('customer-twin-review');
                 });
             }
+
+            // 全局训练看板入口（店长/总部经理/出品经理/HR/管理员 可见）
+            if (typeof isTrainingManager === 'function' && isTrainingManager() && !document.getElementById('twin-dashboard-entry-card')) {
+                var dashCard = document.createElement('div');
+                dashCard.id = 'twin-dashboard-entry-card';
+                dashCard.style.cssText = 'margin:0 0 12px;padding:14px 16px;border-radius:14px;background:rgba(107,142,183,.14);border:1px solid rgba(107,142,183,.38);';
+                dashCard.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">'
+                    + '<div><div style="font-size:15px;font-weight:700;color:#DCE7F5;">全局训练看板</div>'
+                    + '<div style="font-size:12px;color:rgba(242,234,238,.72);margin-top:4px;line-height:1.4;">训练量 · 参与率 · 技能通过率 · 个人明细（店长/总部/管理员）</div></div>'
+                    + '<button type="button" style="display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:10px;background:#3b6ea5;color:#fff;font-size:13px;font-weight:600;border:none;cursor:pointer;">查看看板</button>'
+                    + '</div>';
+                var dashAnchor = document.getElementById('job-coach-entry-card');
+                home.insertBefore(dashCard, dashAnchor ? dashAnchor.nextSibling : home.firstChild);
+                var dashBtn = dashCard.querySelector('button');
+                if (dashBtn) dashBtn.addEventListener('click', function () {
+                    if (typeof showPage === 'function') showPage('customer-twin-dashboard');
+                });
+            }
         }
 
         function loadTrainingPage() {

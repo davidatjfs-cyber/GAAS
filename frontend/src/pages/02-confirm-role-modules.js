@@ -771,6 +771,10 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 try { ctrEnsureContainer(); } catch (e) {}
             }
 
+            if (pageName === 'customer-twin-dashboard' && typeof ctdEnsureContainer === 'function') {
+                try { ctdEnsureContainer(); } catch (e) {}
+            }
+
 
             if (pageName === 'users') {
                 if (!isAdminUser()) {
@@ -910,6 +914,14 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                 }
             }
 
+            if (pageName === 'customer-twin-dashboard') {
+                const _ctdAllowed = currentUser && ['admin', 'hq_manager', 'store_manager', 'store_production_manager', 'hr_manager'].includes(String(currentUser.role || '').trim());
+                if (!_ctdAllowed) {
+                    showNotification('训练看板仅店长、总部经理和管理员可访问', 'warning');
+                    pageName = getHomePageName();
+                }
+            }
+
 
             if (pageName === 'rewards') {
                 try {
@@ -1007,6 +1019,7 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                         growth: '增长看板',
                         diagnosis: '经营诊断',
                         'customer-twin-review': '培训卡审核',
+                        'customer-twin-dashboard': '训练看板',
                         'agent-tasks': 'Agent任务',
                         strategy: '门店营销策略',
                         flashcards: '自我测验',
@@ -1116,6 +1129,9 @@ async function deleteStoreDutyBinding(id){if(!id)return;var ok=await hrmsConfirm
                     break;
                 case 'customer-twin-review':
                     loadCustomerTwinReviewPage();
+                    break;
+                case 'customer-twin-dashboard':
+                    loadCustomerTwinDashboardPage();
                     break;
                 case 'files':
                     if (currentUser?.role !== 'admin') {

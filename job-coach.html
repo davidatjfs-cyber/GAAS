@@ -265,8 +265,14 @@
       '总分：' + report.total + ' 分', '结果：' + (report.success ? '✅ 本次成功' : '❌ 本次未通过')];
     Object.entries(report.dims || {}).forEach(([k, v]) => lines.push('· ' + k + '：' + v));
     if ((report.suggestions || []).length) {
-      lines.push('', '如何改进：');
-      report.suggestions.forEach((s) => lines.push((s.violation ? '⚠ ' : '· ') + s.label + '：' + s.fix));
+      lines.push('', '如何改进（请对照扣分原文改正）：');
+      report.suggestions.forEach((s) => {
+        const head = (s.violation ? '⚠ 关键原则·' : '· ') + s.label + (s.score != null ? '（' + s.score + '分）' : '');
+        lines.push(head + '：' + s.fix);
+        if (s.quote) lines.push('　扣分原文：「' + s.quote + '」');
+        if (s.problem) lines.push('　问题：' + s.problem);
+        if (s.standard) lines.push('　标准说法：「' + s.standard + '」');
+      });
     } else if (report.success) {
       lines.push('', '继续保持：整体达标，注意稳定发挥。');
     }

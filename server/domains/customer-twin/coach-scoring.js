@@ -9,10 +9,18 @@ import { COACH_CRITICAL_PRINCIPLES, COACH_DIMENSIONS } from './coach-scripts.js'
 
 export function scanViolations(transcript) {
   const violations = [];
-  const text = (transcript || []).map((t) => `${t.role}:${t.text}`).join('\n');
   for (const p of COACH_CRITICAL_PRINCIPLES) {
-    if (p.anti && p.anti.test(text)) {
-      violations.push({ principle: p.id, label: p.label, fix: p.fix || '', rule: String(p.anti) });
+    if (!p.anti) continue;
+    const hit = (transcript || []).find((t) => t.role === 'trainee' && p.anti.test(String(t.text || '')));
+    if (hit) {
+      violations.push({
+        principle: p.id,
+        label: p.label,
+        fix: p.fix || '',
+        standard: p.standard || '',
+        quote: String(hit.text || '').slice(0, 200),
+        rule: String(p.anti),
+      });
     }
   }
   return violations;
@@ -42,7 +50,15 @@ export function computeTotal(scores) {
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
 
-export function evalSession({ transcript, skillKey, scores = null, violations = [] }) {
+function weakQuote(transcript) {
+  const trainee = (transcript || []).filter((t) => t.role === 'trainee').map((t) => String(t.text || '').trim()).filter(Boolean);
+  if (!trainee.length) return '';
+  const hedging = trainee.find((t) => /(不知道|没学过|应该|大概|可能|随便|别问我|下次再说)/.test(t));
+  const target = hedging || [...trainee].sort((a, b) => a.length - b.length)[0];
+  return String(target || '').slice(0, 200);
+}
+
+export function evalSession({ transcript, skillKey, scores = null, violations = [], issues = [] }) {
   const finalViolations = violations.length ? violations : scanViolations(transcript);
   const rawDims = scores || heuristicScores(transcript, skillKey);
   const dims = {};
@@ -53,13 +69,29 @@ export function evalSession({ transcript, skillKey, scores = null, violations = 
     if (v == null) continue;
     dims[d.label] = v;
     if (v < 80 && d.fix) {
-      suggestions.push({ key: d.key, label: d.label, score: v, fix: d.fix });
+      const issue = (issues || []).find((it) => String(it?.dimension || '') === d.label || String(it?.dimension || '') === d.key);
+      suggestions.push({
+        key: d.key,
+        label: d.label,
+        score: v,
+        fix: d.fix,
+        quote: String(issue?.quote || '').trim() || weakQuote(transcript),
+        problem: String(issue?.problem || '').trim() || '',
+        standard: String(issue?.standard || '').trim() || d.standard || '',
+      });
     }
   }
   const total = computeTotal(dims);
   const success = finalViolations.length === 0 && total >= 80;
   for (const v of finalViolations) {
-    suggestions.push({ key: v.principle, label: v.label, fix: v.fix || '对照关键原则改进', violation: true });
+    suggestions.push({
+      key: v.principle,
+      label: v.label,
+      fix: v.fix || '对照关键原则改进',
+      standard: v.standard || '',
+      quote: v.quote || '',
+      violation: true,
+    });
   }
   return { total, dims, violations: finalViolations, success, suggestions };
 }
