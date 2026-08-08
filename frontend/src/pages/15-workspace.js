@@ -894,7 +894,7 @@ function wsRenderPllmExperimentCard(it, seen) {
                 ? '<div style="margin-top:8px;">责任人：' +
                   (assignees.empty
                       ? '<span style="opacity:.6;">本店未配置店长/前厅主管，暂无法分配</span>'
-                      : '<select class="ws-input" data-ws-pllm-assignee="' + wsEsc(v.variantCode || '') + '" style="width:100%;margin-top:4px;">' + assignees.html + '</select>')
+                      : '<select class="ws-input" data-ws-pllm-assignee="' + wsEsc(v.variantCode || '') + '" data-ws-pllm-store="' + wsEsc(v.store || '') + '" style="width:100%;margin-top:4px;">' + assignees.html + '</select>')
                   + '</div>'
                 : '') +
             '</div>'
@@ -990,7 +990,7 @@ function wsBindMarketingSuggestionsEvents(root) {
             }
             const assigneeSelects = card ? [...card.querySelectorAll('[data-ws-pllm-assignee]')] : [];
             const storeAssignments = assigneeSelects
-                .map((sel) => ({ variantCode: sel.getAttribute('data-ws-pllm-assignee'), assigneeUsername: sel.value }))
+                .map((sel) => ({ variantCode: sel.getAttribute('data-ws-pllm-assignee'), store: sel.getAttribute('data-ws-pllm-store') || '', assigneeUsername: sel.value }))
                 .filter((a) => a.assigneeUsername && (!picks || picks.includes(a.variantCode)));
             if (assigneeSelects.length && !storeAssignments.length) {
                 showNotification('请至少为一个要采纳的方案选择责任人', 'warning');
