@@ -5,6 +5,8 @@
  * 高级/金牌场景在情绪烈度、信息密度、时间压力、决策难度上逐级提升。
  */
 
+import { EXTRA_SCENES } from './coach-scenes-extra.js';
+
 export const SKILL_SCENES = {
   selling: {
     knowledge_hints: ['推销', '会员', '充值'],
@@ -15,7 +17,7 @@ export const SKILL_SCENES = {
         scenes: [
           {
             key: 'sell_n1', persona: { label: '犹豫型老顾客', desc: '常客，价格敏感，对充值/会员有疑虑，怕被套路', scene: '晚饭时段，2 人用餐，用餐尾声' },
-            opening: ['服务员，你们会员充 500 送 100 是真的吗？', '我看你们桌上有会员活动，具体是什么？', '你们是不是有会员充值？划算吗？'],
+            opening: ['服务员，你们会员充 500 送 100 是真的吗？', '你们现在充多少送多少？具体怎么算？', '你们是不是有会员充值？划算吗？'],
             deep_dive: ['我一个月就来两三次，充 500 划算吗？', '充的钱能用在套餐上吗？', '会员除了充值还有什么好处？', '会不会充了以后你们价格就变了？', '如果我朋友也办，两个人能一起用吗？', '充值送的那 100 有使用期限吗？'],
             challenge: ['上次我在别家充了钱，后来店都换了，你们怎么保证？', '你们是不是就靠充值套住客人？', '我现在不办，过几天活动还有吗？'],
           },
@@ -833,3 +835,13 @@ export const SKILL_SCENES = {
     },
   },
 };
+
+// 扩容：推销每级 4 套、其余技能每级 3 套（coach-scenes-extra.js）
+for (const [skillKey, levels] of Object.entries(EXTRA_SCENES)) {
+  for (const [level, scenes] of Object.entries(levels)) {
+    const target = SKILL_SCENES[skillKey]?.levels?.[level];
+    if (target && Array.isArray(scenes)) {
+      target.scenes.push(...scenes);
+    }
+  }
+}

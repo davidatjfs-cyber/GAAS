@@ -347,7 +347,7 @@ function loadCustomerTwinReviewPage() {
   ctrLoad();
 }
 
-// ========== 全局训练看板（店长/总部经理/管理员） ==========
+// ========== 全局训练看板（店长/总部经理/管理员，黑缎玫瑰 · 手机优先） ==========
 var __ctd = { data: null, storeFilter: '' };
 
 function ctdEnsureContainer() {
@@ -355,16 +355,17 @@ function ctdEnsureContainer() {
   const page = document.createElement('div');
   page.id = 'customer-twin-dashboard-page';
   page.className = 'hidden';
+  page.style.cssText = 'min-height:100%;background:linear-gradient(180deg,#23151c 0%,#170f14 100%);color:#F2EAEE;font-family:inherit';
   page.innerHTML =
-    '<div style="max-width:980px;margin:0 auto;padding:14px 12px 30px;color:#e8eef2;font-family:inherit">' +
+    '<div style="max-width:860px;margin:0 auto;padding:12px 10px 44px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
-    '<div><div style="font-size:17px;font-weight:800">全局训练看板</div>' +
-    '<div style="font-size:12px;color:rgba(232,238,242,.62);margin-top:2px">AI岗位教练 · 店长/总部经理/管理员可见</div></div>' +
+    '<div><div style="font-size:18px;font-weight:800;color:#F6E3E8">全局训练看板</div>' +
+    '<div style="font-size:12px;color:rgba(242,234,238,.6);margin-top:2px">每天练没练 · 练完没练完 · 结果如何 · 重点跟进</div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    '<button data-ctd-action="refresh" style="padding:9px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">刷新</button>' +
-    '<button data-ctd-action="back" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(232,238,242,.35);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px">返回培训</button>' +
+    '<button data-ctd-action="refresh" style="padding:9px 14px;border-radius:12px;border:1px solid rgba(224,166,180,.65);background:linear-gradient(135deg,#8d4a5d,#5f3240);color:#fff;cursor:pointer;font-size:13px;font-weight:600">刷新</button>' +
+    '<button data-ctd-action="back" style="padding:9px 14px;border-radius:12px;border:1px solid rgba(242,234,238,.28);background:transparent;color:#F2EAEE;cursor:pointer;font-size:13px">返回培训</button>' +
     '</div></div>' +
-    '<div id="ctd-error" class="hidden" style="background:rgba(185,28,28,.15);border:1px solid rgba(185,28,28,.45);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>' +
+    '<div id="ctd-error" class="hidden" style="background:rgba(185,28,28,.16);border:1px solid rgba(224,102,120,.5);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>' +
     '<div id="ctd-body">加载中…</div></div>';
   document.body.appendChild(page);
 }
@@ -381,6 +382,24 @@ function ctdScore(v) {
   return v == null ? '—' : v + ' 分';
 }
 
+function ctdCard(title, bodyHtml) {
+  return '<div style="background:rgba(224,166,180,.055);border:1px solid rgba(224,166,180,.2);border-radius:16px;padding:12px;margin-bottom:12px">' +
+    '<div style="font-size:14px;font-weight:700;color:#F6DCE4;margin-bottom:8px">' + ctrEsc(title) + '</div>' + bodyHtml + '</div>';
+}
+
+function ctdKpi(v, sub) {
+  return '<div style="background:rgba(224,166,180,.07);border:1px solid rgba(224,166,180,.22);border-radius:14px;padding:10px 8px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:800;color:#F6E3E8">' + ctrEsc(v) + '</div>' +
+    (sub ? '<div style="font-size:11px;color:rgba(242,234,238,.6);margin-top:2px">' + ctrEsc(sub) + '</div>' : '') + '</div>';
+}
+
+function ctdDayDot(day) {
+  const color = day.sessions === 0 ? 'rgba(242,234,238,.14)' : day.passed > 0 ? '#7FC8A9' : '#D9A441';
+  const label = day.sessions ? (day.date.slice(5) + ' 训练' + day.sessions + '次·通过' + day.passed + '·未过' + day.failed + '·均分' + ctdScore(day.avg_score)) : (day.date.slice(5) + ' 未训练');
+  return '<div title="' + ctrEsc(label) + '" style="width:34px;height:34px;border-radius:10px;background:' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#1b1117;font-weight:700;font-size:12px">' +
+    (day.sessions ? day.sessions : '·') + '</div>';
+}
+
 function ctdRender() {
   const body = document.getElementById('ctd-body');
   const d = __ctd.data || {};
@@ -389,29 +408,35 @@ function ctdRender() {
   const storeFilter = String(__ctd.storeFilter || '').trim();
   const stores = (d.by_store || []).filter((s) => !storeFilter || s.store === storeFilter);
   const staff = (d.staff_detail || []).filter((x) => !storeFilter || x.store === storeFilter);
-  const notTrained = (d.not_trained || []).filter((x) => !storeFilter || x.store === storeFilter);
+  const attention = (d.attention || []).filter((x) => !storeFilter || x.store === storeFilter);
   const cal = d.calibration || {};
 
-  const summaryCards = [
-    ['应训前厅', t.staff_count + ' 人'],
-    ['已参训', t.trained_staff + ' 人'],
-    ['参与率', ctdPct(t.participation_rate)],
-    ['累计训练', t.total_sessions + ' 次'],
-    ['近 7 天', t.week_sessions + ' 次'],
-    ['平均分', ctdScore(t.avg_score)],
-    ['通过率', ctdPct(t.pass_rate)],
-    ['校准一致率', cal.total ? ctdPct(cal.avg_rate) + '（' + cal.total + ' 份）' : '暂无'],
-  ];
-  const cardsHtml = summaryCards.map(([k, v]) =>
-    '<div style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;text-align:center">' +
-    '<div style="font-size:12px;color:rgba(232,238,242,.62)">' + ctrEsc(k) + '</div>' +
-    '<div style="font-size:20px;font-weight:800;margin-top:4px">' + ctrEsc(v) + '</div></div>'
-  ).join('');
+  const kpis =
+    ctdKpi(t.staff_count, '应训前厅') + ctdKpi(t.trained_staff, '已参训') + ctdKpi(ctdPct(t.participation_rate), '参与率') +
+    ctdKpi(t.week_sessions, '近7天训练') + ctdKpi(t.total_sessions, '累计训练') + ctdKpi(t.incomplete_sessions, '未完成训练') +
+    ctdKpi(ctdScore(t.avg_score), '平均分') + ctdKpi(cal.total ? ctdPct(cal.avg_rate) + '（' + cal.total + '份）' : '暂无', '校准一致率');
+
+  const attentionHtml = attention.length
+    ? attention.map((x) =>
+      '<div style="background:rgba(224,102,120,.09);border:1px solid rgba(224,102,120,.38);border-radius:14px;padding:10px 12px;margin-bottom:8px">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<div><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.65)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+      '<div style="font-size:11px;color:rgba(242,234,238,.6)">累计 ' + x.total_sessions + ' 次 · 最近 ' + fmtDate(x.last_finished_at) + '</div></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + x.reasons.map((r) =>
+        '<span style="padding:3px 8px;border-radius:999px;background:rgba(224,102,120,.2);color:#F4B6C2;font-size:11px;font-weight:600">' + ctrEsc(r) + '</span>').join('') + '</div></div>'
+    ).join('')
+    : '<div style="text-align:center;color:rgba(242,234,238,.5);padding:14px 0;font-size:13px">全员状态良好，暂无重点跟进人员</div>';
+
+  const starsHtml = (d.active_stars || []).map((x, i) =>
+    '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;margin-bottom:6px;background:rgba(221,182,106,.07);border:1px solid rgba(221,182,106,.25);border-radius:12px">' +
+    '<div><span style="color:#DDB66A;font-weight:800;margin-right:6px">' + (i + 1) + '</span><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.6)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+    '<div style="font-size:12px;color:rgba(242,234,238,.75)">本周' + x.week_days_trained + '天 · ' + x.week_sessions + '次 · 均分' + ctdScore(x.avg_score) + '</div></div>'
+  ).join('') || '<div style="text-align:center;color:rgba(242,234,238,.5);padding:14px 0;font-size:13px">本周还没有训练数据</div>';
 
   const storeRows = stores.map((s) =>
     '<tr><td>' + ctrEsc(s.store) + '</td><td>' + s.staff_count + '</td><td>' + s.trained_staff + '</td>' +
-    '<td>' + s.sessions + '（周 ' + s.week_sessions + '）</td><td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
-  ).join('') || '<tr><td colspan="6" style="text-align:center;color:rgba(232,238,242,.45)">暂无门店数据</td></tr>';
+    '<td>' + s.sessions + '（周' + s.week_sessions + '）</td><td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
+  ).join('') || '<tr><td colspan="6" style="text-align:center;color:rgba(242,234,238,.45)">暂无门店数据</td></tr>';
 
   const skillRows = (d.by_skill || []).map((s) =>
     '<tr><td>' + ctrEsc(s.label) + '</td><td>' + s.sessions + '</td><td>' + s.trained_users + '</td>' +
@@ -421,63 +446,53 @@ function ctdRender() {
   const weakRows = (d.weakest_skills || []).map((s, i) =>
     '<tr><td>' + (i + 1) + '</td><td>' + ctrEsc(s.label) + '</td><td>' + s.sessions + '</td>' +
     '<td>' + ctdScore(s.avg_score) + '</td><td>' + ctdPct(s.pass_rate) + '</td></tr>'
-  ).join('') || '<tr><td colspan="5" style="text-align:center;color:rgba(232,238,242,.45)">暂无训练数据</td></tr>';
+  ).join('') || '<tr><td colspan="5" style="text-align:center;color:rgba(242,234,238,.45)">暂无训练数据</td></tr>';
 
-  const notRows = notTrained.map((x) =>
-    '<tr><td>' + ctrEsc(x.name) + '</td><td>' + ctrEsc(x.username) + '</td><td>' + ctrEsc(x.store) + '</td><td>' + ctrEsc(x.position) + '</td></tr>'
-  ).join('') || '<tr><td colspan="4" style="text-align:center;color:rgba(232,238,242,.45)">全部前厅人员均已参训</td></tr>';
-
-  const staffRows = staff.map((x) => {
+  const staffCards = staff.map((x) => {
     const skills = (x.skills || []).map((sk) =>
-      ctrEsc(sk.label) + ' ' + ctdLevelLabel(sk.level) + ' ' + sk.trained_count + '/' + sk.success_count
-    ).join('；');
-    return '<tr><td>' + ctrEsc(x.name) + '</td><td>' + ctrEsc(x.store) + '</td><td>' + ctrEsc(x.position) + '</td>' +
-      '<td>' + x.total_sessions + '</td><td>' + ctdScore(x.avg_score) + '</td><td>' + fmtDate(x.last_finished_at) + '</td>' +
-      '<td style="font-size:11px;color:rgba(232,238,242,.72)">' + ctrEsc(skills || '尚未开练') + '</td></tr>';
-  }).join('') || '<tr><td colspan="7" style="text-align:center;color:rgba(232,238,242,.45)">暂无人员数据</td></tr>';
+      '<span style="padding:3px 8px;border-radius:999px;background:rgba(224,166,180,.12);color:#E9C4CE;font-size:11px;margin:2px 2px 0 0;display:inline-block">' +
+      ctrEsc(sk.label) + '·' + ctdLevelLabel(sk.level) + '·' + sk.trained_count + '/' + sk.success_count + '</span>'
+    ).join('');
+    const dots = (x.recent_days || []).map(ctdDayDot).join('');
+    const tags = [];
+    if (x.incomplete_sessions > 0) tags.push('<span style="color:#F4B6C2">未完成' + x.incomplete_sessions + '次</span>');
+    if (x.consecutive_missed_days >= 1) tags.push('<span style="color:#D9A441">连续' + x.consecutive_missed_days + '天未练</span>');
+    tags.push('<span>' + x.week_days_trained + '/7天有训练</span>');
+    return '<div style="background:rgba(224,166,180,.055);border:1px solid rgba(224,166,180,.2);border-radius:16px;padding:12px;margin-bottom:10px">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<div><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.62)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+      '<div style="font-size:12px;color:rgba(242,234,238,.7)">累计' + x.total_sessions + '次 · 均分' + ctdScore(x.avg_score) + ' · ' + fmtDate(x.last_finished_at) + '</div></div>' +
+      '<div style="display:flex;gap:4px;margin-top:10px;overflow:auto;padding-bottom:2px">' + dots + '</div>' +
+      '<div style="font-size:11px;color:rgba(242,234,238,.6);margin-top:6px">' + tags.join('　') + '</div>' +
+      (skills ? '<div style="margin-top:6px">' + skills + '</div>' : '<div style="font-size:11px;color:rgba(242,234,238,.45);margin-top:6px">尚未开练</div>') +
+      '</div>';
+  }).join('') || '<div style="text-align:center;color:rgba(242,234,238,.45);padding:18px 0">暂无人员数据</div>';
 
   const storeOptions = (d.by_store || []).map((s) =>
     '<option value="' + ctrEsc(s.store) + '"' + (s.store === storeFilter ? ' selected' : '') + '>' + ctrEsc(s.store) + '</option>'
   ).join('');
 
   body.innerHTML =
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px">' + cardsHtml + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">' + kpis + '</div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-    '<label style="font-size:12px;color:rgba(232,238,242,.7)">门店筛选</label>' +
-    '<select id="ctd-store-filter" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#e8eef2;font-size:13px">' +
+    '<label style="font-size:12px;color:rgba(242,234,238,.7)">门店筛选</label>' +
+    '<select id="ctd-store-filter" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(224,166,180,.28);background:rgba(224,166,180,.08);color:#F2EAEE;font-size:13px;flex:1;min-width:160px">' +
     '<option value="">全部门店</option>' + storeOptions + '</select></div>' +
-
-    '<div style="display:grid;gap:12px">' +
-    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">门店对比</div>' +
-    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px"><thead>' +
-    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">门店</th><th style="padding:6px">应训</th><th style="padding:6px">已训</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
-    '<tbody>' + storeRows + '</tbody></table></div></div>' +
-
-    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">技能训练情况（14 项前厅技能）</div>' +
-    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
-    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">技能</th><th style="padding:6px">训练次数</th><th style="padding:6px">参训人数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
-    '<tbody>' + skillRows + '</tbody></table></div></div>' +
-
-    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">最弱技能 TOP5（通过率最低）</div>' +
-    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
-    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">排名</th><th style="padding:6px">技能</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
-    '<tbody>' + weakRows + '</tbody></table></div></div>' +
-
-    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">尚未参训人员（' + notTrained.length + ' 人）</div>' +
-    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px"><thead>' +
-    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">姓名</th><th style="padding:6px">账号</th><th style="padding:6px">门店</th><th style="padding:6px">岗位</th></tr></thead>' +
-    '<tbody>' + notRows + '</tbody></table></div></div>' +
-
-    '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:8px">个人明细（' + staff.length + ' 人）</div>' +
-    '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px"><thead>' +
-    '<tr style="color:rgba(232,238,242,.62);text-align:left"><th style="padding:6px">姓名</th><th style="padding:6px">门店</th><th style="padding:6px">岗位</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">最近训练</th><th style="padding:6px">技能进度</th></tr></thead>' +
-    '<tbody>' + staffRows + '</tbody></table></div></div>' +
-    '</div>';
+    ctdCard('重点跟进（未训练 / 连续未练 / 未完成）', attentionHtml) +
+    ctdCard('本周积极之星 TOP5', starsHtml) +
+    ctdCard('门店对比',
+      '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px"><thead>' +
+      '<tr style="color:rgba(242,234,238,.6);text-align:left"><th style="padding:6px">门店</th><th style="padding:6px">应训</th><th style="padding:6px">已训</th><th style="padding:6px">训练次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+      '<tbody>' + storeRows + '</tbody></table></div>') +
+    ctdCard('技能训练情况（14 项）',
+      '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
+      '<tr style="color:rgba(242,234,238,.6);text-align:left"><th style="padding:6px">技能</th><th style="padding:6px">次数</th><th style="padding:6px">参训人数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+      '<tbody>' + skillRows + '</tbody></table></div>') +
+    ctdCard('最弱技能 TOP5',
+      '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px"><thead>' +
+      '<tr style="color:rgba(242,234,238,.6);text-align:left"><th style="padding:6px">排名</th><th style="padding:6px">技能</th><th style="padding:6px">次数</th><th style="padding:6px">平均分</th><th style="padding:6px">通过率</th></tr></thead>' +
+      '<tbody>' + weakRows + '</tbody></table></div>') +
+    ctdCard('员工每日训练（近7天，数字=当天训练次数；绿=有通过，黄=未通过，灰=未练）', staffCards);
 
   const filter = document.getElementById('ctd-store-filter');
   if (filter) {
