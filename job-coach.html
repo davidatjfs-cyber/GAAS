@@ -52,7 +52,7 @@
   <header>
     <div>
       <h1>AI 岗位教练</h1>
-      <div class="sub" id="subLine">具体事故卡 · 实操陪练</div>
+      <div class="sub" id="subLine">前厅技能训练 · 实操陪练</div>
     </div>
     <div class="row">
       <span class="pill" id="modePill">未登录</span>
@@ -67,47 +67,10 @@
     </div>
 
     <div class="card hidden" id="homeCard">
-      <h2>抽一张具体事故卡</h2>
-      <p class="hint">先选大类，再随机抽取具体场景（含锁定事实）。看清事故卡后才开始对话，对方不会另起新问题。</p>
-      <label>岗位轨
-        <select id="trackSel"></select>
-      </label>
-      <label>场景大类
-        <select id="catSel"></select>
-      </label>
-      <div class="row" style="margin-top:12px;">
-        <button type="button" id="btnDraw">随机抽事故卡</button>
-        <button type="button" class="secondary" id="btnExam">考试模式抽卡</button>
-      </div>
-      <div style="margin:14px 0;border-top:1px solid var(--line);"></div>
-      <h2>技能训练（14 项技能）</h2>
-      <p class="hint">按技能练习（推销/堂食客诉/菜品知识等）；每技能训练满 10 次且成功 7 次可升级。</p>
-      <div class="row" style="margin-top:8px;">
-        <button type="button" class="secondary" id="btnSkillMode">进入技能训练</button>
-      </div>
-      <div class="err" id="homeErr"></div>
-    </div>
-
-    <div class="card hidden" id="skillCard">
-      <h2>选择技能</h2>
-      <p class="hint" id="skillHint">点击技能开始训练（客人会连续追问约 10 分钟）。</p>
-      <div class="row" style="margin-bottom:8px;">
-        <button type="button" class="ghost" id="btnSkillHome">返回首页</button>
-      </div>
+      <h2>技能训练（前厅）</h2>
+      <p class="hint">选择技能开始训练，客人会连续追问约 10 分钟；每技能训练满 10 次且成功 7 次可升级（普通→高级→金牌）。</p>
       <div id="skillList"></div>
-      <div class="err" id="skillErr"></div>
-    </div>
-
-    <div class="card hidden" id="cardPreview">
-      <h2>事故卡（请先读完）</h2>
-      <div class="brief" id="briefBox"></div>
-      <div class="kb hint" id="kbBox" style="margin-top:10px;"></div>
-      <div class="row" style="margin-top:12px;">
-        <button type="button" id="btnStart">确认并开始对话</button>
-        <button type="button" class="ghost" id="btnRedraw">换一张</button>
-        <button type="button" class="ghost" id="btnBackHome">返回</button>
-      </div>
-      <div class="err" id="previewErr"></div>
+      <div class="err" id="homeErr"></div>
     </div>
 
     <div class="card hidden" id="chatCard">
@@ -122,7 +85,7 @@
       </div>
       <div class="chat" id="chat" style="margin-top:10px;"></div>
       <label>你的回复
-        <textarea id="input" rows="3" placeholder="围绕本事故卡事实回复，像现场一样…"></textarea>
+        <textarea id="input" rows="3" placeholder="像现场一样回复客人…"></textarea>
       </label>
       <div class="row" style="margin-top:8px;"><button type="button" id="btnSend">发送</button></div>
       <div class="err" id="chatErr"></div>
@@ -133,7 +96,7 @@
       <div class="score-grid" id="scoreGrid"></div>
       <div class="debrief" id="debriefBox"></div>
       <div class="row" style="margin-top:10px;">
-        <button type="button" id="btnAgain">同大类再抽一张</button>
+        <button type="button" id="btnAgain">再练一次</button>
         <button type="button" class="ghost" id="btnHome">回首页</button>
       </div>
     </div>
@@ -145,9 +108,8 @@
   if (qs.get('token')) localStorage.setItem('hrms_token', qs.get('token'));
   const state = {
     token: qs.get('token') || token,
-    me: null, track: null, examMode: false,
-    categories: [], incident: null, sessionId: null,
-    coach: null, coachLabel: '',
+    me: null,
+    coach: null, coachLabel: '', coachLevel: 'normal',
   };
   const $ = (id) => document.getElementById(id);
   const show = (id, on) => $(id).classList.toggle('hidden', !on);
@@ -182,101 +144,14 @@
     try {
       const me = await api('/api/sales-sim/me');
       state.me = me;
-      state.track = me.job_profile_key;
       $('modePill').textContent = me.username || '已登录';
-      $('subLine').textContent = (me.position || me.role || '') + ' · ' + (me.job_profile_key || '');
+      $('subLine').textContent = (me.position || me.role || '') + ' · 前厅技能训练';
       show('authCard', false);
       show('homeCard', true);
-      fillTracks();
-      await loadCategories();
+      await loadCoachSkills();
     } catch (e) {
       show('authCard', true);
       setErr('authErr', e.message || '请重新登录 GAAS');
-    }
-  }
-
-  function fillTracks() {
-    // 门店岗位教练：禁止混入销售公司「客服/销售」轨（另有销售陪练系统）
-    const opts = [
-      ['foh_server','服务员'],['cashier','收银'],['store_manager','店长'],
-      ['kitchen_staff','厨房'],['hq_ops','总部运营'],
-    ];
-    const storeOnly = new Set(opts.map((x) => x[0]));
-    if (!storeOnly.has(state.track)) state.track = 'foh_server';
-    $('trackSel').innerHTML = opts.map(([k,l]) =>
-      '<option value="'+k+'"'+(k===state.track?' selected':'')+'>'+l+'</option>').join('');
-  }
-
-  async function loadCategories() {
-    state.track = $('trackSel').value || state.track;
-    const data = await api('/api/sales-sim/categories?track=' + encodeURIComponent(state.track));
-    state.categories = data.categories || [];
-    $('catSel').innerHTML = '<option value="">全部大类（随机）</option>' +
-      state.categories.map((c) => '<option value="'+esc(c.category_key)+'">'+esc(c.label)+'</option>').join('');
-  }
-
-  async function drawCard() {
-    setErr('homeErr', '');
-    try {
-      state.track = $('trackSel').value;
-      const data = await api('/api/sales-sim/incidents/draw', {
-        method: 'POST',
-        body: {
-          track: state.track,
-          category: $('catSel').value || null,
-        },
-      });
-      state.incident = data.incident;
-      renderPreview(state.incident);
-      show('homeCard', false);
-      show('cardPreview', true);
-    } catch (e) {
-      setErr('homeErr', e.message || '抽卡失败（请确认已跑 migration 174）');
-    }
-  }
-
-  function renderPreview(inc) {
-    if (!inc) return;
-    const facts = (inc.locked_facts || []).map((f) => '<li>'+esc(f)+'</li>').join('');
-    $('briefBox').innerHTML =
-      '<h3>'+esc(inc.title)+' <span class="pill">'+esc(inc.category_label||inc.category_key)+' · Lv'+esc(inc.difficulty)+'</span></h3>'+
-      '<div><b>对手：</b>'+esc(inc.counterpart_label||inc.counterpart_role)+'</div>'+
-      '<div style="margin-top:8px;"><b>事故说明：</b>'+esc(inc.incident_brief)+'</div>'+
-      (facts ? '<ul class="facts"><b>锁定事实（对话不得偏离）：</b>'+facts+'</ul>' : '')+
-      '<div style="margin-top:8px;"><b>成功标准：</b>'+esc(inc.success_criteria||'')+'</div>'+
-      '<div style="margin-top:8px;color:var(--muted);font-size:13px;"><b>开场将说：</b>「'+esc(inc.opening_line)+'」</div>';
-    const know = (inc.must_know || []).map((x) => '<li>'+esc(x)+'</li>').join('');
-    const arts = inc.kb_articles || [];
-    $('kbBox').innerHTML =
-      (know ? '<div style="margin-bottom:8px;"><b>开练前应知要点：</b><ul class="facts">'+know+'</ul></div>' : '') +
-      (arts.length
-        ? '<b>关联培训资料：</b> ' + arts.map((a) => '<a href="/?page=knowledge" target="_blank">'+esc(a.title)+'</a>').join(' · ')
-        : '<b>关联培训资料：</b> 已内置通用培训包，首次打开接口时自动写入知识库');
-  }
-
-  async function startSession() {
-    if (!state.incident) return;
-    setErr('previewErr', '');
-    try {
-      const data = await api('/api/sales-sim/sessions', {
-        method: 'POST',
-        body: {
-          track: state.track,
-          incident_card_key: state.incident.card_key,
-          exam_mode: state.examMode,
-        },
-      });
-      state.sessionId = data.session.id;
-      $('chat').innerHTML = '';
-      $('chatTitle').textContent = state.incident.title;
-      $('chatFactHint').textContent = '锁定事实：' + (state.incident.locked_facts || []).join('；');
-      if (data.opening) bubble('customer', data.opening.content);
-      updateMeters(data.session);
-      show('cardPreview', false);
-      show('debriefCard', false);
-      show('chatCard', true);
-    } catch (e) {
-      setErr('previewErr', e.message);
     }
   }
 
@@ -288,85 +163,15 @@
     $('chat').appendChild(el);
     $('chat').scrollTop = $('chat').scrollHeight;
   }
-  function updateMeters(s) {
-    $('mEmotion').textContent = s?.emotion ?? '—';
-    $('mSat').textContent = s?.satisfaction ?? '—';
-  }
 
   async function sendTurn() {
     const text = $('input').value.trim();
-    if (state.coach) return coachSend(text);
-    if (!text || !state.sessionId) return;
-    $('btnSend').disabled = true;
-    setErr('chatErr', '');
-    try {
-      bubble('trainee', text);
-      $('input').value = '';
-      const data = await api('/api/sales-sim/sessions/' + state.sessionId + '/turn', {
-        method: 'POST', body: { text },
-      });
-      (data.coach || []).forEach((c) => bubble('coach', c.message || c));
-      if (data.customer) bubble('customer', data.customer.content);
-      if (data.state) updateMeters(data.state);
-      if (data.ended) showDebrief(data);
-    } catch (e) {
-      setErr('chatErr', e.message);
-    } finally {
-      $('btnSend').disabled = false;
-    }
+    if (!text) return;
+    await coachSend(text);
   }
 
   async function finish() {
-    if (state.coach) return coachFinish();
-    if (!state.sessionId) return;
-    try {
-      showDebrief(await api('/api/sales-sim/sessions/' + state.sessionId + '/finish', { method: 'POST', body: {} }));
-    } catch (e) { setErr('chatErr', e.message); }
-  }
-
-  function showDebrief(data) {
-    const d = data.debrief || {};
-    const dual = d.incident_scores || {};
-    $('scoreGrid').innerHTML =
-      '<div class="meter"><div class="l">综合</div><div class="v">'+(d.score??'—')+'</div></div>'+
-      '<div class="meter"><div class="l">知识/SOP</div><div class="v">'+(dual.knowledge_score??'—')+'</div></div>'+
-      '<div class="meter"><div class="l">对方体验</div><div class="v">'+(dual.experience_score??'—')+'</div></div>';
-    const lines = [];
-    lines.push('成绩：' + (d.score_grade || '') + (d.incident?.title ? (' · ' + d.incident.title) : ''));
-    if (d.incident?.success_criteria) lines.push('成功标准：' + d.incident.success_criteria);
-
-    const corrections = d.turn_corrections || [];
-    if (corrections.length) {
-      lines.push('', '—— 逐句纠错 ——');
-      corrections.forEach((c, i) => {
-        lines.push('');
-        lines.push((c.turn_no != null ? ('第' + c.turn_no + '轮') : ('问题' + (i + 1))) + '：');
-        lines.push('你说的：「' + (c.your_words || '') + '」');
-        (c.problems || []).forEach((p) => lines.push('× ' + p));
-        lines.push('✓ 正确应是：' + (c.better_answer || d.model_answer || ''));
-      });
-    }
-    if (d.model_answer) {
-      lines.push('', '—— 本场标准答法 ——');
-      lines.push(d.model_answer);
-    }
-
-    if (d.coach_narrative) lines.push('', d.coach_narrative);
-    (d.strengths || []).slice(0, 3).forEach((s) => lines.push('✓ ' + (s.detail || s.principle_label)));
-    (d.improvements || []).slice(0, 3).forEach((s) => lines.push('△ ' + (s.detail || s.principle_label)));
-    if (dual.sop_details) {
-      lines.push('', 'SOP 检查：');
-      dual.sop_details.forEach((x) => lines.push((x.hit ? '✓ ' : '○ ') + x.item));
-    }
-    const arts = d.kb_articles || [];
-    if (arts.length) {
-      lines.push('', '请复习：');
-      arts.forEach((a) => lines.push('· ' + a.title));
-    }
-    $('debriefBox').textContent = lines.join('\n');
-    show('chatCard', false);
-    show('debriefCard', true);
-    state.sessionId = null;
+    await coachFinish();
   }
 
   function levelLabel(level) {
@@ -374,48 +179,53 @@
   }
 
   async function loadCoachSkills() {
-    setErr('skillErr', '');
+    setErr('homeErr', '');
     try {
       const data = await api('/api/customer-twin/coach/skills');
       const list = $('skillList');
       list.innerHTML = data.skills.map((s) => {
-        const btn = '<button type="button" data-skill="' + esc(s.skill_key) + '" data-label="' + esc(s.label) + '">开始训练</button>';
+        const btn = '<button type="button" data-skill="' + esc(s.skill_key) + '" data-label="' + esc(s.label) + '" data-level="' + esc(s.level) + '">开始训练</button>';
         return '<div class="card" style="margin-bottom:8px;padding:10px 12px;">' +
           '<div style="font-size:15px;font-weight:700;">' + esc(s.label) + '</div>' +
           '<div class="hint" style="margin:3px 0 6px;">' + esc(s.description || '') + '</div>' +
           '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
-          '<span class="pill">' + levelLabel(s.level) + '</span>' +
-          '<span class="hint">训练 ' + s.trained_count + ' 次 · 成功 ' + s.success_count + ' 次</span>' +
+          '<span class="pill">当前级别：' + levelLabel(s.level) + '</span>' +
+          '<span class="hint">训练 ' + s.trained_count + '/10 次 · 成功 ' + s.success_count + '/7 次</span>' +
           btn + '</div></div>';
       }).join('');
       list.querySelectorAll('[data-skill]').forEach((el) => {
-        el.onclick = () => startCoachSession(el.getAttribute('data-skill'), el.getAttribute('data-label'));
+        el.onclick = () => startCoachSession(el.getAttribute('data-skill'), el.getAttribute('data-label'), el.getAttribute('data-level'));
       });
     } catch (e) {
-      setErr('skillErr', e.message);
+      setErr('homeErr', e.message);
     }
   }
 
-  async function startCoachSession(skillKey, label) {
-    setErr('skillErr', '');
+  async function startCoachSession(skillKey, label, level) {
+    setErr('homeErr', '');
     try {
       const data = await api('/api/customer-twin/coach/sessions', { method: 'POST', body: { skill_key: skillKey } });
       if (!data.ok) throw new Error(data.error || '该技能剧本尚未就绪');
       state.coach = { id: data.session.id, done: false };
       state.coachLabel = label;
-      $('chatTitle').textContent = label + ' · 技能训练';
-      $('chatFactHint').textContent = '客人：' + (data.session.persona?.desc || '');
+      state.coachLevel = level || 'normal';
+      $('chatTitle').textContent = label + ' · ' + levelLabel(state.coachLevel) + '级';
+      $('chatFactHint').textContent = '技能：' + label + '（当前' + levelLabel(state.coachLevel) + '级）｜客人：' + (data.session.persona?.desc || '');
       $('mEmotion').textContent = '—';
       $('mSat').textContent = '—';
       $('chat').textContent = '';
       (data.session.transcript || []).forEach((t) => bubble(t.role === 'customer' ? 'customer' : 'trainee', t.text));
-      show('skillCard', false);
+      show('homeCard', false);
       show('chatCard', true);
       $('input').value = '';
       $('input').focus();
     } catch (e) {
-      setErr('skillErr', e.message);
+      setErr('homeErr', e.message);
     }
+  }
+
+  function phaseLabel(p) {
+    return p === 'opening' ? '开场' : p === 'deep_dive' ? '深挖' : p === 'challenge' ? '挑战' : p === 'closing' ? '收尾' : (p || '');
   }
 
   async function coachSend(text) {
@@ -429,7 +239,7 @@
         method: 'POST', body: { message: text },
       });
       bubble('customer', data.customer);
-      $('chatFactHint').textContent = '阶段：' + (data.phase || '') + (data.done ? '（已到收尾，可点结束并复盘）' : '');
+      $('chatFactHint').textContent = '阶段：' + phaseLabel(data.phase) + (data.done ? '（已到收尾，可点结束并复盘）' : '');
       state.coach.done = !!data.done;
     } catch (e) {
       setErr('chatErr', e.message);
@@ -450,14 +260,18 @@
   }
 
   function coachShowDebrief(report, progress) {
-    const lines = ['总分：' + report.total + ' 分', '结果：' + (report.success ? '✅ 本次成功' : '❌ 本次未通过')];
+    const level = progress?.level || state.coachLevel || 'normal';
+    const lines = ['技能：' + (state.coachLabel || '') + '｜当前级别：' + levelLabel(level),
+      '总分：' + report.total + ' 分', '结果：' + (report.success ? '✅ 本次成功' : '❌ 本次未通过')];
     Object.entries(report.dims || {}).forEach(([k, v]) => lines.push('· ' + k + '：' + v));
-    if (report.violations && report.violations.length) {
-      lines.push('', '关键原则违规：');
-      report.violations.forEach((v) => lines.push('△ ' + v.label));
+    if ((report.suggestions || []).length) {
+      lines.push('', '如何改进：');
+      report.suggestions.forEach((s) => lines.push((s.violation ? '⚠ ' : '· ') + s.label + '：' + s.fix));
+    } else if (report.success) {
+      lines.push('', '继续保持：整体达标，注意稳定发挥。');
     }
     if (progress) {
-      lines.push('', '技能进度：' + levelLabel(progress.level) + ' · 训练 ' + progress.trained_count + ' 次 · 成功 ' + progress.success_count + ' 次');
+      lines.push('', '当前进度：' + levelLabel(progress.level) + ' · 训练 ' + progress.trained_count + '/10 · 成功 ' + progress.success_count + '/7');
       if (progress.upgraded) lines.push('🎉 已升级到：' + levelLabel(progress.level));
     }
     $('scoreGrid').innerHTML = '<div><div class="muted">本场得分</div><div style="font-size:30px;font-weight:800;">' + report.total + '</div></div>' +
@@ -467,18 +281,10 @@
     show('debriefCard', true);
   }
 
-  $('btnDraw').onclick = () => { state.examMode = false; drawCard(); };
-  $('btnExam').onclick = () => { state.examMode = true; drawCard(); };
-  $('btnStart').onclick = startSession;
-  $('btnRedraw').onclick = drawCard;
-  $('btnBackHome').onclick = () => { show('cardPreview', false); show('homeCard', true); };
   $('btnSend').onclick = sendTurn;
   $('btnFinish').onclick = finish;
-  $('btnAgain').onclick = () => { show('debriefCard', false); drawCard(); };
-  $('btnHome').onclick = () => { show('debriefCard', false); show('homeCard', true); };
-  $('btnSkillMode').onclick = () => { show('homeCard', false); show('skillCard', true); loadCoachSkills(); };
-  $('btnSkillHome').onclick = () => { show('skillCard', false); show('homeCard', true); };
-  $('trackSel').onchange = () => loadCategories().catch(() => {});
+  $('btnAgain').onclick = () => { show('debriefCard', false); show('homeCard', true); loadCoachSkills(); };
+  $('btnHome').onclick = () => { show('debriefCard', false); show('homeCard', true); loadCoachSkills(); };
   $('input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTurn(); }
   });

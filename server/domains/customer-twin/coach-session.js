@@ -146,6 +146,7 @@ export async function finishCoachSession(pool, { sessionId, username, useLlm = t
       dims: result.dims,
       violations: result.violations,
       success: result.success,
+      suggestions: result.suggestions,
       transcript_length: transcript.length,
     },
     progress,

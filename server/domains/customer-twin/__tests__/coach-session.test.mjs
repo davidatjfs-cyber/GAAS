@@ -105,7 +105,7 @@ test('会话创建：返回开场并进入深挖阶段', async () => {
   assert.ok(r.session.transcript[0].text.includes('会员'));
 });
 
-test('会话推进：深挖→挑战→收尾', async () => {
+test('会话推进：深挖6轮→挑战3轮→收尾（约10分钟对话量）', async () => {
   const store = {
     current: {
       id: 1, skill_key: 'selling', phase: 'deep_dive', status: 'active',
@@ -115,12 +115,14 @@ test('会话推进：深挖→挑战→收尾', async () => {
   };
   const pool = memoryPool(store);
   let t;
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 10; i += 1) {
     t = await nextCoachTurn(pool, { sessionId: 1, username: 'u', message: '好的，我帮您介绍。' });
     assert.equal(t.ok, true);
   }
   assert.ok(t.done, '收尾后 done=true');
-  assert.equal(store.current.transcript.filter((x) => x.role === 'trainee').length, 6);
+  assert.equal(store.current.transcript.filter((x) => x.role === 'trainee').length, 10);
+  const customerTurns = store.current.transcript.filter((x) => x.role === 'customer').length;
+  assert.ok(customerTurns >= 10, '顾客追问轮数应 ≥10');
 });
 
 test('完成会话：成功→进度+1；违规→不成功', async () => {
@@ -142,6 +144,8 @@ test('完成会话：成功→进度+1；违规→不成功', async () => {
   const r = await finishCoachSession(pool, { sessionId: 1, username: 'u', useLlm: false });
   assert.equal(r.ok, true);
   assert.equal(r.report.success, true);
+  assert.ok(Array.isArray(r.report.suggestions));
+  assert.ok(r.report.dims['专业度'] != null, '评分维度应为中文展示');
   assert.equal(store.progress.trained_count, 1);
   assert.equal(store.progress.success_count, 1);
 
