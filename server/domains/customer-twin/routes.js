@@ -15,6 +15,7 @@ import { PERSONA_KEYS } from './persona-schema.js';
 import { createCustomerTwinAdminRequired } from './admin-guard.js';
 import { syncDishData } from './feishu-dish-sync.js';
 import { createCoachSession, nextCoachTurn, finishCoachSession, setCoachLlm } from './coach-session.js';
+import { pickDailyCalibration, submitCalibration, calibrationStats } from './calibration.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -179,6 +180,39 @@ export function registerCustomerTwinRoutes(ctx) {
       res.status(result.ok ? 200 : 404).json(result);
     } catch (e) {
       log.error({ msg: 'coach_session_finish', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/customer-twin/calibration/daily', twinAdminRequired, async (req, res) => {
+    try {
+      const result = await pickDailyCalibration(pool, { adminUsername: adminName(req) });
+      res.json(result);
+    } catch (e) {
+      log.error({ msg: 'calibration_daily', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/customer-twin/calibration/submit', twinAdminRequired, async (req, res) => {
+    try {
+      const result = await submitCalibration(pool, {
+        sessionId: Number(req.body?.session_id),
+        adminUsername: adminName(req),
+        scores: req.body?.scores || {},
+      });
+      res.status(result.ok ? 200 : 404).json(result);
+    } catch (e) {
+      log.error({ msg: 'calibration_submit', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/customer-twin/calibration/stats', twinAdminRequired, async (_req, res) => {
+    try {
+      res.json(await calibrationStats(pool));
+    } catch (e) {
+      log.error({ msg: 'calibration_stats', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });

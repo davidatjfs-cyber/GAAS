@@ -32,6 +32,7 @@ function ctrEnsureContainer() {
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     '<button data-ctr-action="generate" style="padding:9px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">从真实数据生成</button>' +
     '<button data-ctr-action="reject-all" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(185,28,28,.7);background:transparent;color:#f2a0a0;cursor:pointer;font-size:13px">批量拒绝当前列表</button>' +
+    '<button data-ctr-action="calibration" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(207,161,74,.7);background:transparent;color:#e7c987;cursor:pointer;font-size:13px">每日评分校准</button>' +
     '<button data-ctr-action="refresh" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(232,238,242,.35);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px">刷新</button>' +
     '</div></div>' +
     '<div style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:rgba(232,238,242,.75)">' +
@@ -248,6 +249,67 @@ async function ctrGenerate() {
   }
 }
 
+var __ctrCal = { tasks: [] };
+
+async function ctrLoadCalibration() {
+  const errBox = document.getElementById('ctr-error');
+  errBox.className = 'hidden';
+  const list = document.getElementById('ctr-list');
+  try {
+    const data = await ctrApi('/api/customer-twin/calibration/daily');
+    __ctrCal.tasks = data.tasks || [];
+    document.getElementById('ctr-stats-line').textContent = '每日评分校准：待评 ' + __ctrCal.tasks.length + ' 条';
+    if (!__ctrCal.tasks.length) {
+      list.innerHTML = '<div style="text-align:center;color:rgba(232,238,242,.5);padding:28px 0">今天暂时没有待校准的已完成会话。</div>';
+      return;
+    }
+    list.innerHTML = __ctrCal.tasks.map(ctrRenderCalTask).join('');
+  } catch (e) {
+    errBox.textContent = e.message;
+    errBox.className = '';
+  }
+}
+
+function ctrRenderCalTask(t) {
+  const transcript = (t.transcript || []).map((x) =>
+    '<div style="font-size:13px;line-height:1.6;margin:3px 0;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.05)">' +
+    '<span style="color:' + (x.role === 'customer' ? '#7fd7b8' : '#e7c987') + ';font-weight:600">' +
+    (x.role === 'customer' ? '客人：' : '员工：') + '</span>' + ctrEsc(x.text) + '</div>'
+  ).join('');
+  const dims = (t.dimensions || []).map((d) =>
+    '<label style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;margin:5px 0">' +
+    '<span>' + ctrEsc(d) + '</span>' +
+    '<input id="ctr-cal-' + t.id + '-' + ctrEsc(d) + '" type="number" min="0" max="100" value="70" style="width:76px;padding:6px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#e8eef2" /></label>'
+  ).join('');
+  return '<div style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;margin-bottom:12px">' +
+    '<div style="font-size:14px;font-weight:700;margin-bottom:4px">技能：' + ctrEsc(t.skill_key) + ' · ' + ctrEsc(t.session_no) + '</div>' +
+    '<div style="font-size:12px;color:rgba(232,238,242,.55);margin-bottom:6px">客人人设：' + ctrEsc((t.persona && t.persona.desc) || '') + '</div>' +
+    transcript +
+    '<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.1);padding-top:8px">' + dims +
+    '<button data-cal-submit="' + t.id + '" style="margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer">提交我的评分</button></div>' +
+    '<div id="ctr-cal-result-' + t.id + '" style="font-size:12.5px;color:rgba(232,238,242,.8);margin-top:8px"></div></div>';
+}
+
+async function ctrSubmitCal(id) {
+  const task = __ctrCal.tasks.find((t) => String(t.id) === String(id));
+  if (!task) return;
+  const scores = {};
+  for (const d of task.dimensions || []) {
+    const el = document.getElementById('ctr-cal-' + id + '-' + d);
+    const v = Number(el ? el.value : 70);
+    scores[d] = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 70;
+  }
+  try {
+    const r = await ctrApi('/api/customer-twin/calibration/submit', { method: 'POST', body: { session_id: id, scores } });
+    const box = document.getElementById('ctr-cal-result-' + id);
+    const lines = ['本次一致率：' + r.rate + '%'];
+    Object.entries(r.agreement || {}).forEach(([d, ok]) => lines.push((ok ? '✓' : '✗') + ' ' + d + '（AI：' + (r.ai_scores && r.ai_scores[d] != null ? r.ai_scores[d] : '—') + '）'));
+    box.textContent = lines.join('\n');
+  } catch (e) {
+    document.getElementById('ctr-cal-result-' + id).textContent = e.message;
+  }
+}
+
 function ctrWireEvents() {
   document.removeEventListener('click', ctrHandleClick);
   document.addEventListener('click', ctrHandleClick);
@@ -266,13 +328,17 @@ function ctrHandleClick(ev) {
   const gen = ev.target.closest('[data-ctr-action="generate"]');
   const ref = ev.target.closest('[data-ctr-action="refresh"]');
   const rjAll = ev.target.closest('[data-ctr-action="reject-all"]');
+  const cal = ev.target.closest('[data-ctr-action="calibration"]');
   const ap = ev.target.closest('[data-ctr-approve]');
   const rj = ev.target.closest('[data-ctr-reject]');
+  const calSub = ev.target.closest('[data-cal-submit]');
   if (gen) ctrGenerate();
+  else if (cal) ctrLoadCalibration();
   else if (rjAll) ctrRejectAll();
   else if (ref) ctrLoad();
   else if (ap) ctrApprove(ap.getAttribute('data-ctr-approve'));
   else if (rj) ctrReject(rj.getAttribute('data-ctr-reject'));
+  else if (calSub) ctrSubmitCal(calSub.getAttribute('data-cal-submit'));
 }
 
 function loadCustomerTwinReviewPage() {
