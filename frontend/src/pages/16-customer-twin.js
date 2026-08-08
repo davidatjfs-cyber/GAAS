@@ -30,7 +30,7 @@ function ctrEnsureContainer() {
     '<div><div style="font-size:17px;font-weight:800">培训卡审核</div>' +
     '<div style="font-size:12px;color:rgba(232,238,242,.62);margin-top:2px">来自真实桌访与差评的待审培训卡（供门店员工岗位教练使用）</div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    '<button data-ctr-action="generate" style="padding:9px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">从真实数据生成</button>' +
+    '<button data-ctr-action="generate" style="padding:9px 12px;border-radius:12px;border:0;background:#E0A6B4;color:#241319;cursor:pointer;font-size:13px;font-weight:600">从真实数据生成</button>' +
     '<button data-ctr-action="reject-all" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(185,28,28,.7);background:transparent;color:#f2a0a0;cursor:pointer;font-size:13px">批量拒绝当前列表</button>' +
     '<button data-ctr-action="calibration" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(207,161,74,.7);background:transparent;color:#e7c987;cursor:pointer;font-size:13px">每日评分校准</button>' +
     '<button data-ctr-action="refresh" style="padding:9px 12px;border-radius:10px;border:1px solid rgba(232,238,242,.35);background:transparent;color:#e8eef2;cursor:pointer;font-size:13px">刷新</button>' +
@@ -129,7 +129,7 @@ function ctrRenderCards() {
     el.innerHTML =
       '<div style="font-size:14px;font-weight:700;margin-bottom:6px">' + ctrEsc(card.title) + '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' +
-      '<span style="padding:2px 8px;border-radius:999px;background:rgba(13,122,95,.25);color:#7fd7b8;font-size:12px">' + ctrEsc(__ctrCategoryLabel[card.category_key] || '其他客诉') + '</span>' +
+      '<span style="padding:2px 8px;border-radius:999px;background:rgba(224,166,180,.2);color:#EABBC5;font-size:12px">' + ctrEsc(__ctrCategoryLabel[card.category_key] || '其他客诉') + '</span>' +
       '<span style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:rgba(232,238,242,.8);font-size:12px">难度 ' + ctrEsc(card.difficulty) + '</span>' +
       '<span style="padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:rgba(232,238,242,.8);font-size:12px">' + ctrEsc(__ctrJobLabel[card.job_profile_key] || '门店岗位') + '</span>' +
       (meta.store ? '<span style="padding:2px 8px;border-radius:999px;background:rgba(207,161,74,.18);color:#e7c987;font-size:12px">' + ctrEsc(meta.store) + '</span>' : '') +
@@ -141,7 +141,7 @@ function ctrRenderCards() {
       '<div style="font-size:12px;color:rgba(232,238,242,.5);margin-top:4px">来源：' + ctrEsc(__ctrSourceLabel[meta.source_table] || '真实案例') +
       (meta.date ? ' · ' + ctrEsc(meta.date) : '') + (meta.platform ? ' · ' + ctrEsc(meta.platform) : '') + '</div></details>' +
       '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
-      '<button data-ctr-approve="' + ctrEsc(card.card_key) + '" style="padding:8px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer;font-size:13px">通过（进入岗位教练）</button>' +
+      '<button data-ctr-approve="' + ctrEsc(card.card_key) + '" style="padding:8px 12px;border-radius:12px;border:0;background:#E0A6B4;color:#241319;cursor:pointer;font-size:13px;font-weight:600">通过（进入岗位教练）</button>' +
       '<button data-ctr-reject="' + ctrEsc(card.card_key) + '" style="padding:8px 12px;border-radius:10px;border:1px solid rgba(185,28,28,.7);background:transparent;color:#f2a0a0;cursor:pointer;font-size:13px">拒绝（不再生成）</button>' +
       '</div>';
     list.appendChild(el);
@@ -286,7 +286,7 @@ function ctrRenderCalTask(t) {
     '<div style="font-size:12px;color:rgba(232,238,242,.55);margin-bottom:6px">客人人设：' + ctrEsc((t.persona && t.persona.desc) || '') + '</div>' +
     transcript +
     '<div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.1);padding-top:8px">' + dims +
-    '<button data-cal-submit="' + t.id + '" style="margin-top:8px;padding:8px 12px;border-radius:10px;border:1px solid #0d7a5f;background:#0d7a5f;color:#fff;cursor:pointer">提交我的评分</button></div>' +
+    '<button data-cal-submit="' + t.id + '" style="margin-top:8px;padding:8px 12px;border-radius:12px;border:0;background:#E0A6B4;color:#241319;cursor:pointer;font-weight:600">提交我的评分</button></div>' +
     '<div id="ctr-cal-result-' + t.id + '" style="font-size:12.5px;color:rgba(232,238,242,.8);margin-top:8px"></div></div>';
 }
 
@@ -355,15 +355,15 @@ function ctdEnsureContainer() {
   const page = document.createElement('div');
   page.id = 'customer-twin-dashboard-page';
   page.className = 'hidden';
-  page.style.cssText = 'min-height:100%;background:linear-gradient(180deg,#23151c 0%,#170f14 100%);color:#F2EAEE;font-family:inherit';
+  page.style.cssText = 'min-height:100%;background:radial-gradient(60% 42% at 50% -6%,rgba(224,166,180,.14),transparent 62%),radial-gradient(40% 30% at 85% 100%,rgba(224,166,180,.05),transparent 60%),#121012;color:#F2EAEE;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif';
   page.innerHTML =
     '<div style="max-width:860px;margin:0 auto;padding:12px 10px 44px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
-    '<div><div style="font-size:18px;font-weight:800;color:#F6E3E8">全局训练看板</div>' +
-    '<div style="font-size:12px;color:rgba(242,234,238,.6);margin-top:2px">每天练没练 · 练完没练完 · 结果如何 · 重点跟进</div></div>' +
+    '<div><div style="font-size:18px;font-weight:800;color:#F2EAEE">全局训练看板</div>' +
+    '<div style="font-size:12px;color:#97848E;margin-top:2px">每天练没练 · 练完没练完 · 结果如何 · 重点跟进</div></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    '<button data-ctd-action="refresh" style="padding:9px 14px;border-radius:12px;border:1px solid rgba(224,166,180,.65);background:linear-gradient(135deg,#8d4a5d,#5f3240);color:#fff;cursor:pointer;font-size:13px;font-weight:600">刷新</button>' +
-    '<button data-ctd-action="back" style="padding:9px 14px;border-radius:12px;border:1px solid rgba(242,234,238,.28);background:transparent;color:#F2EAEE;cursor:pointer;font-size:13px">返回培训</button>' +
+    '<button data-ctd-action="refresh" style="padding:9px 14px;border-radius:12px;border:0;background:#E0A6B4;color:#241319;cursor:pointer;font-size:13px;font-weight:600">刷新</button>' +
+    '<button data-ctd-action="back" style="padding:9px 14px;border-radius:12px;border:1px solid #2C252C;background:transparent;color:#F2EAEE;cursor:pointer;font-size:13px">返回培训</button>' +
     '</div></div>' +
     '<div id="ctd-error" class="hidden" style="background:rgba(185,28,28,.16);border:1px solid rgba(224,102,120,.5);border-radius:12px;padding:12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>' +
     '<div id="ctd-body">加载中…</div></div>';
@@ -383,18 +383,18 @@ function ctdScore(v) {
 }
 
 function ctdCard(title, bodyHtml) {
-  return '<div style="background:rgba(224,166,180,.055);border:1px solid rgba(224,166,180,.2);border-radius:16px;padding:12px;margin-bottom:12px">' +
-    '<div style="font-size:14px;font-weight:700;color:#F6DCE4;margin-bottom:8px">' + ctrEsc(title) + '</div>' + bodyHtml + '</div>';
+  return '<div style="background:#1C181C;border:1px solid #2C252C;border-radius:20px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.35),0 24px 60px rgba(0,0,0,.35)">' +
+    '<div style="font-size:14px;font-weight:700;color:#E0A6B4;margin-bottom:8px;letter-spacing:.04em">' + ctrEsc(title) + '</div>' + bodyHtml + '</div>';
 }
 
 function ctdKpi(v, sub) {
-  return '<div style="background:rgba(224,166,180,.07);border:1px solid rgba(224,166,180,.22);border-radius:14px;padding:10px 8px;text-align:center">' +
-    '<div style="font-size:20px;font-weight:800;color:#F6E3E8">' + ctrEsc(v) + '</div>' +
-    (sub ? '<div style="font-size:11px;color:rgba(242,234,238,.6);margin-top:2px">' + ctrEsc(sub) + '</div>' : '') + '</div>';
+  return '<div style="background:#1C181C;border:1px solid #2C252C;border-radius:16px;padding:10px 8px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:800;color:#E0A6B4">' + ctrEsc(v) + '</div>' +
+    (sub ? '<div style="font-size:11px;color:#97848E;margin-top:2px">' + ctrEsc(sub) + '</div>' : '') + '</div>';
 }
 
 function ctdDayDot(day) {
-  const color = day.sessions === 0 ? 'rgba(242,234,238,.14)' : day.passed > 0 ? '#7FC8A9' : '#D9A441';
+  const color = day.sessions === 0 ? 'rgba(242,234,238,.14)' : day.passed > 0 ? '#86C9A2' : '#DDB66A';
   const label = day.sessions ? (day.date.slice(5) + ' 训练' + day.sessions + '次·通过' + day.passed + '·未过' + day.failed + '·均分' + ctdScore(day.avg_score)) : (day.date.slice(5) + ' 未训练');
   return '<div title="' + ctrEsc(label) + '" style="width:34px;height:34px;border-radius:10px;background:' + color + ';display:flex;flex-direction:column;align-items:center;justify-content:center;color:#1b1117;font-weight:700;font-size:12px">' +
     (day.sessions ? day.sessions : '·') + '</div>';
@@ -418,18 +418,18 @@ function ctdRender() {
 
   const attentionHtml = attention.length
     ? attention.map((x) =>
-      '<div style="background:rgba(224,102,120,.09);border:1px solid rgba(224,102,120,.38);border-radius:14px;padding:10px 12px;margin-bottom:8px">' +
+      '<div style="background:rgba(224,166,180,.09);border:1px solid rgba(224,166,180,.35);border-radius:14px;padding:10px 12px;margin-bottom:8px">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">' +
-      '<div><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.65)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
-      '<div style="font-size:11px;color:rgba(242,234,238,.6)">累计 ' + x.total_sessions + ' 次 · 最近 ' + fmtDate(x.last_finished_at) + '</div></div>' +
+      '<div><span style="font-weight:700;color:#F2EAEE">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:#97848E">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+      '<div style="font-size:11px;color:#97848E">累计 ' + x.total_sessions + ' 次 · 最近 ' + fmtDate(x.last_finished_at) + '</div></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + x.reasons.map((r) =>
-        '<span style="padding:3px 8px;border-radius:999px;background:rgba(224,102,120,.2);color:#F4B6C2;font-size:11px;font-weight:600">' + ctrEsc(r) + '</span>').join('') + '</div></div>'
+        '<span style="padding:3px 8px;border-radius:999px;background:rgba(224,166,180,.2);color:#EABBC5;font-size:11px;font-weight:600">' + ctrEsc(r) + '</span>').join('') + '</div></div>'
     ).join('')
-    : '<div style="text-align:center;color:rgba(242,234,238,.5);padding:14px 0;font-size:13px">全员状态良好，暂无重点跟进人员</div>';
+    : '<div style="text-align:center;color:#97848E;padding:14px 0;font-size:13px">全员状态良好，暂无重点跟进人员</div>';
 
   const starsHtml = (d.active_stars || []).map((x, i) =>
     '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;margin-bottom:6px;background:rgba(221,182,106,.07);border:1px solid rgba(221,182,106,.25);border-radius:12px">' +
-    '<div><span style="color:#DDB66A;font-weight:800;margin-right:6px">' + (i + 1) + '</span><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.6)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+    '<div><span style="color:#DDB66A;font-weight:800;margin-right:6px">' + (i + 1) + '</span><span style="font-weight:700;color:#F2EAEE">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:#97848E">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
     '<div style="font-size:12px;color:rgba(242,234,238,.75)">本周' + x.week_days_trained + '天 · ' + x.week_sessions + '次 · 均分' + ctdScore(x.avg_score) + '</div></div>'
   ).join('') || '<div style="text-align:center;color:rgba(242,234,238,.5);padding:14px 0;font-size:13px">本周还没有训练数据</div>';
 
@@ -458,12 +458,12 @@ function ctdRender() {
     if (x.incomplete_sessions > 0) tags.push('<span style="color:#F4B6C2">未完成' + x.incomplete_sessions + '次</span>');
     if (x.consecutive_missed_days >= 1) tags.push('<span style="color:#D9A441">连续' + x.consecutive_missed_days + '天未练</span>');
     tags.push('<span>' + x.week_days_trained + '/7天有训练</span>');
-    return '<div style="background:rgba(224,166,180,.055);border:1px solid rgba(224,166,180,.2);border-radius:16px;padding:12px;margin-bottom:10px">' +
+    return '<div style="background:#1C181C;border:1px solid #2C252C;border-radius:18px;padding:12px;margin-bottom:10px">' +
       '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">' +
-      '<div><span style="font-weight:700;color:#F6DCE4">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:rgba(242,234,238,.62)">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
-      '<div style="font-size:12px;color:rgba(242,234,238,.7)">累计' + x.total_sessions + '次 · 均分' + ctdScore(x.avg_score) + ' · ' + fmtDate(x.last_finished_at) + '</div></div>' +
+      '<div><span style="font-weight:700;color:#F2EAEE">' + ctrEsc(x.name) + '</span> <span style="font-size:12px;color:#97848E">' + ctrEsc(x.position || '') + ' · ' + ctrEsc(x.store || '') + '</span></div>' +
+      '<div style="font-size:12px;color:rgba(242,234,238,.72)">累计' + x.total_sessions + '次 · 均分' + ctdScore(x.avg_score) + ' · ' + fmtDate(x.last_finished_at) + '</div></div>' +
       '<div style="display:flex;gap:4px;margin-top:10px;overflow:auto;padding-bottom:2px">' + dots + '</div>' +
-      '<div style="font-size:11px;color:rgba(242,234,238,.6);margin-top:6px">' + tags.join('　') + '</div>' +
+      '<div style="font-size:11px;color:#97848E;margin-top:6px">' + tags.join('　') + '</div>' +
       (skills ? '<div style="margin-top:6px">' + skills + '</div>' : '<div style="font-size:11px;color:rgba(242,234,238,.45);margin-top:6px">尚未开练</div>') +
       '</div>';
   }).join('') || '<div style="text-align:center;color:rgba(242,234,238,.45);padding:18px 0">暂无人员数据</div>';
@@ -476,7 +476,7 @@ function ctdRender() {
     '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">' + kpis + '</div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
     '<label style="font-size:12px;color:rgba(242,234,238,.7)">门店筛选</label>' +
-    '<select id="ctd-store-filter" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(224,166,180,.28);background:rgba(224,166,180,.08);color:#F2EAEE;font-size:13px;flex:1;min-width:160px">' +
+    '<select id="ctd-store-filter" style="padding:8px 10px;border-radius:10px;border:1px solid #2C252C;background:#121012;color:#F2EAEE;font-size:13px;flex:1;min-width:160px;color-scheme:dark">' +
     '<option value="">全部门店</option>' + storeOptions + '</select></div>' +
     ctdCard('重点跟进（未训练 / 连续未练 / 未完成）', attentionHtml) +
     ctdCard('本周积极之星 TOP5', starsHtml) +
