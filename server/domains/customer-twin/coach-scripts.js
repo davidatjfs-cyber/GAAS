@@ -1,25 +1,25 @@
 /**
- * AI 顾客技能剧本（v1：先做「推销」，其余技能后续按同一 schema 扩展）
+ * AI 顾客技能剧本（14 技能全就绪）
  * 四阶段：opening 开场 → deep_dive 深挖 → challenge 挑战 → closing 收尾
  */
 
 export const COACH_CRITICAL_PRINCIPLES = [
-  { id: 'soothe_first', label: '异议/客诉先安抚', anti: /(这跟我们没关系|不关我事|你去找|随便你|那是你的事)/ },
-  { id: 'need_first', label: '先了解需求再推荐', anti: /(不用问|直接给你|我说了算)/ },
-  { id: 'own_exception', label: '异常先揽责', anti: /(不是我的错|找我们经理|我不知道|别问我)/ },
-  { id: 'promise_keep', label: '承诺要兑现', anti: /(应该可以吧|到时候再说|下次再说)/ },
-  { id: 'allergy_confirm', label: '过敏/忌口必须确认', anti: /(过敏没事的|一点点没事|不用管)/ },
-  { id: 'no_fabricate', label: '不确定先核实，不编造', anti: /(好像是|应该是|可能是吧|说不准|记不清|大概吧)/ },
+  { id: 'soothe_first', label: '异议/客诉先安抚', fix: '先道歉/表达理解再处理，不与客人争辩', anti: /(这跟我们没关系|不关我事|你去找|随便你|那是你的事)/ },
+  { id: 'need_first', label: '先了解需求再推荐', fix: '推荐前先问清人数/口味/场合/预算', anti: /(不用问|直接给你|我说了算)/ },
+  { id: 'own_exception', label: '异常先揽责', fix: '用"我来处理/我们负责"承接，再找原因', anti: /(不是我的错|找我们经理|我不知道|别问我)/ },
+  { id: 'promise_keep', label: '承诺要兑现', fix: '给具体时间/数字并保证做到，不模糊承诺', anti: /(应该可以吧|到时候再说|下次再说)/ },
+  { id: 'allergy_confirm', label: '过敏/忌口必须确认', fix: '主动问过敏/忌口并落实到单，不抱侥幸', anti: /(过敏没事的|一点点没事|不用管)/ },
+  { id: 'no_fabricate', label: '不确定先核实，不编造', fix: '不确定的内容先查证或请示，不说"大概/应该"', anti: /(好像是|应该是|可能是吧|说不准|记不清|大概吧)/ },
 ];
 
 export const COACH_DIMENSIONS = [
-  { key: 'professional', label: '专业度' },
-  { key: 'tone', label: '语气' },
-  { key: 'response', label: '应对' },
-  { key: 'completeness', label: '完整性' },
-  { key: 'knowledge_accuracy', label: '知识准确性' },
-  { key: 'initiative', label: '主动性' },
-  { key: 'sales_conversion', label: '销售转化', skills: ['selling'] },
+  { key: 'professional', label: '专业度', fix: '回答不够专业：用知识库准确回答，菜品/规则先掌握再开口' },
+  { key: 'tone', label: '语气', fix: '语气不够自然/礼貌：多用"您/请/我帮您"，避免生硬冷淡' },
+  { key: 'response', label: '应对', fix: '应对不够得体：先接住客人情绪再给方案，被追问不慌乱' },
+  { key: 'completeness', label: '完整性', fix: '回答不完整：把关键信息（规则/时限/补偿/替代方案）说全' },
+  { key: 'knowledge_accuracy', label: '知识准确性', fix: '知识有误：核对知识库，不确定先查证再回答' },
+  { key: 'initiative', label: '主动性', fix: '不够主动：主动确认需求、主动告知时间、主动补位' },
+  { key: 'sales_conversion', label: '销售转化', skills: ['selling'], fix: '推销未促成：合适时机给出明确建议并邀请行动（"要不要帮您办一个？"）' },
 ];
 
 export const SELLING_SCRIPT = {
@@ -193,7 +193,23 @@ const D = {
   },
 };
 
+function normalizeScript(s) {
+  return {
+    ...s,
+    min_deep_turns: Math.max(s.min_deep_turns || 3, 6),
+    min_challenge_turns: Math.max(s.min_challenge_turns || 1, 3),
+  };
+}
+
 export const SKILL_SCRIPTS = {
-  selling: SELLING_SCRIPT,
-  ...D,
+  selling: normalizeScript(SELLING_SCRIPT),
+  ...Object.fromEntries(Object.entries(D).map(([k, v]) => [k, normalizeScript(v)])),
 };
+
+export function dimensionFix(key) {
+  return COACH_DIMENSIONS.find((d) => d.key === key)?.fix || '';
+}
+
+export function principleFix(id) {
+  return COACH_CRITICAL_PRINCIPLES.find((p) => p.id === id)?.fix || '';
+}

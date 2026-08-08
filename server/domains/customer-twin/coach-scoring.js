@@ -12,7 +12,7 @@ export function scanViolations(transcript) {
   const text = (transcript || []).map((t) => `${t.role}:${t.text}`).join('\n');
   for (const p of COACH_CRITICAL_PRINCIPLES) {
     if (p.anti && p.anti.test(text)) {
-      violations.push({ principle: p.id, label: p.label, rule: String(p.anti) });
+      violations.push({ principle: p.id, label: p.label, fix: p.fix || '', rule: String(p.anti) });
     }
   }
   return violations;
@@ -44,10 +44,24 @@ export function computeTotal(scores) {
 
 export function evalSession({ transcript, skillKey, scores = null, violations = [] }) {
   const finalViolations = violations.length ? violations : scanViolations(transcript);
-  const dims = scores || heuristicScores(transcript, skillKey);
+  const rawDims = scores || heuristicScores(transcript, skillKey);
+  const dims = {};
+  const suggestions = [];
+  for (const d of COACH_DIMENSIONS) {
+    if (d.skills && !d.skills.includes(skillKey)) continue;
+    const v = rawDims[d.key] ?? rawDims[d.label];
+    if (v == null) continue;
+    dims[d.label] = v;
+    if (v < 80 && d.fix) {
+      suggestions.push({ key: d.key, label: d.label, score: v, fix: d.fix });
+    }
+  }
   const total = computeTotal(dims);
   const success = finalViolations.length === 0 && total >= 80;
-  return { total, dims, violations: finalViolations, success };
+  for (const v of finalViolations) {
+    suggestions.push({ key: v.principle, label: v.label, fix: v.fix || '对照关键原则改进', violation: true });
+  }
+  return { total, dims, violations: finalViolations, success, suggestions };
 }
 
 export function nextLevel(level) {
