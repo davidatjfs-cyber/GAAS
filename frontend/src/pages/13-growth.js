@@ -3042,7 +3042,7 @@
                             + (v.executionGuide ? '<div style="font-size:11px;opacity:.72;">' + escHtml(v.executionGuide) + '</div>' : '')
                             + (opts.empty
                                 ? '<div style="font-size:12px;color:#EDA1AC;">本店未配置店长/前厅主管，无法分配</div>'
-                                : '<div style="font-size:12px;margin-top:6px;">责任人：<select data-mkt-assignee="' + escHtml(v.variantCode || 'A') + '" style="min-width:180px;padding:7px 10px;border-radius:8px;border:1px solid rgba(242,234,238,0.15);background:rgba(0,0,0,0.35);color:var(--rep-text);">' + opts.html + '</select></div>')
+                                : '<div style="font-size:12px;margin-top:6px;">责任人：<select data-mkt-assignee="' + escHtml(v.variantCode || 'A') + '" data-mkt-store="' + escHtml(v.store || '') + '" style="min-width:180px;padding:7px 10px;border-radius:8px;border:1px solid rgba(242,234,238,0.15);background:rgba(0,0,0,0.35);color:var(--rep-text);">' + opts.html + '</select></div>')
                             + '</div>';
                     }).join('');
                     return '<div style="border:1px solid rgba(242,234,238,0.1);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(0,0,0,0.18);">'
@@ -3061,7 +3061,7 @@
             var card = btn && btn.closest ? btn.closest('div[style*="border"]') : null;
             var selects = card ? card.querySelectorAll('[data-mkt-assignee]') : [];
             var storeAssignments = Array.prototype.map.call(selects, function (s) {
-                return { variantCode: s.getAttribute('data-mkt-assignee'), assigneeUsername: s.value };
+                return { variantCode: s.getAttribute('data-mkt-assignee'), store: s.getAttribute('data-mkt-store') || '', assigneeUsername: s.value };
             }).filter(function (a) { return a.assigneeUsername; });
             if (selects.length && !storeAssignments.length) { showNotification('请至少为一个方案选择责任人', 'warning'); return; }
             if (!confirm('通过该营销建议？\n\n将进入推送池（自动生成活动计划草稿）并派发给所选责任人，由门店人工按方案执行。')) return;

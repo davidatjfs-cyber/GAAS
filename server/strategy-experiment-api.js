@@ -224,11 +224,15 @@ r.post('/api/strategy-experiments/:code/variants/:variant/result', authRequired,
 
       if (storeAssignments && Array.isArray(storeAssignments)) {
         for (const sa of storeAssignments) {
-          const canonical = resolveAgentCanonicalStore(sa.store);
+          // 2026-08-08 严重修复：前端只传 variantCode+assigneeUsername 时 sa.store 为空，
+          // 旧代码会把 variant.store 覆盖成空串 → 反馈去重按门店匹配不到、重复生成。
+          const canonical = sa.store ? resolveAgentCanonicalStore(sa.store) : null;
           await pool.query(`
-            UPDATE strategy_variants SET store = $1, assignee_username = $2, assignee_open_id = $3
+            UPDATE strategy_variants
+            SET store = COALESCE(NULLIF($1,''), store),
+                assignee_username = $2, assignee_open_id = $3
             WHERE experiment_id = $4 AND variant_code = $5
-          `, [canonical, sa.assigneeUsername || null, sa.assigneeOpenId || null, exp.rows[0].id, sa.variantCode]);
+          `, [canonical || '', sa.assigneeUsername || null, sa.assigneeOpenId || null, exp.rows[0].id, sa.variantCode]);
         }
       }
 
