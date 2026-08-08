@@ -79,7 +79,23 @@
         <button type="button" id="btnDraw">随机抽事故卡</button>
         <button type="button" class="secondary" id="btnExam">考试模式抽卡</button>
       </div>
+      <div style="margin:14px 0;border-top:1px solid var(--line);"></div>
+      <h2>技能训练（14 项技能）</h2>
+      <p class="hint">按技能练习（推销/堂食客诉/菜品知识等）；每技能训练满 10 次且成功 7 次可升级。</p>
+      <div class="row" style="margin-top:8px;">
+        <button type="button" class="secondary" id="btnSkillMode">进入技能训练</button>
+      </div>
       <div class="err" id="homeErr"></div>
+    </div>
+
+    <div class="card hidden" id="skillCard">
+      <h2>选择技能</h2>
+      <p class="hint" id="skillHint">点击技能开始训练（客人会连续追问约 10 分钟）。</p>
+      <div class="row" style="margin-bottom:8px;">
+        <button type="button" class="ghost" id="btnSkillHome">返回首页</button>
+      </div>
+      <div id="skillList"></div>
+      <div class="err" id="skillErr"></div>
     </div>
 
     <div class="card hidden" id="cardPreview">
@@ -131,6 +147,7 @@
     token: qs.get('token') || token,
     me: null, track: null, examMode: false,
     categories: [], incident: null, sessionId: null,
+    coach: null, coachLabel: '',
   };
   const $ = (id) => document.getElementById(id);
   const show = (id, on) => $(id).classList.toggle('hidden', !on);
@@ -278,6 +295,7 @@
 
   async function sendTurn() {
     const text = $('input').value.trim();
+    if (state.coach) return coachSend(text);
     if (!text || !state.sessionId) return;
     $('btnSend').disabled = true;
     setErr('chatErr', '');
@@ -299,6 +317,7 @@
   }
 
   async function finish() {
+    if (state.coach) return coachFinish();
     if (!state.sessionId) return;
     try {
       showDebrief(await api('/api/sales-sim/sessions/' + state.sessionId + '/finish', { method: 'POST', body: {} }));
@@ -350,6 +369,104 @@
     state.sessionId = null;
   }
 
+  function levelLabel(level) {
+    return level === 'advanced' ? '高级' : level === 'gold' ? '金牌' : '普通';
+  }
+
+  async function loadCoachSkills() {
+    setErr('skillErr', '');
+    try {
+      const data = await api('/api/customer-twin/coach/skills');
+      const list = $('skillList');
+      list.innerHTML = data.skills.map((s) => {
+        const btn = '<button type="button" data-skill="' + esc(s.skill_key) + '" data-label="' + esc(s.label) + '">开始训练</button>';
+        return '<div class="card" style="margin-bottom:8px;padding:10px 12px;">' +
+          '<div style="font-size:15px;font-weight:700;">' + esc(s.label) + '</div>' +
+          '<div class="hint" style="margin:3px 0 6px;">' + esc(s.description || '') + '</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+          '<span class="pill">' + levelLabel(s.level) + '</span>' +
+          '<span class="hint">训练 ' + s.trained_count + ' 次 · 成功 ' + s.success_count + ' 次</span>' +
+          btn + '</div></div>';
+      }).join('');
+      list.querySelectorAll('[data-skill]').forEach((el) => {
+        el.onclick = () => startCoachSession(el.getAttribute('data-skill'), el.getAttribute('data-label'));
+      });
+    } catch (e) {
+      setErr('skillErr', e.message);
+    }
+  }
+
+  async function startCoachSession(skillKey, label) {
+    setErr('skillErr', '');
+    try {
+      const data = await api('/api/customer-twin/coach/sessions', { method: 'POST', body: { skill_key: skillKey } });
+      if (!data.ok) throw new Error(data.error || '该技能剧本尚未就绪');
+      state.coach = { id: data.session.id, done: false };
+      state.coachLabel = label;
+      $('chatTitle').textContent = label + ' · 技能训练';
+      $('chatFactHint').textContent = '客人：' + (data.session.persona?.desc || '');
+      $('mEmotion').textContent = '—';
+      $('mSat').textContent = '—';
+      $('chat').textContent = '';
+      (data.session.transcript || []).forEach((t) => bubble(t.role === 'customer' ? 'customer' : 'trainee', t.text));
+      show('skillCard', false);
+      show('chatCard', true);
+      $('input').value = '';
+      $('input').focus();
+    } catch (e) {
+      setErr('skillErr', e.message);
+    }
+  }
+
+  async function coachSend(text) {
+    if (!text || !state.coach) return;
+    $('btnSend').disabled = true;
+    setErr('chatErr', '');
+    try {
+      bubble('trainee', text);
+      $('input').value = '';
+      const data = await api('/api/customer-twin/coach/sessions/' + state.coach.id + '/turn', {
+        method: 'POST', body: { message: text },
+      });
+      bubble('customer', data.customer);
+      $('chatFactHint').textContent = '阶段：' + (data.phase || '') + (data.done ? '（已到收尾，可点结束并复盘）' : '');
+      state.coach.done = !!data.done;
+    } catch (e) {
+      setErr('chatErr', e.message);
+    } finally {
+      $('btnSend').disabled = false;
+    }
+  }
+
+  async function coachFinish() {
+    if (!state.coach) return;
+    try {
+      const data = await api('/api/customer-twin/coach/sessions/' + state.coach.id + '/finish', { method: 'POST', body: { use_llm: true } });
+      coachShowDebrief(data.report, data.progress);
+      state.coach = null;
+    } catch (e) {
+      setErr('chatErr', e.message);
+    }
+  }
+
+  function coachShowDebrief(report, progress) {
+    const lines = ['总分：' + report.total + ' 分', '结果：' + (report.success ? '✅ 本次成功' : '❌ 本次未通过')];
+    Object.entries(report.dims || {}).forEach(([k, v]) => lines.push('· ' + k + '：' + v));
+    if (report.violations && report.violations.length) {
+      lines.push('', '关键原则违规：');
+      report.violations.forEach((v) => lines.push('△ ' + v.label));
+    }
+    if (progress) {
+      lines.push('', '技能进度：' + levelLabel(progress.level) + ' · 训练 ' + progress.trained_count + ' 次 · 成功 ' + progress.success_count + ' 次');
+      if (progress.upgraded) lines.push('🎉 已升级到：' + levelLabel(progress.level));
+    }
+    $('scoreGrid').innerHTML = '<div><div class="muted">本场得分</div><div style="font-size:30px;font-weight:800;">' + report.total + '</div></div>' +
+      '<div><div class="muted">结果</div><div style="font-size:18px;font-weight:700;">' + (report.success ? '通过' : '未通过') + '</div></div>';
+    $('debriefBox').textContent = lines.join('\n');
+    show('chatCard', false);
+    show('debriefCard', true);
+  }
+
   $('btnDraw').onclick = () => { state.examMode = false; drawCard(); };
   $('btnExam').onclick = () => { state.examMode = true; drawCard(); };
   $('btnStart').onclick = startSession;
@@ -359,6 +476,8 @@
   $('btnFinish').onclick = finish;
   $('btnAgain').onclick = () => { show('debriefCard', false); drawCard(); };
   $('btnHome').onclick = () => { show('debriefCard', false); show('homeCard', true); };
+  $('btnSkillMode').onclick = () => { show('homeCard', false); show('skillCard', true); loadCoachSkills(); };
+  $('btnSkillHome').onclick = () => { show('skillCard', false); show('homeCard', true); };
   $('trackSel').onchange = () => loadCategories().catch(() => {});
   $('input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTurn(); }

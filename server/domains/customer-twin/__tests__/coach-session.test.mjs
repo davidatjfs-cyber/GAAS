@@ -2,6 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scanViolations, evalSession, evaluateUpgrade } from '../coach-scoring.js';
 import { createCoachSession, nextCoachTurn, finishCoachSession } from '../coach-session.js';
+import { SKILL_SCRIPTS } from '../coach-scripts.js';
+
+test('14 技能均有剧本且字段完整', () => {
+  const expected = [
+    'selling', 'dish_intro', 'dine_complaint', 'table_visit', 'delivery_complaint',
+    'delivery_anomaly', 'greeting', 'dish_knowledge', 'allergy_knowledge',
+    'food_safety_knowledge', 'food_safety_incident', 'kitchen_collab',
+    'output_quality', 'cooking_knowledge',
+  ];
+  assert.equal(Object.keys(SKILL_SCRIPTS).length, 14);
+  for (const k of expected) {
+    const s = SKILL_SCRIPTS[k];
+    assert.ok(s, `缺少剧本 ${k}`);
+    assert.ok(Array.isArray(s.opening) && s.opening.length >= 3, `${k} opening`);
+    assert.ok(Array.isArray(s.deep_dive) && s.deep_dive.length >= 6, `${k} deep_dive`);
+    assert.ok(Array.isArray(s.challenge) && s.challenge.length >= 3, `${k} challenge`);
+    assert.ok(s.closing_satisfied?.length && s.closing_unsatisfied?.length, `${k} closing`);
+  }
+});
 
 function memoryPool(sessionStore) {
   const queries = [];
