@@ -14,6 +14,7 @@ import { samplePersonas, runSimulation, expressUtterance } from './engine-v0.js'
 import { PERSONA_KEYS } from './persona-schema.js';
 import { createCustomerTwinAdminRequired } from './admin-guard.js';
 import { syncDishData } from './feishu-dish-sync.js';
+import { createCoachSession, nextCoachTurn, finishCoachSession, setCoachLlm } from './coach-session.js';
 
 const log = childLogger({ domain: 'customer-twin', handler: 'routes' });
 
@@ -35,9 +36,10 @@ async function loadCorpus(pool) {
  * @param {{ app: any, pool: any, platformAdminRequired: Function, callLLM?: Function }} ctx
  */
 export function registerCustomerTwinRoutes(ctx) {
-  const { app, pool } = ctx;
+  const { app, pool, authRequired, callLLM } = ctx;
   const twinAdminRequired = createCustomerTwinAdminRequired();
   const adminName = (req) => req.platformAdmin?.username || req.twinAdmin?.username || 'admin';
+  if (typeof callLLM === 'function') setCoachLlm(callLLM);
   ensureGoldenCaseSeed(pool).catch((e) => log.warn({ msg: 'customer_twin_golden_seed_failed', err: e?.message }));
 
   app.post('/api/customer-twin/incidents/generate', twinAdminRequired, async (req, res) => {
@@ -115,6 +117,68 @@ export function registerCustomerTwinRoutes(ctx) {
       res.json({ ok: true, ...result });
     } catch (e) {
       log.error({ msg: 'twin_dish_sync_run', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.get('/api/customer-twin/coach/skills', authRequired, async (req, res) => {
+    try {
+      const username = req.user?.username;
+      const skills = await pool.query(
+        `SELECT s.skill_key, s.label, s.description, s.sort_order,
+                COALESCE(p.level,'normal') AS level,
+                COALESCE(p.trained_count,0) AS trained_count,
+                COALESCE(p.success_count,0) AS success_count
+           FROM job_coach_skills s
+           LEFT JOIN job_coach_skill_progress p
+             ON p.skill_key = s.skill_key AND p.username = $1 AND p.tenant_id = 'default'
+          WHERE s.active = TRUE
+          ORDER BY s.sort_order`,
+        [username]
+      );
+      res.json({ ok: true, skills: skills.rows || [] });
+    } catch (e) {
+      log.error({ msg: 'coach_skills', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/customer-twin/coach/sessions', authRequired, async (req, res) => {
+    try {
+      const skillKey = String(req.body?.skill_key || '').trim();
+      if (!skillKey) return res.status(400).json({ ok: false, error: 'missing_skill_key' });
+      const result = await createCoachSession(pool, { username: req.user?.username, skillKey });
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (e) {
+      log.error({ msg: 'coach_session_create', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/customer-twin/coach/sessions/:id/turn', authRequired, async (req, res) => {
+    try {
+      const result = await nextCoachTurn(pool, {
+        sessionId: Number(req.params.id),
+        username: req.user?.username,
+        message: String(req.body?.message || ''),
+      });
+      res.status(result.ok ? 200 : 404).json(result);
+    } catch (e) {
+      log.error({ msg: 'coach_session_turn', err: e?.message || e });
+      res.status(500).json({ ok: false, error: 'server_error' });
+    }
+  });
+
+  app.post('/api/customer-twin/coach/sessions/:id/finish', authRequired, async (req, res) => {
+    try {
+      const result = await finishCoachSession(pool, {
+        sessionId: Number(req.params.id),
+        username: req.user?.username,
+        useLlm: req.body?.use_llm !== false,
+      });
+      res.status(result.ok ? 200 : 404).json(result);
+    } catch (e) {
+      log.error({ msg: 'coach_session_finish', err: e?.message || e });
       res.status(500).json({ ok: false, error: 'server_error' });
     }
   });
